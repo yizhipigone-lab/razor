@@ -1,0 +1,37 @@
+# Dump files
+*.dmp
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv*/
+venv313/
+*.egg-info/
+
+# Data (large binary files)
+quant-platform/data/parquet/
+quant-platform/data/meta/
+quant-platform/data/cache/
+
+# DuckDB
+*.db
+*.db.wal
+
+# Environment
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+
+# Output
+quant-platform/output/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Claude
+.claude/

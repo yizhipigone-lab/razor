@@ -1,0 +1,99 @@
+# =====================================================
+# P9 量化平台 - Docker Compose 多服务架构
+# 服务说明：
+#   api-server   - FastAPI Web 端点（专职前端交互/API）
+#   task-worker  - 后台定时任务（数据同步/选股/回测）
+#   redis        - 消息中间件 + 缓存
+# =====================================================
+
+services:
+
+  # --- Redis 内存中间件（必须最先 healthy 才能启动其他服务）---
+  redis:
+    image: redis:7-alpine
+    container_name: quant-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # --- API Server（FastAPI，暴露 8888 端口）---
+  api-server:
+    image: quant-platform-v5
+    build: .
+    container_name: quant-api-server
+    command: ["python", "main.py"]
+    ports:
+      - "8888:8888"
+    volumes:
+      - p9-data:/app/data                                           # DuckDB + Parquet 持久化
+      - ./logs:/app/logs                                             # 日志目录映射到宿主机
+      - ./config:/app/config                                         # 配置文件热更新（不需重建镜像）
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - PYTHONUNBUFFERED=1
+      - QMT_PATH=/qmt
+      - TUSHARE_KEY=${TUSHARE_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 25s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # --- Task Worker（定时任务：Tushare 同步 / 选股 / 回测）---
+  task-worker:
+    image: quant-platform-v5
+    build: .
+    container_name: quant-task-worker
+    command: ["python", "-m", "app.scheduler.cron_jobs"]
+    volumes:
+      - p9-data:/app/data                                           # 与 api-server 共享数据卷
+      - ./logs:/app/logs
+      - ./config:/app/config
+      - "D:/targetone/TrendRadar-master:/trendradar:ro"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - PYTHONUNBUFFERED=1
+      - TUSHARE_KEY=${TUSHARE_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - TRENDRADAR_DIR=/trendradar
+    depends_on:
+      redis:
+        condition: service_healthy
+      api-server:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  p9-data:
+    driver: local
+  redis-data:
+    driver: local

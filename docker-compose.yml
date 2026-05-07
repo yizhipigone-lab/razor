@@ -1,0 +1,24 @@
+services:
+  # 你的核心代码：用本地修改的源码构建
+  quant-platform:
+    build: ./quant-platform
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+    restart: always
+
+  # 直接用本地已有的镜像，不构建
+  trendradar:
+    image: p9-trendradar:latest
+    restart: always
+
+  # 直接用本地已有的镜像，不构建
+  trendradar-mcp:
+    image: p9-trendradar-mcp:latest
+    restart: always
+
+  # 数据库工具，不动
+  redis:
+    image: redis:7-alpine
+    restart: always

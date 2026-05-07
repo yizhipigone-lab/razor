@@ -1,0 +1,33 @@
+# 核心隐私与系统文件
+.env
+.git
+.gitignore
+.vscode
+.agents
+.gemini
+
+# --- 关键：绝对禁止拷贝 Python 缓存 (这是报错的根源) ---
+__pycache__/
+**/*/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 排除大数据目录 (通过 volume 挂载，不要打包进镜像)
+data/
+logs/
+tmp/
+database/*.db
+database/*.duckdb
+
+# 排除本地虚拟环境
+venv/
+.venv/
+env/
+
+# 排除系统/临时文件
+.DS_Store
+Thumbs.db
+*.log
+*.txt
+!requirements.txt

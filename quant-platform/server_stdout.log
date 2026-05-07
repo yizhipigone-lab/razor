@@ -1,0 +1,955 @@
+[32m2026-04-29 16:08:47.149[0m | [1mINFO    [0m | [36mDuckDB    [0m | [1mDuckDB | ËùÓÐºËÐÄ±í½á¹¹³õÊ¼»¯Íê³É (º¬ÈÈµã°å¿é)[0m
+[32m2026-04-29 16:08:47.149[0m | [1mINFO    [0m | [36mDuckDB    [0m | [1mDuckDB ºËÐÄ¾ÍÐ÷: E:\1target\p9_project\quant-platform\data\meta\meta.db[0m
+INFO:     Started server process [27888]
+INFO:     Waiting for application startup.
+[32m2026-04-29 16:08:50.063[0m | [1mINFO    [0m | [36mAPI-Server[0m | [1mP9 Quant Platform Background Tasks Startup...[0m
+[32m2026-04-29 16:08:50.066[0m | [1mINFO    [0m | [36mCronScheduler[0m | [1mCronScheduler | Ã¿ÈÕÊý¾ÝÊÕ¸î»ú±»°²ÅÅÔÚÃ¿¸ö¹¤×÷ÈÕµÄ 08:30 Ö´ÐÐ¡£[0m
+[32m2026-04-29 16:08:50.066[0m | [1mINFO    [0m | [36mCronScheduler[0m | [1mCronScheduler | Ã¿ÈÕÊý¾ÝÊÕ¸î»ú±»°²ÅÅÔÚÃ¿¸ö¹¤×÷ÈÕµÄ 17:30 Ö´ÐÐ¡£[0m
+[32m2026-04-29 16:08:50.066[0m | [1mINFO    [0m | [36mCronScheduler[0m | [1mCronScheduler | Redis¡úDuckDB ÊÕ¸î»úÒÑ°²ÅÅÔÚÃ¿¸ö¹¤×÷ÈÕ 15:30 Ö´ÐÐ¡£[0m
+[32m2026-04-29 16:08:50.067[0m | [1mINFO    [0m | [36mCronScheduler[0m | [1mCronScheduler | ¸ÅÄîÊý¾ÝÍ¬²½ÒÑ°²ÅÅÔÚÃ¿ÈÕ 09:00 Ö´ÐÐ¡£[0m
+[32m2026-04-29 16:08:50.067[0m | [1mINFO    [0m | [36mCronScheduler[0m | [1mCronScheduler | °å¿éÈÈ¶ÈÖØËãÒÑ°²ÅÅÔÚÃ¿¸ö½»Ò×ÈÕ 5 ·ÖÖÓ/´Î¡£[0m
+[32m2026-04-29 16:08:50.067[0m | [1mINFO    [0m | [36mCronScheduler[0m | [1mCronScheduler | ÊÕÅÌÈÈ¶ÈÖÕ°æ¿ìÕÕÒÑ°²ÅÅÔÚ 15:30 Ö´ÐÐ¡£[0m
+[32m2026-04-29 16:08:50.068[0m | [1mINFO    [0m | [36mCronScheduler[0m | [1mCronScheduler | ×Ô¶¯µ÷¶È·þÎñ(APScheduler) ÒÑÆô¶¯¡£[0m
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8888 (Press CTRL+C to quit)
+INFO:     127.0.0.1:50171 - "WebSocket /ws" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:50177 - "WebSocket /ws" [accepted]
+INFO:     connection open
+[32m2026-04-29 16:08:51.496[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /[0m
+INFO:     127.0.0.1:50178 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50182 - "WebSocket /ws" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:50184 - "WebSocket /ws" [accepted]
+INFO:     connection open
+[32m2026-04-29 16:08:55.083[0m | [1mINFO    [0m | [36mParquetPipeline[0m | [1mParquetPipeline | Fetching daily k-lines from 20260419 to 20260429...[0m
+[32m2026-04-29 16:08:55.219[0m | [1mINFO    [0m | [36mParquetPipeline[0m | [1mParquetPipeline | Pulling market for 20260429...[0m
+[32m2026-04-29 16:08:55.977[0m | [1mINFO    [0m | [36mParquetPipeline[0m | [1mParquetPipeline | Pulling market for 20260428...[0m
+[32m2026-04-29 16:08:56.783[0m | [1mINFO    [0m | [36mParquetPipeline[0m | [1mParquetPipeline | Pulling market for 20260427...[0m
+[32m2026-04-29 16:08:57.557[0m | [1mINFO    [0m | [36mParquetPipeline[0m | [1mParquetPipeline | Pulling market for 20260424...[0m
+[32m2026-04-29 16:08:58.302[0m | [1mINFO    [0m | [36mParquetPipeline[0m | [1mParquetPipeline | Pulling market for 20260423...[0m
+[32m2026-04-29 16:08:59.008[0m | [1mINFO    [0m | [36mParquetPipeline[0m | [1mParquetPipeline | Pulling market for 20260422...[0m
+[32m2026-04-29 16:08:59.775[0m | [1mINFO    [0m | [36mParquetPipeline[0m | [1mParquetPipeline | Pulling market for 20260421...[0m
+[32m2026-04-29 16:09:00.499[0m | [1mINFO    [0m | [36mParquetPipeline[0m | [1mParquetPipeline | Pulling market for 20260420...[0m
+[32m2026-04-29 16:09:01.279[0m | [1mINFO    [0m | [36mParquetPipeline[0m | [1mParquetPipeline | Writing 5509 stocks to Parquet...[0m
+[32m2026-04-29 16:09:05.397[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:09:09.647[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:50205 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50206 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:09:13.818[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:50205 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:09:17.949[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:50206 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:09:44.992[0m | [1mINFO    [0m | [36mDuckDB    [0m | [1mDuckDB | ´´½¨ÐéÄâÊÓÍ¼³É¹¦: kline_daily_view -> E:/1target/p9_project/quant-platform/data/parquet/daily/*.parquet[0m
+[32m2026-04-29 16:09:44.992[0m | [1mINFO    [0m | [36mParquetPipeline[0m | [1mParquetPipeline | Daily K-lines fully synced.[0m
+[32m2026-04-29 16:10:05.090[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:50208 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:10:09.239[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:54430 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:10:13.368[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:50208 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:10:17.558[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:54430 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:11:05.396[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:11:09.598[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:62557 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62558 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:11:13.829[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:11:18.019[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:62557 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62558 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:12:05.086[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:62560 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:12:09.290[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:50904 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:12:13.459[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:62560 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:12:17.619[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:50904 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:13:05.402[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:13:09.617[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:59921 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59922 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:13:13.761[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:59921 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:13:17.952[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:59922 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:14:05.086[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:59925 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:14:09.320[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:52201 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:14:13.510[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:59925 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:14:17.691[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:52201 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:15:05.404[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:15:09.621[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61371 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61372 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:15:13.761[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:15:17.960[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61371 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61372 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:16:05.096[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61374 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:16:09.284[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:51057 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:16:13.462[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61374 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:16:17.661[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:51057 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:17:05.395[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:17:09.602[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:55539 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55540 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:17:13.824[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:17:18.032[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:55539 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55540 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:18:05.087[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:55543 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:18:09.265[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:52194 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:18:13.462[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:55543 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:18:17.643[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:52194 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:19:05.397[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:19:09.642[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58705 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58706 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:19:13.855[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58705 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:19:18.054[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58706 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:20:05.095[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58708 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:20:09.274[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:56264 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:20:13.487[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58708 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:20:17.664[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:56264 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:21:05.397[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:21:09.563[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:60893 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60894 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:21:13.743[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:60893 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:21:17.914[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:60894 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:22:05.089[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:60896 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:22:09.277[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:54437 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:22:13.485[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:60896 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:22:17.676[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:54437 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:23:05.402[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:23:09.564[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58047 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58048 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:23:13.696[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58047 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:23:17.855[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58048 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:24:05.096[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58050 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:24:09.307[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58107 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:24:13.425[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58050 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:24:17.616[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58107 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:25:05.405[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:25:09.606[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61505 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61506 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:25:13.788[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:25:17.928[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61505 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61506 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:26:05.095[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61508 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:26:09.286[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:56326 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:26:13.438[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61508 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:26:17.616[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:56326 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:27:05.392[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:27:09.607[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58037 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58036 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:27:13.798[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:27:18.016[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58037 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58036 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:28:05.086[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58039 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:28:09.328[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63456 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:28:13.478[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58039 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:28:17.678[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63456 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:29:05.407[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:29:05.407[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:57800 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57801 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:29:13.790[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:29:13.790[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:57800 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57801 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:30:05.088[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:57804 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:30:09.269[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:52481 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:30:13.438[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:57804 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:30:17.589[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:52481 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:31:05.395[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:31:09.589[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:53994 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53995 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:31:13.770[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:53994 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:31:17.979[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:53995 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:32:05.092[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:53997 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:32:09.292[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:55140 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:32:13.480[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:53997 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:32:17.659[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:55140 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:33:05.401[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:33:09.591[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64957 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64958 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:33:13.814[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:33:17.983[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64957 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64958 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:34:05.097[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64960 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:34:09.270[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:54881 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:34:13.478[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64960 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:34:17.644[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:54881 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:35:05.402[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:35:09.592[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:55990 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55991 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:35:13.767[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:35:17.971[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:55990 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55991 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:36:05.089[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:55993 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:36:09.292[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:55645 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:36:13.493[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:55993 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:36:17.664[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:55645 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:36:23.449[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:55645 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:36:53.772[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:59548 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:37:05.087[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:59550 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:37:09.283[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:59562 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:37:13.463[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:59550 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:37:23.765[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:50906 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:37:53.450[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:50908 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:38:05.399[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:38:09.552[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:51936 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51937 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:38:13.758[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:51937 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:38:23.450[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:51940 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:38:53.770[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64735 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:39:05.091[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64737 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:39:09.333[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64751 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:39:13.543[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64737 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:39:23.763[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:59615 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:39:53.447[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:59617 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:40:05.400[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:40:09.573[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:49398 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49399 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:40:13.751[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:49398 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:40:23.445[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:49401 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:40:53.762[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58997 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:41:05.088[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58999 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:41:09.313[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:59024 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:41:13.495[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58999 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:41:23.759[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64011 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:41:53.454[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64013 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:42:05.404[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:42:09.584[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63022 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63023 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:42:13.765[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63022 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:42:23.451[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63025 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:42:53.762[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58062 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:43:05.098[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58064 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:43:09.268[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:43:13.484[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:51504 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58064 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:43:23.767[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:51529 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:43:53.448[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:51531 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:44:05.408[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:44:05.408[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:50090 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50091 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:44:13.818[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:50090 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:44:23.452[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:50093 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:44:53.767[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:50258 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:45:05.091[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:50260 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:45:09.256[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61891 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:45:13.406[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:50260 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:45:23.756[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61923 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:45:53.454[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61925 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:46:05.400[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:46:09.574[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:53020 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53021 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:46:13.759[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:53021 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:46:23.449[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:53023 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:46:53.759[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:51294 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:47:05.083[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:51297 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:47:09.258[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:49970 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:47:13.407[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:51297 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:47:23.766[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:49683 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:47:53.456[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:49685 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:48:05.397[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:48:09.608[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63897 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63898 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:48:13.760[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63898 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:48:23.460[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63901 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:48:53.767[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58897 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:49:05.096[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58899 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:49:09.288[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:54387 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:49:13.459[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58899 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:49:23.765[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58496 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:49:53.453[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58498 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:50:05.405[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:50:09.608[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:59655 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59656 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:50:13.831[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:59655 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:50:23.452[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:59661 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:50:53.774[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:52562 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:51:05.094[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:52564 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:51:09.279[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64710 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:51:13.520[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:52564 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:51:23.759[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64740 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:51:54.093[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:51814 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:52:05.408[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:52:09.621[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:59349 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59350 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:52:13.881[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:59350 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:52:24.083[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:59352 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:53:05.404[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:53:09.651[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:56759 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56760 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:53:13.793[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:53:17.970[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:56759 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56760 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:54:05.089[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:56762 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:54:09.271[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:50347 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:54:13.451[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:56762 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:54:17.612[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:50347 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:55:05.405[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:55:09.594[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:54117 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54119 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:55:13.710[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:55:17.884[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:54117 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54119 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:56:05.091[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:54123 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:56:09.284[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:65506 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:56:13.434[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:54123 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:56:17.656[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:65506 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:57:05.395[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:57:09.584[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64659 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64660 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:57:13.713[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64659 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:57:17.882[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64660 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:58:05.091[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64662 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:58:09.284[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:51601 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:58:13.494[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64662 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:58:17.662[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:51601 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:59:05.402[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:59:09.604[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:65071 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65072 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 16:59:13.775[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 16:59:17.965[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:65071 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65072 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:00:05.091[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:65074 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:00:09.295[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:62901 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:00:13.475[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:65074 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:00:17.683[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:62901 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:01:05.400[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:01:05.400[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:54510 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54511 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:01:13.815[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:01:17.974[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:54510 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54511 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:02:05.095[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:54513 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:02:09.246[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:59455 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:02:13.455[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:54513 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:02:17.606[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:59455 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:03:05.403[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:03:09.595[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64901 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64902 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:03:13.737[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:03:17.925[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64901 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64902 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:04:05.092[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64904 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:04:09.308[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:52053 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:04:13.456[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64904 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:04:17.626[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:52053 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:05:05.395[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:05:09.606[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58229 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58230 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:05:13.769[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:05:17.927[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58230 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58229 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:06:05.088[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58232 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:06:09.267[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:54583 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:06:13.438[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58232 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:06:17.628[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:54583 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:07:05.409[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:07:05.409[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63775 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63776 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:07:13.740[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:07:17.958[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63775 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63776 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:08:05.092[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63778 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:08:09.248[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:62511 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:08:13.429[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63778 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:08:17.580[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:62511 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:09:05.406[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:09:09.569[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:65010 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65011 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:09:13.713[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:09:17.881[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:65010 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65011 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:10:05.093[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:65013 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:10:09.260[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63136 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:10:13.449[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:65013 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:10:17.619[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63136 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:11:05.409[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:11:05.409[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64417 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64418 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:11:13.834[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:11:18.020[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64417 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64418 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:12:05.095[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64420 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:12:09.411[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64529 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:12:13.610[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64420 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:12:17.821[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64529 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:13:05.398[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:13:09.580[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:56109 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56110 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:13:13.761[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:13:17.961[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:56109 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56110 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:14:05.083[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:56112 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:14:09.291[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64037 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:14:13.492[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:56112 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:14:17.672[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64037 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:15:05.402[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:15:05.402[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63440 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63441 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:15:13.744[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63440 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:15:17.925[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63441 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:16:05.097[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63443 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:16:09.304[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:55209 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:16:13.482[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63443 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:16:17.674[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:55209 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:17:05.409[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:17:09.609[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:59194 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59195 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:17:13.755[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:17:17.922[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:59194 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59195 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:18:05.092[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:59197 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:18:09.257[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:60288 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:18:13.469[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:59197 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:18:17.643[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:60288 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:19:05.407[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:19:09.574[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:54679 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54680 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:19:13.757[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:19:17.995[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:54679 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54680 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:20:05.091[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:54683 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:20:09.227[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:60227 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:20:13.435[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:54683 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:20:17.625[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:60227 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:21:05.399[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:21:09.596[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58476 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58477 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:21:13.817[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58476 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:21:17.955[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58477 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:22:05.095[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58479 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:22:09.285[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61081 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:22:13.556[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58479 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:22:17.676[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61081 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:23:05.404[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:23:09.586[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63720 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63721 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:23:13.746[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:23:17.936[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63720 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63721 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:24:05.085[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63723 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:24:09.270[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64302 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:24:13.438[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63723 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:24:18.923[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64302 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:25:06.713[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:25:10.935[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61336 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61337 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:25:15.106[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61336 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:25:19.256[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61337 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:26:06.405[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61339 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:26:10.582[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:57401 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:26:14.775[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61339 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:26:18.947[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:57401 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:27:06.721[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:27:06.721[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61222 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61223 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:27:15.080[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:27:15.080[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61222 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61223 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:28:06.409[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61225 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:28:10.637[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:60869 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:28:14.827[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61225 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:28:18.996[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:60869 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:29:06.719[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:29:10.916[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61303 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61304 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:29:15.146[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:29:19.338[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61303 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61304 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+Run time of job "DataPipelineScheduler.run_daily_pipeline (trigger: cron[day_of_week='mon-fri', hour='17', minute='30'], next run at: 2026-04-30 17:30:00 CST)" was missed by 0:00:01.327088
+[32m2026-04-29 17:30:06.414[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61306 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:30:10.578[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:56790 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:30:14.816[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61306 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:30:18.990[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:56790 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:31:06.713[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:31:10.917[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63017 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63018 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:31:15.099[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63017 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:31:19.258[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63018 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:32:06.410[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63020 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:32:10.568[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:55260 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:32:14.698[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63020 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:32:18.938[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:55260 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:33:06.721[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:33:10.839[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64801 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64802 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:33:15.069[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64801 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:33:19.259[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64802 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:34:06.412[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64804 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:34:10.611[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:53658 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:34:14.798[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64804 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:34:18.969[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:53658 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:35:06.723[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:35:10.879[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:60894 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60897 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:35:15.120[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:35:19.329[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:60894 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60897 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:36:06.409[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:60899 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:36:10.583[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:52582 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:36:14.753[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:60899 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:36:18.951[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:52582 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:37:06.717[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:37:10.912[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:52417 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52418 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:37:15.089[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:37:19.230[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:52417 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52418 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:38:06.410[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:52420 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:38:10.571[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:51703 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:38:14.772[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:52420 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:38:18.964[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:51703 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:39:06.724[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:39:06.724[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64832 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64833 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:39:15.113[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:39:15.113[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64833 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64832 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:40:06.411[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64835 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:40:10.593[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:51395 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:40:14.783[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:64835 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:40:18.984[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:51395 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:41:06.715[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:41:10.881[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:56601 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56602 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:41:15.024[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:56601 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:41:19.162[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:56602 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:42:06.412[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:56604 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:42:10.604[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:55937 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:42:14.783[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:56604 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:42:18.984[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:55937 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:43:06.719[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:43:10.933[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63560 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63561 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:43:15.105[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63560 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:43:19.273[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63561 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:44:06.408[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63563 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:44:10.555[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:53005 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:44:14.759[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:63563 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:44:18.924[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:53005 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:45:06.723[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:45:06.723[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:62483 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62484 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:45:15.107[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:45:19.287[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:62483 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62484 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:46:06.404[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:62486 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:46:10.578[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:56849 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:46:14.815[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:62486 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:46:19.007[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:56849 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:47:06.716[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:47:06.716[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:54175 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54176 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:47:15.086[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:47:19.315[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:54175 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54176 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:48:06.409[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:54179 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:48:10.556[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:50715 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:48:14.726[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:54179 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:48:18.898[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:50715 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:49:06.714[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:49:10.906[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:49677 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49678 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:49:15.100[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:49:19.267[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:49677 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49678 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:50:06.412[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:49683 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:50:10.618[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61987 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:50:14.796[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:49683 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:50:18.986[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61987 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:51:06.712[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:51:10.918[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:50139 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50140 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:51:15.120[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:51:19.328[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:50139 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50140 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:52:06.409[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:50142 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:52:10.603[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:55306 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:52:14.828[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:50142 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:52:18.999[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:55306 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:52:36.817[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61186 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:52:55.405[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:61189 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:53:06.720[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:53:10.959[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:56173 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56174 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:53:15.144[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:56173 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:53:25.415[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:56188 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:54:06.718[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:54:10.899[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58088 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58089 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:54:15.082[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:54:19.270[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58088 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58089 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:55:06.412[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58091 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:55:10.620[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:57949 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:55:14.850[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:58091 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:55:19.024[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:57949 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:56:06.725[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:56:10.906[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:57318 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57319 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:56:15.078[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:56:19.259[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:57319 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57318 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:57:06.407[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:57321 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:57:10.618[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:65366 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:57:14.781[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:57321 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:57:18.906[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:65366 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:58:06.719[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:58:10.931[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:62040 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62041 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+[32m2026-04-29 17:58:15.095[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+[32m2026-04-29 17:58:15.095[0m | [34m[1mDEBUG   [0m | [36mAPI-Server[0m | [34m[1mRequest: GET /api/market/quotes[0m
+INFO:     127.0.0.1:62040 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,002594.SZ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62041 - "GET /api/market/quotes?codes=000001.SH,399001.SZ,399006.SZ,000905.SH,000510.SH,600999,002318,603707,002594.SZ HTTP/1.1" 200 OK
