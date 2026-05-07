@@ -1,0 +1,620 @@
+2026-04-26 02:07:04.896 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成
+2026-04-26 02:07:04.897 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-04-26 02:08:18.915 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成
+2026-04-26 02:08:18.915 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-04-26 02:09:09.733 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成
+2026-04-26 02:09:09.733 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-04-26 02:09:27.798 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成
+2026-04-26 02:09:27.798 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-04-26 02:10:32.150 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成
+2026-04-26 02:10:32.150 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-04-26 02:11:02.158 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成
+2026-04-26 02:11:02.158 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-04-26 02:12:47.723 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成
+2026-04-26 02:12:47.724 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-04-26 02:14:05.719 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成
+2026-04-26 02:14:05.719 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-04-26 02:50:15.808 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成
+2026-04-26 02:50:15.809 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-04-26 02:51:15.870 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成
+2026-04-26 02:51:15.871 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-04-26 02:52:57.128 | WARNING  | TushareAPI | TUSHARE_KEY is not set in environment.
+2026-04-26 02:52:57.436 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成
+2026-04-26 02:52:57.436 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-04-26 02:54:49.009 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成
+2026-04-26 02:54:49.009 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-04-26 02:59:18.067 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成
+2026-04-26 02:59:18.068 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-04-26 02:59:18.476 | WARNING  | TushareAPI | TUSHARE_KEY is not set in environment.
+2026-04-26 02:59:18.520 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-04-26 02:59:18.521 | INFO     | API-Server | P9 Quant Platform Shutdown...
+2026-04-26 02:59:57.041 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成
+2026-04-26 02:59:57.042 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-04-26 02:59:57.446 | WARNING  | TushareAPI | TUSHARE_KEY is not set in environment.
+2026-04-26 02:59:57.488 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-04-26 03:04:07.711 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成
+2026-04-26 03:04:07.711 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-04-26 03:04:08.111 | WARNING  | TushareAPI | TUSHARE_KEY is not set in environment.
+2026-04-26 03:04:08.156 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-04-26 03:15:43.904 | INFO     | StrategyFactory | 同步本地策略目录...
+2026-04-26 03:16:29.773 | WARNING  | event_analyst | EventAnalyst: 未找到 DEEPSEEK_API_KEY。大模型认知引擎降级。
+2026-04-26 03:16:29.774 | INFO     | TrendRadarV2 | TrendRadarV2 | 成功加载 0 条历史去重指纹。
+2026-04-26 03:16:29.774 | INFO     | TrendRadarV2 | TrendRadarV2 | 收到人工触发指令，插拔抓取启动...
+2026-04-26 03:16:29.835 | INFO     | TrendRadarV2 | TR SQLite Loaded: 0 new items from News & RSS DBs
+2026-04-26 03:16:30.747 | INFO     | TrendRadarV2 | TrendRadarV2 | 收到人工触发指令，插拔抓取启动...
+2026-04-26 03:16:30.750 | INFO     | TrendRadarV2 | TR SQLite Loaded: 0 new items from News & RSS DBs
+2026-04-26 03:16:31.395 | INFO     | TrendRadarV2 | TrendRadarV2 | 收到人工触发指令，插拔抓取启动...
+2026-04-26 03:16:31.418 | INFO     | TrendRadarV2 | TR SQLite Loaded: 0 new items from News & RSS DBs
+2026-04-26 03:16:31.650 | INFO     | TrendRadarV2 | TrendRadarV2 | 收到人工触发指令，插拔抓取启动...
+2026-04-26 03:16:31.652 | INFO     | TrendRadarV2 | TR SQLite Loaded: 0 new items from News & RSS DBs
+2026-04-26 03:16:32.019 | INFO     | TrendRadarV2 | TrendRadarV2 | 收到人工触发指令，插拔抓取启动...
+2026-04-26 03:16:32.021 | INFO     | TrendRadarV2 | TR SQLite Loaded: 0 new items from News & RSS DBs
+2026-04-26 03:16:32.251 | INFO     | TrendRadarV2 | TrendRadarV2 | 收到人工触发指令，插拔抓取启动...
+2026-04-26 03:16:32.253 | INFO     | TrendRadarV2 | TR SQLite Loaded: 0 new items from News & RSS DBs
+2026-04-26 03:16:32.436 | INFO     | TrendRadarV2 | TrendRadarV2 | 收到人工触发指令，插拔抓取启动...
+2026-04-26 03:16:32.437 | INFO     | TrendRadarV2 | TR SQLite Loaded: 0 new items from News & RSS DBs
+2026-04-26 03:19:02.144 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (1/5)
+2026-04-26 03:19:02.773 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (2/5)
+2026-04-26 03:19:03.389 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (3/5)
+2026-04-26 03:19:04.004 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (4/5)
+2026-04-26 03:19:04.634 | ERROR    | DuckDB     | DuckDB | 无法连接到数据库: IO Error: Cannot open file "E:\1target\p9_project\quant-platform\data\meta\meta.db": 另一个程序正在使用此文件，进程无法访问。
+
+File is already open in 
+C:\Python314\python.exe (PID 66264)
+2026-04-26 03:19:04.642 | ERROR    | DuckDB     | DuckDB | 初始化表结构失败: IO Error: Cannot open file "E:\1target\p9_project\quant-platform\data\meta\meta.db": 另一个程序正在使用此文件，进程无法访问。
+
+File is already open in 
+C:\Python314\python.exe (PID 66264)
+2026-04-26 03:21:45.691 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成
+2026-04-26 03:21:45.691 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-04-26 03:22:15.795 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成
+2026-04-26 03:22:15.795 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-04-26 03:22:16.165 | WARNING  | TushareAPI | TUSHARE_KEY is not set in environment.
+2026-04-26 03:22:16.210 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-04-26 03:29:46.015 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (1/5)
+2026-04-26 03:29:46.635 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (2/5)
+2026-04-26 03:29:47.248 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (3/5)
+2026-04-26 03:29:47.862 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (4/5)
+2026-04-26 03:29:48.502 | ERROR    | DuckDB     | DuckDB | 无法连接到数据库: IO Error: Cannot open file "E:\1target\p9_project\quant-platform\data\meta\meta.db": 另一个程序正在使用此文件，进程无法访问。
+
+File is already open in 
+C:\Python314\python.exe (PID 46764)
+2026-04-26 03:29:48.503 | ERROR    | DuckDB     | DuckDB | 初始化表结构失败: IO Error: Cannot open file "E:\1target\p9_project\quant-platform\data\meta\meta.db": 另一个程序正在使用此文件，进程无法访问。
+
+File is already open in 
+C:\Python314\python.exe (PID 46764)
+2026-04-26 03:35:33.712 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成
+2026-04-26 03:35:33.712 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-04-26 03:35:48.908 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成
+2026-04-26 03:35:48.908 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-04-26 03:35:48.909 | INFO     | PopulateStocks | 正在多页拉取全量 A 股股票列表 (源: 新浪 API)...
+2026-04-26 03:35:49.435 | INFO     | PopulateStocks | Page 1: 获取到 100 条数据
+2026-04-26 03:35:49.912 | INFO     | PopulateStocks | Page 2: 获取到 100 条数据
+2026-04-26 03:35:50.486 | INFO     | PopulateStocks | Page 3: 获取到 100 条数据
+2026-04-26 03:35:51.247 | INFO     | PopulateStocks | Page 4: 获取到 100 条数据
+2026-04-26 03:35:51.827 | INFO     | PopulateStocks | Page 5: 获取到 100 条数据
+2026-04-26 03:35:52.402 | INFO     | PopulateStocks | Page 6: 获取到 100 条数据
+2026-04-26 03:35:52.855 | INFO     | PopulateStocks | Page 7: 获取到 100 条数据
+2026-04-26 03:35:53.283 | INFO     | PopulateStocks | Page 8: 获取到 100 条数据
+2026-04-26 03:35:53.915 | INFO     | PopulateStocks | Page 9: 获取到 100 条数据
+2026-04-26 03:35:54.524 | INFO     | PopulateStocks | Page 10: 获取到 100 条数据
+2026-04-26 03:35:55.125 | INFO     | PopulateStocks | Page 11: 获取到 100 条数据
+2026-04-26 03:35:55.726 | INFO     | PopulateStocks | Page 12: 获取到 100 条数据
+2026-04-26 03:35:56.187 | INFO     | PopulateStocks | Page 13: 获取到 100 条数据
+2026-04-26 03:35:56.815 | INFO     | PopulateStocks | Page 14: 获取到 100 条数据
+2026-04-26 03:35:57.425 | INFO     | PopulateStocks | Page 15: 获取到 100 条数据
+2026-04-26 03:35:58.295 | INFO     | PopulateStocks | Page 16: 获取到 100 条数据
+2026-04-26 03:35:58.884 | INFO     | PopulateStocks | Page 17: 获取到 100 条数据
+2026-04-26 03:35:59.436 | INFO     | PopulateStocks | Page 18: 获取到 100 条数据
+2026-04-26 03:36:00.159 | INFO     | PopulateStocks | Page 19: 获取到 100 条数据
+2026-04-26 03:36:00.895 | INFO     | PopulateStocks | Page 20: 获取到 100 条数据
+2026-04-26 03:36:01.347 | INFO     | PopulateStocks | Page 21: 获取到 100 条数据
+2026-04-26 03:36:01.805 | INFO     | PopulateStocks | Page 22: 获取到 100 条数据
+2026-04-26 03:36:02.396 | INFO     | PopulateStocks | Page 23: 获取到 100 条数据
+2026-04-26 03:36:03.031 | INFO     | PopulateStocks | Page 24: 获取到 100 条数据
+2026-04-26 03:36:03.719 | INFO     | PopulateStocks | Page 25: 获取到 100 条数据
+2026-04-26 03:36:04.345 | INFO     | PopulateStocks | Page 26: 获取到 100 条数据
+2026-04-26 03:36:04.809 | INFO     | PopulateStocks | Page 27: 获取到 100 条数据
+2026-04-26 03:36:05.397 | INFO     | PopulateStocks | Page 28: 获取到 100 条数据
+2026-04-26 03:36:05.965 | INFO     | PopulateStocks | Page 29: 获取到 100 条数据
+2026-04-26 03:36:06.626 | INFO     | PopulateStocks | Page 30: 获取到 100 条数据
+2026-04-26 03:36:07.242 | INFO     | PopulateStocks | Page 31: 获取到 100 条数据
+2026-04-26 03:36:07.856 | INFO     | PopulateStocks | Page 32: 获取到 100 条数据
+2026-04-26 03:36:08.467 | INFO     | PopulateStocks | Page 33: 获取到 100 条数据
+2026-04-26 03:36:09.056 | INFO     | PopulateStocks | Page 34: 获取到 100 条数据
+2026-04-26 03:36:09.598 | INFO     | PopulateStocks | Page 35: 获取到 100 条数据
+2026-04-26 03:36:10.319 | INFO     | PopulateStocks | Page 36: 获取到 100 条数据
+2026-04-26 03:36:10.969 | INFO     | PopulateStocks | Page 37: 获取到 100 条数据
+2026-04-26 03:36:11.452 | INFO     | PopulateStocks | Page 38: 获取到 100 条数据
+2026-04-26 03:36:11.974 | INFO     | PopulateStocks | Page 39: 获取到 100 条数据
+2026-04-26 03:36:12.489 | INFO     | PopulateStocks | Page 40: 获取到 100 条数据
+2026-04-26 03:36:13.115 | INFO     | PopulateStocks | Page 41: 获取到 100 条数据
+2026-04-26 03:36:13.575 | INFO     | PopulateStocks | Page 42: 获取到 100 条数据
+2026-04-26 03:36:14.348 | INFO     | PopulateStocks | Page 43: 获取到 100 条数据
+2026-04-26 03:36:15.006 | INFO     | PopulateStocks | Page 44: 获取到 100 条数据
+2026-04-26 03:36:15.606 | INFO     | PopulateStocks | Page 45: 获取到 100 条数据
+2026-04-26 03:36:16.196 | INFO     | PopulateStocks | Page 46: 获取到 100 条数据
+2026-04-26 03:36:16.782 | INFO     | PopulateStocks | Page 47: 获取到 100 条数据
+2026-04-26 03:36:17.306 | INFO     | PopulateStocks | Page 48: 获取到 100 条数据
+2026-04-26 03:36:17.769 | INFO     | PopulateStocks | Page 49: 获取到 100 条数据
+2026-04-26 03:36:18.216 | INFO     | PopulateStocks | Page 50: 获取到 100 条数据
+2026-04-26 03:36:18.834 | INFO     | PopulateStocks | Page 51: 获取到 100 条数据
+2026-04-26 03:36:19.487 | INFO     | PopulateStocks | Page 52: 获取到 100 条数据
+2026-04-26 03:36:20.031 | INFO     | PopulateStocks | Page 53: 获取到 100 条数据
+2026-04-26 03:36:20.626 | INFO     | PopulateStocks | Page 54: 获取到 100 条数据
+2026-04-26 03:36:21.056 | INFO     | PopulateStocks | Page 55: 获取到 100 条数据
+2026-04-26 03:36:21.510 | INFO     | PopulateStocks | Page 56: 获取到 9 条数据
+2026-04-26 03:36:22.045 | INFO     | PopulateStocks | Page 57 返回为空，拉取结束。
+2026-04-26 03:36:22.052 | INFO     | PopulateStocks | 合并完成，共 5509 只股票，正在写入数据库...
+2026-04-26 03:36:22.100 | INFO     | DuckDB     | 更新股票元数据: 5509 条
+2026-04-26 03:36:22.100 | INFO     | PopulateStocks | 数据库写入完成。
+2026-04-26 03:36:36.696 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成
+2026-04-26 03:36:36.696 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-04-26 03:37:58.583 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成
+2026-04-26 03:37:58.584 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-04-26 03:37:58.982 | WARNING  | TushareAPI | TUSHARE_KEY is not set in environment.
+2026-04-26 03:37:59.019 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-04-26 08:24:30.855 | INFO     | API-Agents | 🚀 开始为 300687 (赛意信息) 生成诊断报告...
+2026-04-26 08:24:30.858 | INFO     | AgentCommittee | [Committee] Fetching data context for 300687...
+2026-04-26 08:24:30.859 | INFO     | AgentCommittee | [Committee] Dispatching Bear Researcher for 300687...
+2026-04-26 08:24:30.859 | INFO     | AgentCommittee | [Committee] Dispatching Bull Researcher for 300687...
+2026-04-26 08:25:36.367 | ERROR    | API-Agents | AI Analyse Critical Failure: Request timed out.
+2026-04-26 08:25:36.473 | ERROR    | API-Agents | Traceback (most recent call last):
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpx\_transports\default.py", line 69, in map_httpcore_exceptions
+    yield
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpx\_transports\default.py", line 233, in handle_request
+    resp = self._pool.handle_request(req)
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpcore\_sync\connection_pool.py", line 256, in handle_request
+    raise exc from None
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpcore\_sync\connection_pool.py", line 236, in handle_request
+    response = connection.handle_request(
+        pool_request.request
+    )
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpcore\_sync\connection.py", line 101, in handle_request
+    raise exc
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpcore\_sync\connection.py", line 78, in handle_request
+    stream = self._connect(request)
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpcore\_sync\connection.py", line 124, in _connect
+    stream = self._network_backend.connect_tcp(**kwargs)
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpcore\_backends\sync.py", line 207, in connect_tcp
+    with map_exceptions(exc_map):
+         ~~~~~~~~~~~~~~^^^^^^^^^
+  File "C:\Python314\Lib\contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpcore\_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ConnectTimeout: [WinError 10060] 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\openai\_base_client.py", line 1019, in request
+    response = self._send_request(
+        request,
+        stream=stream or self._should_stream_response_body(request=request),
+        **kwargs,
+    )
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\openai\_client.py", line 400, in _send_request
+    return self._send_with_auth_retry(request, stream=stream, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\openai\_client.py", line 378, in _send_with_auth_retry
+    response = super()._send_request(request, stream=stream, **kwargs)
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\openai\_base_client.py", line 947, in _send_request
+    return self._client.send(request, stream=stream, **kwargs)
+           ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpx\_client.py", line 914, in send
+    response = self._send_handling_auth(
+        request,
+    ...<2 lines>...
+        history=[],
+    )
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpx\_client.py", line 942, in _send_handling_auth
+    response = self._send_handling_redirects(
+        request,
+        follow_redirects=follow_redirects,
+        history=history,
+    )
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpx\_client.py", line 979, in _send_handling_redirects
+    response = self._send_single_request(request)
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpx\_client.py", line 1015, in _send_single_request
+    response = transport.handle_request(request)
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpx\_transports\default.py", line 232, in handle_request
+    with map_httpcore_exceptions():
+         ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Python314\Lib\contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpx\_transports\default.py", line 86, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ConnectTimeout: [WinError 10060] 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "E:\1target\p9_project\quant-platform\app\api\agents.py", line 16, in analyze_stock
+    report = generate_ai_report(stock_code)
+  File "E:\1target\p9_project\quant-platform\app\agents\committee.py", line 139, in generate_ai_report
+    result = committee_app.invoke(initial_state)
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langgraph\pregel\main.py", line 3365, in invoke
+    for chunk in self.stream(
+                 ~~~~~~~~~~~^
+        input,
+        ^^^^^^
+    ...<10 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    ):
+    ^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langgraph\pregel\main.py", line 2759, in stream
+    for _ in runner.tick(
+             ~~~~~~~~~~~^
+        [t for t in loop.tasks.values() if not t.writes],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        schedule_task=loop.accept_push,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ):
+    ^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langgraph\pregel\_runner.py", line 258, in tick
+    _panic_or_proceed(
+    ~~~~~~~~~~~~~~~~~^
+        futures.done.union(f for f, t in futures.items() if t is not None),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        panic=reraise,
+        ^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langgraph\pregel\_runner.py", line 520, in _panic_or_proceed
+    raise exc
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langgraph\pregel\_executor.py", line 80, in done
+    task.result()
+    ~~~~~~~~~~~^^
+  File "C:\Python314\Lib\concurrent\futures\_base.py", line 443, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "C:\Python314\Lib\concurrent\futures\_base.py", line 395, in __get_result
+    raise self._exception
+  File "C:\Python314\Lib\concurrent\futures\thread.py", line 86, in run
+    result = ctx.run(self.task)
+  File "C:\Python314\Lib\concurrent\futures\thread.py", line 73, in run
+    return fn(*args, **kwargs)
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langgraph\pregel\_retry.py", line 126, in run_with_retry
+    return task.proc.invoke(task.input, config)
+           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langgraph\_internal\_runnable.py", line 656, in invoke
+    input = context.run(step.invoke, input, config, **kwargs)
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langgraph\_internal\_runnable.py", line 400, in invoke
+    ret = self.func(*args, **kwargs)
+  File "E:\1target\p9_project\quant-platform\app\agents\committee.py", line 69, in bear_researcher
+    resp = llm.invoke([
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": human_prompt}
+    ])
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langchain_core\language_models\chat_models.py", line 455, in invoke
+    self.generate_prompt(
+    ~~~~~~~~~~~~~~~~~~~~^
+        [self._convert_input(input)],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    ).generations[0][0],
+    ^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langchain_core\language_models\chat_models.py", line 1198, in generate_prompt
+    return self.generate(prompt_messages, stop=stop, callbacks=callbacks, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langchain_core\language_models\chat_models.py", line 1005, in generate
+    self._generate_with_cache(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        m,
+        ^^
+    ...<2 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    )
+    ^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langchain_core\language_models\chat_models.py", line 1310, in _generate_with_cache
+    result = self._generate(
+        messages, stop=stop, run_manager=run_manager, **kwargs
+    )
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langchain_openai\chat_models\base.py", line 1503, in _generate
+    _handle_openai_api_error(e)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langchain_openai\chat_models\base.py", line 1498, in _generate
+    raw_response = self.client.with_raw_response.create(**payload)
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\openai\_legacy_response.py", line 367, in wrapped
+    return cast(LegacyAPIResponse[R], func(*args, **kwargs))
+                                      ~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\openai\_utils\_utils.py", line 287, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\openai\resources\chat\completions\completions.py", line 1211, in create
+    return self._post(
+           ~~~~~~~~~~^
+        "/chat/completions",
+        ^^^^^^^^^^^^^^^^^^^^
+    ...<47 lines>...
+        stream_cls=Stream[ChatCompletionChunk],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\openai\_base_client.py", line 1314, in post
+    return cast(ResponseT, self.request(cast_to, opts, stream=stream, stream_cls=stream_cls))
+                           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\openai\_base_client.py", line 1037, in request
+    raise APITimeoutError(request=request) from err
+openai.APITimeoutError: Request timed out.
+During task with name 'bear_researcher' and id '39f32b73-3e66-f16e-ae37-636e1b252a8d'
+
+2026-04-26 10:42:20.867 | INFO     | API-Agents | 🚀 开始为 300687 (赛意信息) 生成诊断报告...
+2026-04-26 10:42:20.870 | INFO     | AgentCommittee | [Committee] Fetching data context for 300687...
+2026-04-26 10:42:20.871 | INFO     | AgentCommittee | [Committee] Dispatching Bear Researcher for 300687...
+2026-04-26 10:42:20.875 | INFO     | AgentCommittee | [Committee] Dispatching Bull Researcher for 300687...
+2026-04-26 10:43:25.440 | ERROR    | API-Agents | AI Analyse Critical Failure: Request timed out.
+2026-04-26 10:43:25.446 | ERROR    | API-Agents | Traceback (most recent call last):
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpx\_transports\default.py", line 69, in map_httpcore_exceptions
+    yield
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpx\_transports\default.py", line 233, in handle_request
+    resp = self._pool.handle_request(req)
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpcore\_sync\connection_pool.py", line 256, in handle_request
+    raise exc from None
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpcore\_sync\connection_pool.py", line 236, in handle_request
+    response = connection.handle_request(
+        pool_request.request
+    )
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpcore\_sync\connection.py", line 101, in handle_request
+    raise exc
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpcore\_sync\connection.py", line 78, in handle_request
+    stream = self._connect(request)
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpcore\_sync\connection.py", line 124, in _connect
+    stream = self._network_backend.connect_tcp(**kwargs)
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpcore\_backends\sync.py", line 207, in connect_tcp
+    with map_exceptions(exc_map):
+         ~~~~~~~~~~~~~~^^^^^^^^^
+  File "C:\Python314\Lib\contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpcore\_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ConnectTimeout: [WinError 10060] 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\openai\_base_client.py", line 1019, in request
+    response = self._send_request(
+        request,
+        stream=stream or self._should_stream_response_body(request=request),
+        **kwargs,
+    )
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\openai\_client.py", line 400, in _send_request
+    return self._send_with_auth_retry(request, stream=stream, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\openai\_client.py", line 378, in _send_with_auth_retry
+    response = super()._send_request(request, stream=stream, **kwargs)
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\openai\_base_client.py", line 947, in _send_request
+    return self._client.send(request, stream=stream, **kwargs)
+           ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpx\_client.py", line 914, in send
+    response = self._send_handling_auth(
+        request,
+    ...<2 lines>...
+        history=[],
+    )
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpx\_client.py", line 942, in _send_handling_auth
+    response = self._send_handling_redirects(
+        request,
+        follow_redirects=follow_redirects,
+        history=history,
+    )
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpx\_client.py", line 979, in _send_handling_redirects
+    response = self._send_single_request(request)
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpx\_client.py", line 1015, in _send_single_request
+    response = transport.handle_request(request)
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpx\_transports\default.py", line 232, in handle_request
+    with map_httpcore_exceptions():
+         ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Python314\Lib\contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\httpx\_transports\default.py", line 86, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ConnectTimeout: [WinError 10060] 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "E:\1target\p9_project\quant-platform\app\api\agents.py", line 16, in analyze_stock
+  File "E:\1target\p9_project\quant-platform\app\agents\committee.py", line 139, in generate_ai_report
+    result = committee_app.invoke(initial_state)
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langgraph\pregel\main.py", line 3365, in invoke
+    for chunk in self.stream(
+                 ~~~~~~~~~~~^
+        input,
+        ^^^^^^
+    ...<10 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    ):
+    ^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langgraph\pregel\main.py", line 2759, in stream
+    for _ in runner.tick(
+             ~~~~~~~~~~~^
+        [t for t in loop.tasks.values() if not t.writes],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        schedule_task=loop.accept_push,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ):
+    ^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langgraph\pregel\_runner.py", line 258, in tick
+    _panic_or_proceed(
+    ~~~~~~~~~~~~~~~~~^
+        futures.done.union(f for f, t in futures.items() if t is not None),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        panic=reraise,
+        ^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langgraph\pregel\_runner.py", line 520, in _panic_or_proceed
+    raise exc
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langgraph\pregel\_executor.py", line 80, in done
+    task.result()
+    ~~~~~~~~~~~^^
+  File "C:\Python314\Lib\concurrent\futures\_base.py", line 443, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "C:\Python314\Lib\concurrent\futures\_base.py", line 395, in __get_result
+    raise self._exception
+  File "C:\Python314\Lib\concurrent\futures\thread.py", line 86, in run
+    result = ctx.run(self.task)
+  File "C:\Python314\Lib\concurrent\futures\thread.py", line 73, in run
+    return fn(*args, **kwargs)
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langgraph\pregel\_retry.py", line 126, in run_with_retry
+    return task.proc.invoke(task.input, config)
+           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langgraph\_internal\_runnable.py", line 656, in invoke
+    input = context.run(step.invoke, input, config, **kwargs)
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langgraph\_internal\_runnable.py", line 400, in invoke
+    ret = self.func(*args, **kwargs)
+  File "E:\1target\p9_project\quant-platform\app\agents\committee.py", line 69, in bear_researcher
+    resp = llm.invoke([
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": human_prompt}
+    ])
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langchain_core\language_models\chat_models.py", line 455, in invoke
+    self.generate_prompt(
+    ~~~~~~~~~~~~~~~~~~~~^
+        [self._convert_input(input)],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    ).generations[0][0],
+    ^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langchain_core\language_models\chat_models.py", line 1198, in generate_prompt
+    return self.generate(prompt_messages, stop=stop, callbacks=callbacks, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langchain_core\language_models\chat_models.py", line 1005, in generate
+    self._generate_with_cache(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        m,
+        ^^
+    ...<2 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    )
+    ^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langchain_core\language_models\chat_models.py", line 1310, in _generate_with_cache
+    result = self._generate(
+        messages, stop=stop, run_manager=run_manager, **kwargs
+    )
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langchain_openai\chat_models\base.py", line 1503, in _generate
+    _handle_openai_api_error(e)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\langchain_openai\chat_models\base.py", line 1498, in _generate
+    raw_response = self.client.with_raw_response.create(**payload)
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\openai\_legacy_response.py", line 367, in wrapped
+    return cast(LegacyAPIResponse[R], func(*args, **kwargs))
+                                      ~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\openai\_utils\_utils.py", line 287, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\openai\resources\chat\completions\completions.py", line 1211, in create
+    return self._post(
+           ~~~~~~~~~~^
+        "/chat/completions",
+        ^^^^^^^^^^^^^^^^^^^^
+    ...<47 lines>...
+        stream_cls=Stream[ChatCompletionChunk],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\openai\_base_client.py", line 1314, in post
+    return cast(ResponseT, self.request(cast_to, opts, stream=stream, stream_cls=stream_cls))
+                           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\liuziheng\AppData\Roaming\Python\Python314\site-packages\openai\_base_client.py", line 1037, in request
+    raise APITimeoutError(request=request) from err
+openai.APITimeoutError: Request timed out.
+During task with name 'bear_researcher' and id '2e1c64c3-3e66-3f2f-201f-61fcbb738d56'
+
+2026-04-26 22:03:29.137 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (1/5)
+2026-04-26 22:03:29.745 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (2/5)
+2026-04-26 22:03:30.355 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (3/5)
+2026-04-26 22:03:30.965 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (4/5)
+2026-04-26 22:03:31.577 | ERROR    | DuckDB     | DuckDB | 无法连接到数据库: IO Error: Cannot open file "E:\1target\p9_project\quant-platform\data\meta\meta.db": 另一个程序正在使用此文件，进程无法访问。
+
+File is already open in 
+C:\Python314\python.exe (PID 13360)
+2026-04-26 22:03:31.578 | ERROR    | DuckDB     | DuckDB | 初始化表结构失败: IO Error: Cannot open file "E:\1target\p9_project\quant-platform\data\meta\meta.db": 另一个程序正在使用此文件，进程无法访问。
+
+File is already open in 
+C:\Python314\python.exe (PID 13360)
+2026-04-26 22:05:17.120 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成
+2026-04-26 22:05:17.121 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-04-26 22:05:18.015 | WARNING  | TushareAPI | TUSHARE_KEY is not set in environment.
+2026-04-26 22:06:36.151 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成
+2026-04-26 22:06:36.152 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-04-26 22:07:44.418 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成
+2026-04-26 22:07:44.418 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-04-26 22:07:45.944 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (1/5)
+2026-04-26 22:07:46.563 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (2/5)
+2026-04-26 22:07:47.179 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (3/5)
+2026-04-26 22:07:47.795 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (4/5)
+2026-04-26 22:07:48.411 | ERROR    | DuckDB     | DuckDB | 无法连接到数据库: IO Error: Cannot open file "E:\1target\p9_project\quant-platform\data\meta\meta.db": 另一个程序正在使用此文件，进程无法访问。
+
+File is already open in 
+C:\Python314\python.exe (PID 19476)
+2026-04-26 22:07:48.412 | ERROR    | DuckDB     | DuckDB | 初始化表结构失败: IO Error: Cannot open file "E:\1target\p9_project\quant-platform\data\meta\meta.db": 另一个程序正在使用此文件，进程无法访问。
+
+File is already open in 
+C:\Python314\python.exe (PID 19476)
+2026-04-26 22:08:09.132 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (1/5)
+2026-04-26 22:08:09.754 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (2/5)
+2026-04-26 22:08:10.382 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (3/5)
+2026-04-26 22:08:11.003 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (4/5)
+2026-04-26 22:08:11.616 | ERROR    | DuckDB     | DuckDB | 无法连接到数据库: IO Error: Cannot open file "E:\1target\p9_project\quant-platform\data\meta\meta.db": 另一个程序正在使用此文件，进程无法访问。
+
+File is already open in 
+C:\Python314\python.exe (PID 19476)
+2026-04-26 22:08:11.616 | ERROR    | DuckDB     | DuckDB | 初始化表结构失败: IO Error: Cannot open file "E:\1target\p9_project\quant-platform\data\meta\meta.db": 另一个程序正在使用此文件，进程无法访问。
+
+File is already open in 
+C:\Python314\python.exe (PID 19476)
+2026-04-26 22:08:36.071 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成
+2026-04-26 22:08:36.071 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-04-26 22:08:36.601 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-04-26 22:09:05.463 | INFO     | API-Agents | 🚀 开始为 300687 (赛意信息) 生成诊断报告...
+2026-04-26 22:09:05.466 | INFO     | AgentCommittee | [Committee] Fetching data context for 300687...
+2026-04-26 22:09:05.827 | INFO     | AgentCommittee | [Committee] Dispatching Bear Researcher for 300687...
+2026-04-26 22:09:05.827 | INFO     | AgentCommittee | [Committee] Dispatching Bull Researcher for 300687...
+2026-04-26 22:09:58.335 | INFO     | AgentCommittee | [Committee] Research Manager synthesizing final report for 300687...
+2026-04-26 22:10:49.515 | INFO     | API-Agents | ✅ AI 报告已成功存库，ID: 1
+2026-04-26 22:12:00.753 | INFO     | API-DataSync | [Async] [QMT] Start Sync (Freq: 5m, Range: Last 30d)
+2026-04-26 22:12:02.795 | ERROR    | API-DataSync | QMT Sync Dispatch Failed: HTTPConnectionPool(host='host.docker.internal', port=8081): Max retries exceeded with url: /api/sync/intra (Caused by NewConnectionError("HTTPConnection(host='host.docker.internal', port=8081): Failed to establish a new connection: [WinError 10061] 由于目标计算机积极拒绝，无法连接。"))
+2026-04-26 22:13:17.547 | INFO     | DataManager | 开启同步任务 | 模式: incremental | 频率: daily
+2026-04-26 22:13:17.548 | INFO     | TushareSync | Fetching stock basics from Tushare...
+2026-04-26 22:13:17.857 | INFO     | DuckDB     | 更新股票元数据: 5510 条
+2026-04-26 22:13:17.857 | INFO     | TushareSync | Successfully synced 5510 stock basics.
+2026-04-26 22:13:17.858 | INFO     | TushareSync | Fetching daily basics snapshot from Tushare (Date: Latest)...
+2026-04-26 22:13:18.404 | INFO     | TushareSync | Pulling more financial indicators (ROE, Margin) in chunks of 100...
+2026-04-26 22:13:28.319 | INFO     | SyncIntraday | 🛑 [QMT] 已接收到用户手动中断指令，将在当前批次结束后停止...
+2026-04-26 22:15:34.913 | INFO     | DuckDB     | 更新股票基本面数据: 5496 条
+2026-04-26 22:15:34.914 | INFO     | TushareSync | Successfully synced 5496 fundamentals records with enhanced indicators.
+2026-04-26 22:15:34.915 | INFO     | ParquetPipeline | ParquetPipeline | Fetching daily k-lines from 20260419 to 20260426...
+2026-04-26 22:15:35.027 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260424...
+2026-04-26 22:15:35.731 | ERROR    | ParquetPipeline | ParquetPipeline | Sync failed: Cannot save file into a non-existent directory: 'E:\1target\p9_project\quant-platform\data\parquet\daily'
+2026-04-26 23:08:20.155 | INFO     | SyncIntraday | 🛑 [QMT] 已接收到用户手动中断指令，将在当前批次结束后停止...
+2026-04-26 23:08:23.107 | INFO     | API-DataSync | [Async] [QMT] Start Sync (Freq: 5m, Range: Last 30d)
+2026-04-26 23:40:37.341 | ERROR    | System     | TA-Lib is not installed. Technical indicators will be disabled. Please check Dockerfile or install TA-Lib manually.
+2026-04-26 23:40:37.517 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (1/5)
+2026-04-26 23:40:38.191 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (2/5)
+2026-04-26 23:40:38.865 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (3/5)
+2026-04-26 23:40:39.545 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (4/5)
+2026-04-26 23:40:40.214 | ERROR    | DuckDB     | DuckDB | 无法连接到数据库: IO Error: Cannot open file "E:\1target\p9_project\quant-platform\data\meta\meta.db": 另一个程序正在使用此文件，进程无法访问。
+
+File is already open in 
+C:\Python314\python.exe (PID 45980)
+2026-04-26 23:40:40.215 | ERROR    | DuckDB     | DuckDB | 初始化表结构失败: IO Error: Cannot open file "E:\1target\p9_project\quant-platform\data\meta\meta.db": 另一个程序正在使用此文件，进程无法访问。
+
+File is already open in 
+C:\Python314\python.exe (PID 45980)

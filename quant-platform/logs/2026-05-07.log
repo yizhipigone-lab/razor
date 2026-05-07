@@ -1,0 +1,875 @@
+2026-05-07 12:00:44.840 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成 (含热点板块)
+2026-05-07 12:00:44.848 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-05-07 12:00:48.183 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-05-07 12:00:48.195 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 08:30 执行。
+2026-05-07 12:00:48.197 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 17:30 执行。
+2026-05-07 12:00:48.199 | INFO     | CronScheduler | CronScheduler | Redis→DuckDB 收割机已安排在每个工作日 15:30 执行。
+2026-05-07 12:00:48.200 | INFO     | CronScheduler | CronScheduler | 概念数据同步已安排在每日 09:00 执行。
+2026-05-07 12:00:48.201 | INFO     | CronScheduler | CronScheduler | 板块热度重算已安排在每个交易日 5 分钟/次。
+2026-05-07 12:00:48.202 | INFO     | CronScheduler | CronScheduler | 收盘热度终版快照已安排在 15:30 执行。
+2026-05-07 12:00:48.203 | INFO     | CronScheduler | CronScheduler | 模拟盘尾盘交易已安排在 14:52 执行。
+2026-05-07 12:00:48.209 | INFO     | CronScheduler | CronScheduler | 盘中监控全量扫描已安排（每分钟，兜底）。
+2026-05-07 12:00:48.209 | INFO     | CronScheduler | CronScheduler | 自动调度服务(APScheduler) 已启动。
+2026-05-07 12:01:00.140 | INFO     | ParquetPipeline | ParquetPipeline | Fetching daily k-lines from 20260427 to 20260507...
+2026-05-07 12:01:00.157 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:01:00.261 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260507...
+2026-05-07 12:01:00.379 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260506...
+2026-05-07 12:01:01.238 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260430...
+2026-05-07 12:01:02.366 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260429...
+2026-05-07 12:01:03.188 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260428...
+2026-05-07 12:01:04.111 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260427...
+2026-05-07 12:01:05.470 | INFO     | ParquetPipeline | ParquetPipeline | Writing 5507 stocks to Parquet...
+2026-05-07 12:01:43.442 | ERROR    | DuckDB     | DuckDB | 批量加载 K 线失败: Invalid Input Error: No magic bytes found at end of file 'E:\1target\p9_project\quant-platform\data\parquet\daily\001389.parquet'
+
+LINE 3:             FROM read_parquet('E:\1target\p9_project\quant-platform\data...
+                         ^
+2026-05-07 12:01:47.940 | INFO     | API-SimTrader | 开关: 卖出=执行 选股=关 买入=不买
+2026-05-07 12:01:48.371 | INFO     | API-SimTrader | 开关: 卖出=告警 选股=开 买入=不买
+2026-05-07 12:01:50.546 | INFO     | API-SimTrader | 开关: 卖出=执行 选股=开 买入=不买
+2026-05-07 12:02:00.108 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:02:00.114 | INFO     | API-SimTrader | 开关: 卖出=执行 选股=开 买入=执行
+2026-05-07 12:03:00.564 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:04:00.014 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:05:00.847 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 12:05:00.853 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:05:34.049 | ERROR    | DuckDB     | DuckDB | 批量加载 K 线失败: Prefetch registered for bytes outside file: E:\1target\p9_project\quant-platform\data\parquet\daily\603707.parquet, attempted range: [212065, 212321), file size: 212065
+2026-05-07 12:05:34.053 | WARNING  | HeatCalc   | 无日线数据可用于热度计算
+2026-05-07 12:05:58.141 | ERROR    | RedisManager | Redis 连接失败 (localhost:6379): Error 10061 connecting to localhost:6379. 由于目标计算机积极拒绝，无法连接。.
+2026-05-07 12:06:00.851 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 0, 'sectors_processed': 0, 'trade_date': '2026-05-07', 'error': '无日线数据'}
+2026-05-07 12:06:00.856 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:06:44.727 | INFO     | DuckDB     | DuckDB | 创建虚拟视图成功: kline_daily_view -> E:/1target/p9_project/quant-platform/data/parquet/daily/*.parquet
+2026-05-07 12:06:44.729 | INFO     | ParquetPipeline | ParquetPipeline | Daily K-lines fully synced.
+2026-05-07 12:07:00.832 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:08:00.014 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:09:00.001 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:11:00.893 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:12:00.006 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:13:00.010 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:14:00.005 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:15:00.012 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 12:15:00.013 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:15:54.592 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 12:16:00.015 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:16:56.042 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 12:17:00.004 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:17:15.193 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (1/5)
+2026-05-07 12:17:15.762 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (2/5)
+2026-05-07 12:17:16.340 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (3/5)
+2026-05-07 12:17:16.910 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (4/5)
+2026-05-07 12:17:17.480 | ERROR    | DuckDB     | DuckDB | 无法连接到数据库: IO Error: Cannot open file "E:\1target\p9_project\quant-platform\data\meta\meta.db": 另一个程序正在使用此文件，进程无法访问。
+
+File is already open in 
+D:\Program Files\Python313\python.exe (PID 12316)
+2026-05-07 12:17:17.480 | ERROR    | DuckDB     | DuckDB | 初始化表结构失败: IO Error: Cannot open file "E:\1target\p9_project\quant-platform\data\meta\meta.db": 另一个程序正在使用此文件，进程无法访问。
+
+File is already open in 
+D:\Program Files\Python313\python.exe (PID 12316)
+2026-05-07 12:17:41.901 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 12:18:00.001 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:19:00.008 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:20:00.007 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 12:20:00.008 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:21:00.025 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:21:01.873 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 12:22:00.013 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:22:05.109 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 12:22:54.740 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 12:23:00.015 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:24:00.008 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:25:00.014 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 12:25:00.015 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:26:00.008 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:26:00.900 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 12:27:00.005 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:27:17.383 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 12:28:00.016 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:28:01.189 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 12:29:00.012 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:30:00.012 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 12:30:00.013 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:31:00.017 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:31:00.771 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 12:32:00.005 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:32:22.753 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 12:33:00.006 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:33:09.463 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 12:34:00.010 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:35:00.015 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 12:35:00.016 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:36:00.006 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:36:00.905 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 12:37:00.016 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:37:23.480 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 12:38:00.002 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:38:07.403 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 12:39:00.009 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:40:00.005 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 12:40:00.006 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:41:00.019 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:41:02.151 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 12:42:00.012 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:42:26.473 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 12:43:00.008 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:43:09.090 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 12:44:00.003 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:45:00.002 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 12:45:00.004 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:46:00.014 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:46:04.449 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 12:47:00.015 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:47:39.413 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 12:48:00.003 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:48:33.561 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 12:49:00.003 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:50:00.002 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 12:50:00.003 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:51:00.012 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:51:02.927 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 12:52:00.009 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:52:38.982 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 12:53:00.002 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:53:23.568 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 12:54:00.013 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:55:00.009 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 12:55:00.010 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:56:00.009 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:56:04.881 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 12:57:00.017 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:57:44.308 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 12:58:00.013 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 12:58:31.375 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 12:59:00.007 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:00:00.008 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 13:00:00.010 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:01:00.015 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:01:06.269 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 13:02:00.009 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:02:47.449 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 13:03:00.009 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:03:41.566 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 13:04:00.008 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:05:00.005 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 13:05:00.006 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:06:00.033 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:06:05.450 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 13:07:00.013 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:07:53.258 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 13:08:00.007 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:08:44.908 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 13:09:00.014 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:10:00.012 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 13:10:00.013 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:11:00.018 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:11:07.111 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 13:12:00.009 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:12:52.563 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 13:13:00.006 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:13:41.554 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 13:14:00.002 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:15:00.011 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 13:15:00.012 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:16:00.011 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:16:04.770 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 13:17:00.003 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:17:52.831 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 13:18:00.005 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:18:41.914 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 13:19:00.014 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:20:00.014 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 13:20:00.015 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:21:00.012 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:21:08.341 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 13:22:00.005 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:22:57.121 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 13:23:00.012 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:23:48.576 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 13:24:00.008 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:25:00.012 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 13:25:00.013 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:26:00.035 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:26:07.836 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 13:27:00.015 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:28:00.006 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:28:03.732 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 13:28:51.517 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 13:29:00.014 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:30:00.009 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 13:30:00.011 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:31:00.015 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:31:09.701 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 13:32:00.010 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:33:00.007 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:33:06.559 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 13:33:59.277 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 13:34:00.016 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:35:00.003 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 13:35:00.004 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:36:00.002 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:36:09.554 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 13:37:00.002 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:38:00.010 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:38:05.916 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 13:38:52.464 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 13:39:00.005 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:40:00.008 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 13:40:00.009 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:41:00.014 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:41:11.647 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 13:42:00.004 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:43:00.010 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:43:09.108 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 13:43:58.233 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 13:44:00.007 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:45:00.016 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 13:45:00.017 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:46:00.006 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:46:11.543 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 13:47:00.001 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:48:00.012 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:48:11.667 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 13:48:56.561 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 13:49:00.005 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:50:00.016 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 13:50:00.017 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:51:00.007 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:51:11.236 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 13:52:00.009 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:53:00.001 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:53:13.688 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 13:54:00.005 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:54:04.001 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 13:55:00.011 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 13:55:00.012 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:56:00.004 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:56:10.219 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 13:57:00.012 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:58:00.015 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 13:58:12.756 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 13:58:56.385 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 13:59:00.014 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:00:00.004 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 14:00:00.005 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:01:00.016 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:01:12.126 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 14:02:00.015 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:03:00.005 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:03:15.421 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 14:04:00.008 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:04:02.964 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 14:05:00.005 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 14:05:00.006 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:06:00.007 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:06:12.260 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 14:07:00.004 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:08:00.010 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:08:17.848 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 14:09:00.010 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:09:01.835 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 14:10:00.016 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 14:10:00.016 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:11:00.020 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:11:08.424 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 14:12:00.002 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:13:00.003 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:13:13.610 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 14:14:00.015 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:14:04.635 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 14:15:00.006 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 14:15:00.007 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:16:11.864 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 14:18:33.477 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 14:20:50.040 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 14:20:58.280 | INFO     | API-SimTrader | 开关: 卖出=执行 选股=关 买入=不买
+2026-05-07 14:20:58.281 | INFO     | API-SimTrader | 开关: 卖出=执行 选股=开 买入=不买
+2026-05-07 14:20:58.281 | INFO     | API-SimTrader | 开关: 卖出=执行 选股=开 买入=执行
+2026-05-07 14:20:58.284 | INFO     | API-SimTrader | 开关: 卖出=执行 选股=开 买入=不买
+2026-05-07 14:20:58.284 | INFO     | API-SimTrader | 开关: 卖出=执行 选股=开 买入=执行
+2026-05-07 14:20:58.287 | INFO     | API-SimTrader | 开关: 卖出=告警 选股=开 买入=执行
+2026-05-07 14:20:58.287 | INFO     | API-SimTrader | 开关: 卖出=执行 选股=开 买入=执行
+2026-05-07 14:20:58.288 | INFO     | API-SimTrader | 开关: 卖出=告警 选股=开 买入=执行
+2026-05-07 14:20:58.288 | INFO     | API-SimTrader | 开关: 卖出=告警 选股=关 买入=执行
+2026-05-07 14:20:58.290 | INFO     | API-SimTrader | 开关: 卖出=告警 选股=开 买入=执行
+2026-05-07 14:20:58.294 | INFO     | API-SimTrader | 开关: 卖出=执行 选股=开 买入=执行
+2026-05-07 14:23:00.015 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:24:00.016 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:25:00.004 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 14:25:00.005 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:26:00.029 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:26:01.319 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 14:27:00.002 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:27:32.872 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 14:28:00.010 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:28:26.066 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 14:29:00.006 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:30:00.012 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 14:30:00.013 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:31:00.015 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:31:12.087 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 14:32:00.003 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:32:53.628 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 14:33:00.006 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:33:42.944 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 14:34:00.001 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:35:00.004 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 14:35:00.005 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:36:00.009 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:36:10.296 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 14:37:00.013 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:37:53.906 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 14:38:00.007 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:38:41.828 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 14:39:00.005 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:40:00.010 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 14:40:00.010 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:41:00.015 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:41:13.406 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 14:42:00.004 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:42:55.320 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 14:43:00.009 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:43:42.282 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 14:44:00.017 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:45:00.008 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-07 14:45:00.009 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:46:00.011 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:46:12.036 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 14:47:00.001 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:47:54.900 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 14:48:00.010 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:48:41.858 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 14:49:00.006 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:50:28.064 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成 (含热点板块)
+2026-05-07 14:50:28.071 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-05-07 14:50:30.568 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-05-07 14:50:30.576 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 08:30 执行。
+2026-05-07 14:50:30.578 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 17:30 执行。
+2026-05-07 14:50:30.579 | INFO     | CronScheduler | CronScheduler | Redis→DuckDB 收割机已安排在每个工作日 15:30 执行。
+2026-05-07 14:50:30.580 | INFO     | CronScheduler | CronScheduler | 概念数据同步已安排在每日 09:00 执行。
+2026-05-07 14:50:30.583 | INFO     | CronScheduler | CronScheduler | 板块热度重算已安排在每个交易日 5 分钟/次。
+2026-05-07 14:50:30.584 | INFO     | CronScheduler | CronScheduler | 收盘热度终版快照已安排在 15:30 执行。
+2026-05-07 14:50:30.585 | INFO     | CronScheduler | CronScheduler | 模拟盘尾盘交易已安排在 14:52 执行。
+2026-05-07 14:50:30.592 | INFO     | CronScheduler | CronScheduler | 盘中监控全量扫描已安排（每分钟，兜底）。
+2026-05-07 14:50:30.592 | INFO     | CronScheduler | CronScheduler | 自动调度服务(APScheduler) 已启动。
+2026-05-07 14:50:39.970 | INFO     | ParquetPipeline | ParquetPipeline | Fetching daily k-lines from 20260427 to 20260507...
+2026-05-07 14:50:40.103 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260507...
+2026-05-07 14:50:40.230 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260506...
+2026-05-07 14:50:41.127 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260430...
+2026-05-07 14:50:42.298 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260429...
+2026-05-07 14:50:43.185 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260428...
+2026-05-07 14:50:44.048 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260427...
+2026-05-07 14:50:45.386 | INFO     | ParquetPipeline | ParquetPipeline | Writing 5507 stocks to Parquet...
+2026-05-07 14:50:56.870 | INFO     | API-SimTrader | 开关: 卖出=执行(intraday) 选股=关 买入=不买
+2026-05-07 14:50:56.877 | INFO     | API-SimTrader | 开关: 卖出=执行(close) 选股=关 买入=不买
+2026-05-07 14:50:56.878 | INFO     | API-SimTrader | 开关: 卖出=执行(close) 选股=开 买入=不买
+2026-05-07 14:50:56.878 | INFO     | API-SimTrader | 开关: 卖出=执行(close) 选股=开 买入=执行
+2026-05-07 14:51:00.010 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:52:00.010 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:52:00.011 | INFO     | CronScheduler | CronScheduler | [模拟盘] 14:52 开始执行尾盘交易: 2026-05-07
+2026-05-07 14:54:59.005 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (1/5)
+2026-05-07 14:54:59.580 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (2/5)
+2026-05-07 14:55:00.152 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (3/5)
+2026-05-07 14:55:00.721 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (4/5)
+2026-05-07 14:55:01.291 | ERROR    | DuckDB     | DuckDB | 无法连接到数据库: IO Error: Cannot open file "E:\1target\p9_project\quant-platform\data\meta\meta.db": 另一个程序正在使用此文件，进程无法访问。
+
+File is already open in 
+D:\Program Files\Python313\python.exe (PID 22052)
+2026-05-07 14:55:01.292 | ERROR    | DuckDB     | DuckDB | 初始化表结构失败: IO Error: Cannot open file "E:\1target\p9_project\quant-platform\data\meta\meta.db": 另一个程序正在使用此文件，进程无法访问。
+
+File is already open in 
+D:\Program Files\Python313\python.exe (PID 22052)
+2026-05-07 14:55:03.545 | INFO     | CronScheduler | CronScheduler | [模拟盘] 2026-05-07 非交易日，跳过
+2026-05-07 14:55:35.817 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成 (含热点板块)
+2026-05-07 14:55:35.818 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-05-07 14:55:37.903 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-05-07 14:55:37.908 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 08:30 执行。
+2026-05-07 14:55:37.908 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 17:30 执行。
+2026-05-07 14:55:37.908 | INFO     | CronScheduler | CronScheduler | Redis→DuckDB 收割机已安排在每个工作日 15:30 执行。
+2026-05-07 14:55:37.909 | INFO     | CronScheduler | CronScheduler | 模拟盘尾盘交易已安排在 14:52 执行。
+2026-05-07 14:55:37.909 | INFO     | CronScheduler | CronScheduler | 盘中监控全量扫描已安排（每分钟，兜底）。
+2026-05-07 14:55:37.909 | INFO     | CronScheduler | CronScheduler | 概念数据同步已安排在每日 09:00 执行。
+2026-05-07 14:55:37.909 | INFO     | CronScheduler | CronScheduler | 板块热度重算已安排在每个交易日 5 分钟/次。
+2026-05-07 14:55:37.910 | INFO     | CronScheduler | CronScheduler | 收盘热度终版快照已安排在 15:30 执行。
+2026-05-07 14:55:37.910 | INFO     | CronScheduler | CronScheduler | 自动调度服务(APScheduler) 已启动。
+2026-05-07 14:55:42.921 | INFO     | ParquetPipeline | ParquetPipeline | Fetching daily k-lines from 20260427 to 20260507...
+2026-05-07 14:55:43.025 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260507...
+2026-05-07 14:55:43.128 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260506...
+2026-05-07 14:55:43.860 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260430...
+2026-05-07 14:55:44.624 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260429...
+2026-05-07 14:55:45.358 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260428...
+2026-05-07 14:55:46.129 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260427...
+2026-05-07 14:55:46.843 | INFO     | ParquetPipeline | ParquetPipeline | Writing 5507 stocks to Parquet...
+2026-05-07 14:56:00.009 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:57:09.690 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (1/5)
+2026-05-07 14:57:10.275 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (2/5)
+2026-05-07 14:57:10.335 | INFO     | DuckDB     | DuckDB | 创建虚拟视图成功: kline_daily_view -> E:/1target/p9_project/quant-platform/data/parquet/daily/*.parquet
+2026-05-07 14:57:10.336 | INFO     | ParquetPipeline | ParquetPipeline | Daily K-lines fully synced.
+2026-05-07 14:57:10.849 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (3/5)
+2026-05-07 14:57:11.438 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (4/5)
+2026-05-07 14:57:12.104 | ERROR    | DuckDB     | DuckDB | 无法连接到数据库: IO Error: Cannot open file "E:\1target\p9_project\quant-platform\data\meta\meta.db": 另一个程序正在使用此文件，进程无法访问。
+
+File is already open in 
+C:\Python314\python.exe (PID 10032)
+2026-05-07 14:57:12.105 | ERROR    | DuckDB     | DuckDB | 初始化表结构失败: IO Error: Cannot open file "E:\1target\p9_project\quant-platform\data\meta\meta.db": 另一个程序正在使用此文件，进程无法访问。
+
+File is already open in 
+C:\Python314\python.exe (PID 10032)
+2026-05-07 14:57:52.072 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成 (含热点板块)
+2026-05-07 14:57:52.078 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-05-07 14:57:54.025 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-05-07 14:57:54.036 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 08:30 执行。
+2026-05-07 14:57:54.037 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 17:30 执行。
+2026-05-07 14:57:54.038 | INFO     | CronScheduler | CronScheduler | Redis→DuckDB 收割机已安排在每个工作日 15:30 执行。
+2026-05-07 14:57:54.039 | INFO     | CronScheduler | CronScheduler | 模拟盘尾盘交易已安排在 14:52 执行。
+2026-05-07 14:57:54.040 | INFO     | CronScheduler | CronScheduler | 盘中监控全量扫描已安排（每分钟，兜底）。
+2026-05-07 14:57:54.041 | INFO     | CronScheduler | CronScheduler | 概念数据同步已安排在每日 09:00 执行。
+2026-05-07 14:57:54.042 | INFO     | CronScheduler | CronScheduler | 板块热度重算已安排在每个交易日 5 分钟/次。
+2026-05-07 14:57:54.047 | INFO     | CronScheduler | CronScheduler | 收盘热度终版快照已安排在 15:30 执行。
+2026-05-07 14:57:54.047 | INFO     | CronScheduler | CronScheduler | 自动调度服务(APScheduler) 已启动。
+2026-05-07 14:57:59.069 | INFO     | ParquetPipeline | ParquetPipeline | Fetching daily k-lines from 20260427 to 20260507...
+2026-05-07 14:57:59.282 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260507...
+2026-05-07 14:57:59.376 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260506...
+2026-05-07 14:58:00.018 | WARNING  | CronScheduler | CronScheduler | [监控扫描] 异常: 'SimTraderEngine' object has no attribute 'monitor_enabled'
+2026-05-07 14:58:00.255 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260430...
+2026-05-07 14:58:01.260 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260429...
+2026-05-07 14:58:02.102 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260428...
+2026-05-07 14:58:03.010 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260427...
+2026-05-07 14:58:04.254 | INFO     | ParquetPipeline | ParquetPipeline | Writing 5507 stocks to Parquet...
+2026-05-07 14:58:21.722 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成 (含热点板块)
+2026-05-07 14:58:21.722 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-05-07 14:58:22.398 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-05-07 14:58:22.401 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 08:30 执行。
+2026-05-07 14:58:22.403 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 17:30 执行。
+2026-05-07 14:58:22.404 | INFO     | CronScheduler | CronScheduler | Redis→DuckDB 收割机已安排在每个工作日 15:30 执行。
+2026-05-07 14:58:22.404 | INFO     | CronScheduler | CronScheduler | 模拟盘尾盘交易已安排在 14:52 执行。
+2026-05-07 14:58:22.405 | INFO     | CronScheduler | CronScheduler | 盘中监控全量扫描已安排（每分钟，兜底）。
+2026-05-07 14:58:22.406 | INFO     | CronScheduler | CronScheduler | 概念数据同步已安排在每日 09:00 执行。
+2026-05-07 14:58:22.406 | INFO     | CronScheduler | CronScheduler | 板块热度重算已安排在每个交易日 5 分钟/次。
+2026-05-07 14:58:22.407 | INFO     | CronScheduler | CronScheduler | 收盘热度终版快照已安排在 15:30 执行。
+2026-05-07 14:58:22.407 | INFO     | CronScheduler | CronScheduler | 自动调度服务(APScheduler) 已启动。
+2026-05-07 14:58:27.425 | INFO     | ParquetPipeline | ParquetPipeline | Fetching daily k-lines from 20260427 to 20260507...
+2026-05-07 14:58:27.540 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260507...
+2026-05-07 14:58:27.662 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260506...
+2026-05-07 14:58:28.374 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260430...
+2026-05-07 14:58:29.092 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260429...
+2026-05-07 14:58:29.816 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260428...
+2026-05-07 14:58:30.590 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260427...
+2026-05-07 14:58:31.294 | INFO     | ParquetPipeline | ParquetPipeline | Writing 5507 stocks to Parquet...
+2026-05-07 14:59:45.575 | INFO     | DuckDB     | DuckDB | 创建虚拟视图成功: kline_daily_view -> E:/1target/p9_project/quant-platform/data/parquet/daily/*.parquet
+2026-05-07 14:59:45.576 | INFO     | ParquetPipeline | ParquetPipeline | Daily K-lines fully synced.
+2026-05-07 15:02:53.739 | INFO     | API-SimTrader | 开关: 卖出=告警(close) 选股=开 买入=不买
+2026-05-07 15:02:53.740 | INFO     | API-SimTrader | 开关: 卖出=告警(close) 选股=开 买入=执行
+2026-05-07 15:02:53.741 | INFO     | API-SimTrader | 开关: 卖出=执行(close) 选股=开 买入=执行
+2026-05-07 15:03:25.536 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成 (含热点板块)
+2026-05-07 15:03:25.536 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-05-07 15:03:26.109 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-05-07 15:03:26.112 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 08:30 执行。
+2026-05-07 15:03:26.112 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 17:30 执行。
+2026-05-07 15:03:26.113 | INFO     | CronScheduler | CronScheduler | Redis→DuckDB 收割机已安排在每个工作日 15:30 执行。
+2026-05-07 15:03:26.113 | INFO     | CronScheduler | CronScheduler | 模拟盘尾盘交易已安排在 14:52 执行。
+2026-05-07 15:03:26.113 | INFO     | CronScheduler | CronScheduler | 盘中监控全量扫描已安排（每分钟，兜底）。
+2026-05-07 15:03:26.113 | INFO     | CronScheduler | CronScheduler | 概念数据同步已安排在每日 09:00 执行。
+2026-05-07 15:03:26.114 | INFO     | CronScheduler | CronScheduler | 板块热度重算已安排在每个交易日 5 分钟/次。
+2026-05-07 15:03:26.114 | INFO     | CronScheduler | CronScheduler | 收盘热度终版快照已安排在 15:30 执行。
+2026-05-07 15:03:26.114 | INFO     | CronScheduler | CronScheduler | 自动调度服务(APScheduler) 已启动。
+2026-05-07 15:03:31.129 | INFO     | ParquetPipeline | ParquetPipeline | Fetching daily k-lines from 20260427 to 20260507...
+2026-05-07 15:03:31.251 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260507...
+2026-05-07 15:03:31.378 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260506...
+2026-05-07 15:03:32.081 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260430...
+2026-05-07 15:03:32.800 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260429...
+2026-05-07 15:03:33.542 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260428...
+2026-05-07 15:03:34.235 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260427...
+2026-05-07 15:03:34.951 | INFO     | ParquetPipeline | ParquetPipeline | Writing 5507 stocks to Parquet...
+2026-05-07 15:04:33.541 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成 (含热点板块)
+2026-05-07 15:04:33.541 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-05-07 15:04:34.107 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-05-07 15:04:34.110 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 08:30 执行。
+2026-05-07 15:04:34.119 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 17:30 执行。
+2026-05-07 15:04:34.120 | INFO     | CronScheduler | CronScheduler | Redis→DuckDB 收割机已安排在每个工作日 15:30 执行。
+2026-05-07 15:04:34.120 | INFO     | CronScheduler | CronScheduler | 模拟盘尾盘交易已安排在 14:52 执行。
+2026-05-07 15:04:34.120 | INFO     | CronScheduler | CronScheduler | 盘中监控全量扫描已安排（每分钟，兜底）。
+2026-05-07 15:04:34.120 | INFO     | CronScheduler | CronScheduler | 概念数据同步已安排在每日 09:00 执行。
+2026-05-07 15:04:34.121 | INFO     | CronScheduler | CronScheduler | 板块热度重算已安排在每个交易日 5 分钟/次。
+2026-05-07 15:04:34.121 | INFO     | CronScheduler | CronScheduler | 收盘热度终版快照已安排在 15:30 执行。
+2026-05-07 15:04:34.121 | INFO     | CronScheduler | CronScheduler | 自动调度服务(APScheduler) 已启动。
+2026-05-07 15:04:42.389 | INFO     | ParquetPipeline | ParquetPipeline | Fetching daily k-lines from 20260427 to 20260507...
+2026-05-07 15:04:42.495 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260507...
+2026-05-07 15:04:42.594 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260506...
+2026-05-07 15:04:43.300 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260430...
+2026-05-07 15:04:44.023 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260429...
+2026-05-07 15:04:44.752 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260428...
+2026-05-07 15:04:45.433 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260427...
+2026-05-07 15:04:46.147 | INFO     | ParquetPipeline | ParquetPipeline | Writing 5507 stocks to Parquet...
+2026-05-07 15:04:51.558 | INFO     | API-SimTrader | 手动触发模拟盘交易: 2026-05-07
+2026-05-07 15:05:54.794 | INFO     | DuckDB     | DuckDB | 创建虚拟视图成功: kline_daily_view -> E:/1target/p9_project/quant-platform/data/parquet/daily/*.parquet
+2026-05-07 15:05:54.794 | INFO     | ParquetPipeline | ParquetPipeline | Daily K-lines fully synced.
+2026-05-07 15:06:24.611 | INFO     | Screener   | 🧬 [Loader] 识别到类继承策略: MA5AngleOriginalStrategy
+2026-05-07 15:09:09.038 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成 (含热点板块)
+2026-05-07 15:09:09.038 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-05-07 15:09:09.728 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-05-07 15:09:09.732 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 08:30 执行。
+2026-05-07 15:09:09.741 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 17:30 执行。
+2026-05-07 15:09:09.741 | INFO     | CronScheduler | CronScheduler | Redis→DuckDB 收割机已安排在每个工作日 15:30 执行。
+2026-05-07 15:09:09.742 | INFO     | CronScheduler | CronScheduler | 模拟盘尾盘交易已安排在 14:52 执行。
+2026-05-07 15:09:09.742 | INFO     | CronScheduler | CronScheduler | 盘中监控全量扫描已安排（每分钟，兜底）。
+2026-05-07 15:09:09.742 | INFO     | CronScheduler | CronScheduler | 概念数据同步已安排在每日 09:00 执行。
+2026-05-07 15:09:09.742 | INFO     | CronScheduler | CronScheduler | 板块热度重算已安排在每个交易日 5 分钟/次。
+2026-05-07 15:09:09.742 | INFO     | CronScheduler | CronScheduler | 收盘热度终版快照已安排在 15:30 执行。
+2026-05-07 15:09:09.743 | INFO     | CronScheduler | CronScheduler | 自动调度服务(APScheduler) 已启动。
+2026-05-07 15:09:21.351 | INFO     | ParquetPipeline | ParquetPipeline | Fetching daily k-lines from 20260427 to 20260507...
+2026-05-07 15:09:21.462 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260507...
+2026-05-07 15:09:21.590 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260506...
+2026-05-07 15:09:22.311 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260430...
+2026-05-07 15:09:23.074 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260429...
+2026-05-07 15:09:23.628 | INFO     | API-SimTrader | 手动触发模拟盘交易: 2026-05-07
+2026-05-07 15:09:23.833 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260428...
+2026-05-07 15:09:24.561 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260427...
+2026-05-07 15:09:25.292 | INFO     | ParquetPipeline | ParquetPipeline | Writing 5507 stocks to Parquet...
+2026-05-07 15:10:10.468 | INFO     | Screener   | 🧬 [Loader] 识别到类继承策略: MA5AngleOriginalStrategy
+2026-05-07 15:10:38.605 | INFO     | API-Screener | 📡 [API] 收到选股请求: ma5_angle
+2026-05-07 15:10:38.606 | INFO     | API-Screener | 🚀 [Thread] 选股任务线程已启动: ma5_angle
+2026-05-07 15:10:38.607 | INFO     | Screener   | 🔍 [Engine] run_scan 开始执行: ma5_angle, 频率: daily
+2026-05-07 15:10:38.607 | INFO     | Screener   | [1/10] 加载股票元数据...
+2026-05-07 15:10:38.633 | INFO     | Screener   | [3/10] 启动并行引擎 (32 核心) 加载并扫描 5202 只股票...
+2026-05-07 15:10:38.648 | INFO     | Screener   | 🧬 [Loader] 识别到类继承策略: MA5AngleOriginalStrategy
+2026-05-07 15:10:38.648 | INFO     | Screener   | ⏩ 当前策略 [ma5_angle] 无需全市场数据，启用极速扫描流...
+2026-05-07 15:10:38.649 | INFO     | Screener   | [4.5/10] QMT 极速行情引擎激活中：拉取当日最新真实验证切片...
+2026-05-07 15:10:40.718 | INFO     | Screener   | [5/13] 并行计算 8 个区块 (8 线程)...
+2026-05-07 15:11:01.982 | INFO     | Screener   | [1/8] 区块 2 完成
+2026-05-07 15:11:02.290 | INFO     | Screener   | [2/8] 区块 8 完成
+2026-05-07 15:11:02.569 | INFO     | Screener   | [3/8] 区块 5 完成
+2026-05-07 15:11:03.171 | INFO     | Screener   | [4/8] 区块 3 完成
+2026-05-07 15:11:03.416 | INFO     | Screener   | [5/8] 区块 7 完成
+2026-05-07 15:11:04.205 | INFO     | Screener   | [6/8] 区块 6 完成
+2026-05-07 15:11:04.584 | INFO     | Screener   | [7/8] 区块 4 完成
+2026-05-07 15:11:04.875 | INFO     | Screener   | [8/8] 区块 1 完成
+2026-05-07 15:11:21.014 | INFO     | API-Screener | 📡 [API] 收到选股请求: ma5_angle
+2026-05-07 15:11:21.014 | INFO     | API-Screener | 🚀 [Thread] 选股任务线程已启动: ma5_angle
+2026-05-07 15:11:21.015 | INFO     | Screener   | 🔍 [Engine] run_scan 开始执行: ma5_angle, 频率: daily
+2026-05-07 15:11:21.016 | INFO     | Screener   | [1/10] 加载股票元数据...
+2026-05-07 15:11:21.036 | INFO     | Screener   | [3/10] 启动并行引擎 (32 核心) 加载并扫描 5202 只股票...
+2026-05-07 15:11:21.049 | INFO     | Screener   | 🧬 [Loader] 识别到类继承策略: MA5AngleOriginalStrategy
+2026-05-07 15:11:21.049 | INFO     | Screener   | ⏩ 当前策略 [ma5_angle] 无需全市场数据，启用极速扫描流...
+2026-05-07 15:11:21.050 | INFO     | Screener   | [4.5/10] QMT 极速行情引擎激活中：拉取当日最新真实验证切片...
+2026-05-07 15:11:23.131 | INFO     | Screener   | [5/13] 并行计算 8 个区块 (8 线程)...
+2026-05-07 15:11:43.430 | INFO     | Screener   | [1/8] 区块 4 完成
+2026-05-07 15:11:44.165 | INFO     | Screener   | [2/8] 区块 7 完成
+2026-05-07 15:11:44.325 | INFO     | Screener   | [3/8] 区块 1 完成
+2026-05-07 15:11:44.996 | INFO     | Screener   | [4/8] 区块 3 完成
+2026-05-07 15:11:45.164 | INFO     | Screener   | [5/8] 区块 5 完成
+2026-05-07 15:11:45.862 | INFO     | Screener   | [6/8] 区块 8 完成
+2026-05-07 15:11:46.144 | INFO     | Screener   | [7/8] 区块 6 完成
+2026-05-07 15:11:46.768 | INFO     | Screener   | [8/8] 区块 2 完成
+2026-05-07 15:12:02.018 | INFO     | DuckDB     | DuckDB | 创建虚拟视图成功: kline_daily_view -> E:/1target/p9_project/quant-platform/data/parquet/daily/*.parquet
+2026-05-07 15:12:02.018 | INFO     | ParquetPipeline | ParquetPipeline | Daily K-lines fully synced.
+2026-05-07 15:12:21.297 | INFO     | API-Screener | 📡 [API] 收到选股请求: ma5_angle
+2026-05-07 15:12:21.298 | INFO     | API-Screener | 🚀 [Thread] 选股任务线程已启动: ma5_angle
+2026-05-07 15:12:21.298 | INFO     | Screener   | 🔍 [Engine] run_scan 开始执行: ma5_angle, 频率: daily
+2026-05-07 15:12:21.298 | INFO     | Screener   | [1/10] 加载股票元数据...
+2026-05-07 15:12:21.314 | INFO     | Screener   | [3/10] 启动并行引擎 (32 核心) 加载并扫描 5202 只股票...
+2026-05-07 15:12:21.325 | INFO     | Screener   | 🧬 [Loader] 识别到类继承策略: MA5AngleOriginalStrategy
+2026-05-07 15:12:21.325 | INFO     | Screener   | ⏩ 当前策略 [ma5_angle] 无需全市场数据，启用极速扫描流...
+2026-05-07 15:12:21.326 | INFO     | Screener   | [4.5/10] QMT 极速行情引擎激活中：拉取当日最新真实验证切片...
+2026-05-07 15:12:23.376 | INFO     | Screener   | [5/13] 并行计算 8 个区块 (8 线程)...
+2026-05-07 15:12:44.860 | INFO     | Screener   | [1/8] 区块 4 完成
+2026-05-07 15:12:45.103 | INFO     | Screener   | [2/8] 区块 7 完成
+2026-05-07 15:12:45.846 | INFO     | Screener   | [3/8] 区块 3 完成
+2026-05-07 15:12:46.568 | INFO     | Screener   | [4/8] 区块 8 完成
+2026-05-07 15:12:46.877 | INFO     | Screener   | [5/8] 区块 1 完成
+2026-05-07 15:12:47.656 | INFO     | Screener   | [6/8] 区块 6 完成
+2026-05-07 15:12:47.761 | INFO     | Screener   | [7/8] 区块 5 完成
+2026-05-07 15:12:48.013 | INFO     | Screener   | [8/8] 区块 2 完成
+2026-05-07 15:12:48.024 | INFO     | Screener   | [9/10] 关联元数据并排序...
+2026-05-07 15:12:48.211 | INFO     | Screener   | 选股原始结果字段: ['date', 'time', 'open', 'high', 'low', 'close', 'volume', 'amount', 'settelementPrice', 'openInterest', 'preClose', 'suspendFlag', 'ts_code', 'trade_date', 'pre_close', 'change', 'pct_chg', 'vol', 'code', 'ma5', 'ma10', 'ma20', 'ma30', 'ma60', 'ma120', 'ma250', 'macd_dif', 'macd_dea', 'macd_hist', 'kdj_k', 'kdj_d', 'kdj_j', 'rsi_6', 'rsi_12', 'rsi_24', 'boll_upper', 'boll_mid', 'boll_lower', 'wr_14', '__index_level_0__', 'filename_1', 'x1', 'x2', 'cross_up', 'cond_angle', 'cond_price', 'za', 'za_int', 'count_20', 'buy', 'buy_signal', 'version', 'quality', 'name', 'sector', 'sector_score', 'concept_score', 'total_score']
+2026-05-07 15:12:48.212 | INFO     | Screener   | [10/10] ✅ 扫描完成: 锁定 101 条信号
+2026-05-07 15:12:48.223 | INFO     | AutoBuyer  | AutoBuyerDaemon | 收到 101 个信号, 但自动交易未开启, 已丢弃。
+2026-05-07 15:13:38.879 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成 (含热点板块)
+2026-05-07 15:13:38.880 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-05-07 15:13:39.389 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-05-07 15:13:39.391 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 08:30 执行。
+2026-05-07 15:13:39.392 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 17:30 执行。
+2026-05-07 15:13:39.392 | INFO     | CronScheduler | CronScheduler | Redis→DuckDB 收割机已安排在每个工作日 15:30 执行。
+2026-05-07 15:13:39.392 | INFO     | CronScheduler | CronScheduler | 模拟盘尾盘交易已安排在 14:52 执行。
+2026-05-07 15:13:39.392 | INFO     | CronScheduler | CronScheduler | 盘中监控全量扫描已安排（每分钟，兜底）。
+2026-05-07 15:13:39.393 | INFO     | CronScheduler | CronScheduler | 概念数据同步已安排在每日 09:00 执行。
+2026-05-07 15:13:39.393 | INFO     | CronScheduler | CronScheduler | 板块热度重算已安排在每个交易日 5 分钟/次。
+2026-05-07 15:13:39.393 | INFO     | CronScheduler | CronScheduler | 收盘热度终版快照已安排在 15:30 执行。
+2026-05-07 15:13:39.393 | INFO     | CronScheduler | CronScheduler | 自动调度服务(APScheduler) 已启动。
+2026-05-07 15:13:44.399 | INFO     | ParquetPipeline | ParquetPipeline | Fetching daily k-lines from 20260427 to 20260507...
+2026-05-07 15:13:44.513 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260507...
+2026-05-07 15:13:44.607 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260506...
+2026-05-07 15:13:45.353 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260430...
+2026-05-07 15:13:46.045 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260429...
+2026-05-07 15:13:46.764 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260428...
+2026-05-07 15:13:47.505 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260427...
+2026-05-07 15:13:48.239 | INFO     | ParquetPipeline | ParquetPipeline | Writing 5507 stocks to Parquet...
+2026-05-07 15:13:54.691 | INFO     | API-SimTrader | 手动触发模拟盘交易: 2026-05-07
+2026-05-07 15:14:52.292 | INFO     | DuckDB     | DuckDB | 创建虚拟视图成功: kline_daily_view -> E:/1target/p9_project/quant-platform/data/parquet/daily/*.parquet
+2026-05-07 15:14:52.293 | INFO     | ParquetPipeline | ParquetPipeline | Daily K-lines fully synced.
+2026-05-07 15:15:19.767 | INFO     | Screener   | 🧬 [Loader] 识别到类继承策略: MA5AngleOriginalStrategy
+2026-05-07 15:30:00.001 | INFO     | CronScheduler | CronScheduler | [热度终版] 开始执行收盘快照...
+2026-05-07 15:30:00.002 | INFO     | CronScheduler | CronScheduler | [Redis收割] 开始将盘中最高价缓存同步回 DuckDB...
+2026-05-07 15:30:12.300 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-07 15:30:24.206 | ERROR    | RedisManager | Redis 连接失败 (localhost:6379): Error 10061 connecting to localhost:6379. 由于目标计算机积极拒绝，无法连接。.
+2026-05-07 15:30:27.104 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-07 15:30:43.305 | ERROR    | CronScheduler | CronScheduler | [Redis收割] 严重异常: Error 10061 connecting to localhost:6379. 由于目标计算机积极拒绝，无法连接。.
+2026-05-07 15:31:20.942 | INFO     | CronScheduler | CronScheduler | [热度终版] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-07'}
+2026-05-07 15:32:32.870 | INFO     | API-SimTrader | 手动触发模拟盘交易: 2026-05-07
+2026-05-07 15:33:16.704 | INFO     | Screener   | 🧬 [Loader] 识别到类继承策略: MA5AngleOriginalStrategy
+2026-05-07 15:35:27.650 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成 (含热点板块)
+2026-05-07 15:35:27.650 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-05-07 15:35:28.148 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-05-07 15:35:28.151 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 08:30 执行。
+2026-05-07 15:35:28.152 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 17:30 执行。
+2026-05-07 15:35:28.152 | INFO     | CronScheduler | CronScheduler | Redis→DuckDB 收割机已安排在每个工作日 15:30 执行。
+2026-05-07 15:35:28.152 | INFO     | CronScheduler | CronScheduler | 模拟盘尾盘交易已安排在 14:52 执行。
+2026-05-07 15:35:28.153 | INFO     | CronScheduler | CronScheduler | 盘中监控全量扫描已安排（每分钟，兜底）。
+2026-05-07 15:35:28.153 | INFO     | CronScheduler | CronScheduler | 概念数据同步已安排在每日 09:00 执行。
+2026-05-07 15:35:28.153 | INFO     | CronScheduler | CronScheduler | 板块热度重算已安排在每个交易日 5 分钟/次。
+2026-05-07 15:35:28.154 | INFO     | CronScheduler | CronScheduler | 收盘热度终版快照已安排在 15:30 执行。
+2026-05-07 15:35:28.154 | INFO     | CronScheduler | CronScheduler | 自动调度服务(APScheduler) 已启动。
+2026-05-07 15:35:33.158 | INFO     | ParquetPipeline | ParquetPipeline | Fetching daily k-lines from 20260427 to 20260507...
+2026-05-07 15:35:33.263 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260507...
+2026-05-07 15:35:33.363 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260506...
+2026-05-07 15:35:34.046 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260430...
+2026-05-07 15:35:34.745 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260429...
+2026-05-07 15:35:35.462 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260428...
+2026-05-07 15:35:36.148 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260427...
+2026-05-07 15:35:36.854 | INFO     | ParquetPipeline | ParquetPipeline | Writing 5507 stocks to Parquet...
+2026-05-07 15:35:43.170 | INFO     | API-SimTrader | 手动触发模拟盘交易: 2026-05-07
+2026-05-07 15:35:44.030 | ERROR    | DuckDB     | DuckDB | 批量加载 K 线失败: Invalid Input Error: File 'E:\1target\p9_project\quant-platform\data\parquet\daily\002098.parquet' too small to be a Parquet file
+
+LINE 3:             FROM read_parquet('E:\1target\p9_project\quant-platform\data...
+                         ^
+2026-05-07 15:35:44.030 | WARNING  | SimLoader  | 实时行情注入失败: 'code'，回退到历史数据
+2026-05-07 15:36:36.332 | INFO     | DuckDB     | DuckDB | 创建虚拟视图成功: kline_daily_view -> E:/1target/p9_project/quant-platform/data/parquet/daily/*.parquet
+2026-05-07 15:36:36.332 | INFO     | ParquetPipeline | ParquetPipeline | Daily K-lines fully synced.
+2026-05-07 15:36:41.831 | INFO     | API-SimTrader | 手动触发模拟盘交易: 2026-05-07
+2026-05-07 15:37:23.789 | WARNING  | SimLoader  | 无法获取实时行情，回退到历史数据
+2026-05-07 15:37:23.971 | INFO     | Screener   | 🧬 [Loader] 识别到类继承策略: MA5AngleOriginalStrategy
+2026-05-07 15:39:45.436 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成 (含热点板块)
+2026-05-07 15:39:45.436 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-05-07 15:39:45.919 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-05-07 15:39:45.921 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 08:30 执行。
+2026-05-07 15:39:45.922 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 17:30 执行。
+2026-05-07 15:39:45.922 | INFO     | CronScheduler | CronScheduler | Redis→DuckDB 收割机已安排在每个工作日 15:30 执行。
+2026-05-07 15:39:45.923 | INFO     | CronScheduler | CronScheduler | 模拟盘尾盘交易已安排在 14:52 执行。
+2026-05-07 15:39:45.923 | INFO     | CronScheduler | CronScheduler | 盘中监控全量扫描已安排（每分钟，兜底）。
+2026-05-07 15:39:45.923 | INFO     | CronScheduler | CronScheduler | 概念数据同步已安排在每日 09:00 执行。
+2026-05-07 15:39:45.923 | INFO     | CronScheduler | CronScheduler | 板块热度重算已安排在每个交易日 5 分钟/次。
+2026-05-07 15:39:45.924 | INFO     | CronScheduler | CronScheduler | 收盘热度终版快照已安排在 15:30 执行。
+2026-05-07 15:39:45.924 | INFO     | CronScheduler | CronScheduler | 自动调度服务(APScheduler) 已启动。
+2026-05-07 15:39:50.931 | INFO     | ParquetPipeline | ParquetPipeline | Fetching daily k-lines from 20260427 to 20260507...
+2026-05-07 15:39:51.060 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260507...
+2026-05-07 15:39:51.189 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260506...
+2026-05-07 15:39:51.898 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260430...
+2026-05-07 15:39:52.624 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260429...
+2026-05-07 15:39:53.373 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260428...
+2026-05-07 15:39:54.065 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260427...
+2026-05-07 15:39:54.758 | INFO     | ParquetPipeline | ParquetPipeline | Writing 5507 stocks to Parquet...
+2026-05-07 15:39:56.898 | INFO     | API-SimTrader | 手动触发模拟盘交易: 2026-05-07
+2026-05-07 15:40:56.117 | INFO     | DuckDB     | DuckDB | 创建虚拟视图成功: kline_daily_view -> E:/1target/p9_project/quant-platform/data/parquet/daily/*.parquet
+2026-05-07 15:40:56.117 | INFO     | ParquetPipeline | ParquetPipeline | Daily K-lines fully synced.
+2026-05-07 15:41:28.847 | WARNING  | SimLoader  | 无法获取实时行情，回退到历史数据
+2026-05-07 15:41:29.035 | INFO     | Screener   | 🧬 [Loader] 识别到类继承策略: MA5AngleOriginalStrategy
+2026-05-07 15:42:58.034 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成 (含热点板块)
+2026-05-07 15:42:58.035 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-05-07 15:42:58.518 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-05-07 15:42:58.521 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 08:30 执行。
+2026-05-07 15:42:58.530 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 17:30 执行。
+2026-05-07 15:42:58.531 | INFO     | CronScheduler | CronScheduler | Redis→DuckDB 收割机已安排在每个工作日 15:30 执行。
+2026-05-07 15:42:58.531 | INFO     | CronScheduler | CronScheduler | 模拟盘尾盘交易已安排在 14:52 执行。
+2026-05-07 15:42:58.532 | INFO     | CronScheduler | CronScheduler | 盘中监控全量扫描已安排（每分钟，兜底）。
+2026-05-07 15:42:58.532 | INFO     | CronScheduler | CronScheduler | 概念数据同步已安排在每日 09:00 执行。
+2026-05-07 15:42:58.532 | INFO     | CronScheduler | CronScheduler | 板块热度重算已安排在每个交易日 5 分钟/次。
+2026-05-07 15:42:58.532 | INFO     | CronScheduler | CronScheduler | 收盘热度终版快照已安排在 15:30 执行。
+2026-05-07 15:42:58.533 | INFO     | CronScheduler | CronScheduler | 自动调度服务(APScheduler) 已启动。
+2026-05-07 15:43:00.315 | INFO     | API-SimTrader | 手动触发模拟盘交易: 2026-05-07
+2026-05-07 15:43:41.536 | WARNING  | SimLoader  | 无法获取实时行情，回退到历史数据
+2026-05-07 15:43:41.745 | INFO     | Screener   | 🧬 [Loader] 识别到类继承策略: MA5AngleOriginalStrategy
+2026-05-07 15:43:48.333 | INFO     | ParquetPipeline | ParquetPipeline | Fetching daily k-lines from 20260427 to 20260507...
+2026-05-07 15:43:48.452 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260507...
+2026-05-07 15:43:48.576 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260506...
+2026-05-07 15:43:49.318 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260430...
+2026-05-07 15:43:49.996 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260429...
+2026-05-07 15:43:50.687 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260428...
+2026-05-07 15:43:51.386 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260427...
+2026-05-07 15:43:52.134 | INFO     | ParquetPipeline | ParquetPipeline | Writing 5507 stocks to Parquet...
+2026-05-07 15:45:01.529 | INFO     | DuckDB     | DuckDB | 创建虚拟视图成功: kline_daily_view -> E:/1target/p9_project/quant-platform/data/parquet/daily/*.parquet
+2026-05-07 15:45:01.530 | INFO     | ParquetPipeline | ParquetPipeline | Daily K-lines fully synced.
+2026-05-07 15:48:06.440 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成 (含热点板块)
+2026-05-07 15:48:06.441 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-05-07 15:48:06.924 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-05-07 15:48:06.927 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 08:30 执行。
+2026-05-07 15:48:06.932 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 17:30 执行。
+2026-05-07 15:48:06.932 | INFO     | CronScheduler | CronScheduler | Redis→DuckDB 收割机已安排在每个工作日 15:30 执行。
+2026-05-07 15:48:06.932 | INFO     | CronScheduler | CronScheduler | 模拟盘尾盘交易已安排在 14:52 执行。
+2026-05-07 15:48:06.933 | INFO     | CronScheduler | CronScheduler | 盘中监控全量扫描已安排（每分钟，兜底）。
+2026-05-07 15:48:06.933 | INFO     | CronScheduler | CronScheduler | 概念数据同步已安排在每日 09:00 执行。
+2026-05-07 15:48:06.933 | INFO     | CronScheduler | CronScheduler | 板块热度重算已安排在每个交易日 5 分钟/次。
+2026-05-07 15:48:06.933 | INFO     | CronScheduler | CronScheduler | 收盘热度终版快照已安排在 15:30 执行。
+2026-05-07 15:48:06.933 | INFO     | CronScheduler | CronScheduler | 自动调度服务(APScheduler) 已启动。
+2026-05-07 15:48:09.078 | INFO     | API-SimTrader | 手动触发模拟盘交易: 2026-05-07
+2026-05-07 15:48:51.391 | INFO     | SimLoader  | 腾讯行情已注入: 4958 只股票
+2026-05-07 15:48:53.521 | INFO     | Screener   | 🧬 [Loader] 识别到类继承策略: MA5AngleOriginalStrategy
+2026-05-07 15:49:01.249 | INFO     | ParquetPipeline | ParquetPipeline | Fetching daily k-lines from 20260427 to 20260507...
+2026-05-07 15:49:01.400 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260507...
+2026-05-07 15:49:01.524 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260506...
+2026-05-07 15:49:02.220 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260430...
+2026-05-07 15:49:02.912 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260429...
+2026-05-07 15:49:03.610 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260428...
+2026-05-07 15:49:04.343 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260427...
+2026-05-07 15:49:05.037 | INFO     | ParquetPipeline | ParquetPipeline | Writing 5507 stocks to Parquet...
+2026-05-07 15:49:30.859 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (1/5)
+2026-05-07 15:49:31.432 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (2/5)
+2026-05-07 15:49:32.004 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (3/5)
+2026-05-07 15:49:32.576 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (4/5)
+2026-05-07 15:49:33.150 | ERROR    | DuckDB     | DuckDB | 无法连接到数据库: IO Error: Cannot open file "E:\1target\p9_project\quant-platform\data\meta\meta.db": 另一个程序正在使用此文件，进程无法访问。
+
+File is already open in 
+C:\Python314\python.exe (PID 12260)
+2026-05-07 15:49:33.160 | ERROR    | DuckDB     | DuckDB | 初始化表结构失败: IO Error: Cannot open file "E:\1target\p9_project\quant-platform\data\meta\meta.db": 另一个程序正在使用此文件，进程无法访问。
+
+File is already open in 
+C:\Python314\python.exe (PID 12260)
+2026-05-07 15:50:12.645 | INFO     | DuckDB     | DuckDB | 创建虚拟视图成功: kline_daily_view -> E:/1target/p9_project/quant-platform/data/parquet/daily/*.parquet
+2026-05-07 15:50:12.646 | INFO     | ParquetPipeline | ParquetPipeline | Daily K-lines fully synced.
+2026-05-07 15:50:52.189 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成 (含热点板块)
+2026-05-07 15:50:52.190 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-05-07 15:50:52.665 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-05-07 15:50:52.667 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 08:30 执行。
+2026-05-07 15:50:52.668 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 17:30 执行。
+2026-05-07 15:50:52.668 | INFO     | CronScheduler | CronScheduler | Redis→DuckDB 收割机已安排在每个工作日 15:30 执行。
+2026-05-07 15:50:52.669 | INFO     | CronScheduler | CronScheduler | 模拟盘尾盘交易已安排在 14:52 执行。
+2026-05-07 15:50:52.669 | INFO     | CronScheduler | CronScheduler | 盘中监控全量扫描已安排（每分钟，兜底）。
+2026-05-07 15:50:52.669 | INFO     | CronScheduler | CronScheduler | 概念数据同步已安排在每日 09:00 执行。
+2026-05-07 15:50:52.669 | INFO     | CronScheduler | CronScheduler | 板块热度重算已安排在每个交易日 5 分钟/次。
+2026-05-07 15:50:52.670 | INFO     | CronScheduler | CronScheduler | 收盘热度终版快照已安排在 15:30 执行。
+2026-05-07 15:50:52.670 | INFO     | CronScheduler | CronScheduler | 自动调度服务(APScheduler) 已启动。
+2026-05-07 15:50:54.384 | INFO     | API-SimTrader | 手动触发模拟盘交易: 2026-05-07
+2026-05-07 15:51:35.877 | INFO     | SimLoader  | 腾讯行情已注入: 4958 只股票
+2026-05-07 15:51:37.977 | INFO     | Screener   | 🧬 [Loader] 识别到类继承策略: MA5AngleOriginalStrategy
+2026-05-07 15:51:45.604 | INFO     | ParquetPipeline | ParquetPipeline | Fetching daily k-lines from 20260427 to 20260507...
+2026-05-07 15:51:45.754 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260507...
+2026-05-07 15:51:45.876 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260506...
+2026-05-07 15:51:46.570 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260430...
+2026-05-07 15:51:47.230 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260429...
+2026-05-07 15:51:47.918 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260428...
+2026-05-07 15:51:48.585 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260427...
+2026-05-07 15:51:49.296 | INFO     | ParquetPipeline | ParquetPipeline | Writing 5507 stocks to Parquet...
+2026-05-07 15:52:54.979 | INFO     | DuckDB     | DuckDB | 创建虚拟视图成功: kline_daily_view -> E:/1target/p9_project/quant-platform/data/parquet/daily/*.parquet
+2026-05-07 15:52:54.979 | INFO     | ParquetPipeline | ParquetPipeline | Daily K-lines fully synced.
+2026-05-07 15:53:38.001 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成 (含热点板块)
+2026-05-07 15:53:38.002 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-05-07 15:53:38.484 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-05-07 15:53:38.487 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 08:30 执行。
+2026-05-07 15:53:38.496 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 17:30 执行。
+2026-05-07 15:53:38.497 | INFO     | CronScheduler | CronScheduler | Redis→DuckDB 收割机已安排在每个工作日 15:30 执行。
+2026-05-07 15:53:38.497 | INFO     | CronScheduler | CronScheduler | 模拟盘尾盘交易已安排在 14:52 执行。
+2026-05-07 15:53:38.497 | INFO     | CronScheduler | CronScheduler | 盘中监控全量扫描已安排（每分钟，兜底）。
+2026-05-07 15:53:38.497 | INFO     | CronScheduler | CronScheduler | 概念数据同步已安排在每日 09:00 执行。
+2026-05-07 15:53:38.498 | INFO     | CronScheduler | CronScheduler | 板块热度重算已安排在每个交易日 5 分钟/次。
+2026-05-07 15:53:38.498 | INFO     | CronScheduler | CronScheduler | 收盘热度终版快照已安排在 15:30 执行。
+2026-05-07 15:53:38.498 | INFO     | CronScheduler | CronScheduler | 自动调度服务(APScheduler) 已启动。
+2026-05-07 15:53:39.639 | INFO     | API-SimTrader | 手动触发模拟盘交易: 2026-05-07
+2026-05-07 15:54:21.233 | INFO     | SimLoader  | 腾讯行情已注入: 4958 只股票
+2026-05-07 15:54:23.316 | INFO     | Screener   | 🧬 [Loader] 识别到类继承策略: MA5AngleOriginalStrategy
+2026-05-07 15:54:30.922 | INFO     | SimLoader  | 策略 ma5_angle 信号日期分布: {datetime.date(2022, 2, 7): np.int64(46), datetime.date(2022, 2, 8): np.int64(41), datetime.date(2022, 2, 9): np.int64(6), datetime.date(2022, 2, 10): np.int64(6), datetime.date(2022, 2, 15): np.int64(2), datetime.date(2022, 2, 16): np.int64(9), datetime.date(2022, 2, 17): np.int64(11), datetime.date(2022, 2, 18): np.int64(61), datetime.date(2022, 2, 21): np.int64(43), datetime.date(2022, 2, 23): np.int64(51), datetime.date(2022, 2, 25): np.int64(16), datetime.date(2022, 2, 28): np.int64(17), datetime.date(2022, 3, 1): np.int64(77), datetime.date(2022, 3, 2): np.int64(30), datetime.date(2022, 3, 11): np.int64(41), datetime.date(2022, 3, 16): np.int64(24), datetime.date(2022, 3, 17): np.int64(6), datetime.date(2022, 3, 18): np.int64(14), datetime.date(2022, 3, 22): np.int64(5), datetime.date(2022, 3, 23): np.int64(1), datetime.date(2022, 3, 28): np.int64(3), datetime.date(2022, 3, 30): np.int64(41), datetime.date(2022, 4, 1): np.int64(33), datetime.date(2022, 4, 6): np.int64(131), datetime.date(2022, 4, 8): np.int64(26), datetime.date(2022, 4, 12): np.int64(29), datetime.date(2022, 4, 14): np.int64(57), datetime.date(2022, 4, 15): np.int64(5), datetime.date(2022, 4, 18): np.int64(19), datetime.date(2022, 4, 19): np.int64(13), datetime.date(2022, 4, 22): np.int64(17), datetime.date(2022, 4, 27): np.int64(8), datetime.date(2022, 4, 28): np.int64(17), datetime.date(2022, 4, 29): np.int64(13), datetime.date(2022, 5, 5): np.int64(17), datetime.date(2022, 5, 9): np.int64(1), datetime.date(2022, 5, 10): np.int64(4), datetime.date(2022, 5, 12): np.int64(2), datetime.date(2022, 5, 13): np.int64(10), datetime.date(2022, 5, 17): np.int64(4), datetime.date(2022, 5, 19): np.int64(93), datetime.date(2022, 5, 20): np.int64(73), datetime.date(2022, 5, 25): np.int64(208), datetime.date(2022, 5, 26): np.int64(83), datetime.date(2022, 5, 30): np.int64(51), datetime.date(2022, 5, 31): np.int64(250), datetime.date(2022, 6, 1): np.int64(6), datetime.date(2022, 6, 2): np.int64(33), datetime.date(2022, 6, 6): np.int64(40), datetime.date(2022, 6, 7): np.int64(10), datetime.date(2022, 6, 8): np.int64(12), datetime.date(2022, 6, 10): np.int64(24), datetime.date(2022, 6, 14): np.int64(50), datetime.date(2022, 6, 15): np.int64(34), datetime.date(2022, 6, 17): np.int64(12), datetime.date(2022, 6, 23): np.int64(31), datetime.date(2022, 6, 24): np.int64(24), datetime.date(2022, 6, 27): np.int64(26), datetime.date(2022, 6, 28): np.int64(50), datetime.date(2022, 6, 30): np.int64(11), datetime.date(2022, 7, 4): np.int64(58), datetime.date(2022, 7, 7): np.int64(54), datetime.date(2022, 7, 13): np.int64(90), datetime.date(2022, 7, 14): np.int64(21), datetime.date(2022, 7, 18): np.int64(76), datetime.date(2022, 7, 19): np.int64(15), datetime.date(2022, 7, 20): np.int64(13), datetime.date(2022, 7, 26): np.int64(15), datetime.date(2022, 7, 27): np.int64(22), datetime.date(2022, 8, 1): np.int64(44), datetime.date(2022, 8, 4): np.int64(48), datetime.date(2022, 8, 5): np.int64(156), datetime.date(2022, 8, 8): np.int64(29), datetime.date(2022, 8, 9): np.int64(57), datetime.date(2022, 8, 11): np.int64(13), datetime.date(2022, 8, 12): np.int64(7), datetime.date(2022, 8, 15): np.int64(3), datetime.date(2022, 8, 17): np.int64(6), datetime.date(2022, 8, 22): np.int64(83), datetime.date(2022, 8, 23): np.int64(58), datetime.date(2022, 8, 25): np.int64(121), datetime.date(2022, 8, 29): np.int64(61), datetime.date(2022, 9, 5): np.int64(14), datetime.date(2022, 9, 6): np.int64(31), datetime.date(2022, 9, 7): np.int64(3), datetime.date(2022, 9, 9): np.int64(4), datetime.date(2022, 9, 14): np.int64(2), datetime.date(2022, 9, 21): np.int64(40), datetime.date(2022, 9, 22): np.int64(16), datetime.date(2022, 9, 27): np.int64(17), datetime.date(2022, 10, 11): np.int64(3), datetime.date(2022, 10, 12): np.int64(32), datetime.date(2022, 10, 13): np.int64(7), datetime.date(2022, 10, 14): np.int64(13), datetime.date(2022, 10, 17): np.int64(1), datetime.date(2022, 10, 20): np.int64(5), datetime.date(2022, 10, 21): np.int64(1), datetime.date(2022, 10, 25): np.int64(23), datetime.date(2022, 10, 26): np.int64(136), datetime.date(2022, 10, 31): np.int64(433), datetime.date(2022, 11, 1): np.int64(218), datetime.date(2022, 11, 2): np.int64(17), datetime.date(2022, 11, 3): np.int64(24), datetime.date(2022, 11, 4): np.int64(32), datetime.date(2022, 11, 7): np.int64(4), datetime.date(2022, 11, 10): np.int64(23), datetime.date(2022, 11, 15): np.int64(98), datetime.date(2022, 11, 17): np.int64(35), datetime.date(2022, 11, 21): np.int64(43), datetime.date(2022, 11, 22): np.int64(24), datetime.date(2022, 11, 23): np.int64(39), datetime.date(2022, 11, 25): np.int64(41), datetime.date(2022, 11, 28): np.int64(18), datetime.date(2022, 11, 29): np.int64(185), datetime.date(2022, 11, 30): np.int64(14), datetime.date(2022, 12, 5): np.int64(33), datetime.date(2022, 12, 6): np.int64(2), datetime.date(2022, 12, 8): np.int64(8), datetime.date(2022, 12, 9): np.int64(29), datetime.date(2022, 12, 16): np.int64(23), datetime.date(2022, 12, 23): np.int64(13), datetime.date(2022, 12, 26): np.int64(34), datetime.date(2022, 12, 27): np.int64(13), datetime.date(2022, 12, 30): np.int64(4), datetime.date(2023, 1, 3): np.int64(3), datetime.date(2023, 1, 4): np.int64(4), datetime.date(2023, 1, 5): np.int64(4), datetime.date(2023, 1, 6): np.int64(5), datetime.date(2023, 1, 9): np.int64(8), datetime.date(2023, 1, 13): np.int64(56), datetime.date(2023, 1, 16): np.int64(46), datetime.date(2023, 1, 19): np.int64(15), datetime.date(2023, 1, 20): np.int64(35), datetime.date(2023, 2, 1): np.int64(14), datetime.date(2023, 2, 7): np.int64(22), datetime.date(2023, 2, 9): np.int64(88), datetime.date(2023, 2, 13): np.int64(88), datetime.date(2023, 2, 14): np.int64(23), datetime.date(2023, 2, 20): np.int64(39), datetime.date(2023, 2, 21): np.int64(45), datetime.date(2023, 2, 27): np.int64(6), datetime.date(2023, 2, 28): np.int64(61), datetime.date(2023, 3, 1): np.int64(28), datetime.date(2023, 3, 2): np.int64(7), datetime.date(2023, 3, 3): np.int64(4), datetime.date(2023, 3, 8): np.int64(21), datetime.date(2023, 3, 13): np.int64(25), datetime.date(2023, 3, 15): np.int64(74), datetime.date(2023, 3, 17): np.int64(59), datetime.date(2023, 3, 21): np.int64(29), datetime.date(2023, 3, 22): np.int64(10), datetime.date(2023, 3, 23): np.int64(8), datetime.date(2023, 3, 30): np.int64(10), datetime.date(2023, 3, 31): np.int64(40), datetime.date(2023, 4, 3): np.int64(62), datetime.date(2023, 4, 4): np.int64(19), datetime.date(2023, 4, 6): np.int64(18), datetime.date(2023, 4, 7): np.int64(100), datetime.date(2023, 4, 12): np.int64(41), datetime.date(2023, 4, 14): np.int64(21), datetime.date(2023, 4, 17): np.int64(52), datetime.date(2023, 4, 18): np.int64(10), datetime.date(2023, 4, 26): np.int64(35), datetime.date(2023, 4, 27): np.int64(37), datetime.date(2023, 4, 28): np.int64(83), datetime.date(2023, 5, 4): np.int64(16), datetime.date(2023, 5, 8): np.int64(6), datetime.date(2023, 5, 15): np.int64(24), datetime.date(2023, 5, 17): np.int64(47), datetime.date(2023, 5, 18): np.int64(19), datetime.date(2023, 5, 22): np.int64(30), datetime.date(2023, 5, 25): np.int64(54), datetime.date(2023, 5, 26): np.int64(37), datetime.date(2023, 5, 29): np.int64(23), datetime.date(2023, 5, 30): np.int64(37), datetime.date(2023, 6, 1): np.int64(30), datetime.date(2023, 6, 2): np.int64(66), datetime.date(2023, 6, 5): np.int64(43), datetime.date(2023, 6, 7): np.int64(19), datetime.date(2023, 6, 8): np.int64(10), datetime.date(2023, 6, 9): np.int64(42), datetime.date(2023, 6, 12): np.int64(55), datetime.date(2023, 6, 13): np.int64(73), datetime.date(2023, 6, 15): np.int64(12), datetime.date(2023, 6, 16): np.int64(30), datetime.date(2023, 6, 27): np.int64(55), datetime.date(2023, 6, 28): np.int64(31), datetime.date(2023, 6, 30): np.int64(58), datetime.date(2023, 7, 3): np.int64(13), datetime.date(2023, 7, 4): np.int64(5), datetime.date(2023, 7, 11): np.int64(35), datetime.date(2023, 7, 13): np.int64(71), datetime.date(2023, 7, 19): np.int64(20), datetime.date(2023, 7, 21): np.int64(26), datetime.date(2023, 7, 24): np.int64(13), datetime.date(2023, 7, 25): np.int64(112), datetime.date(2023, 7, 28): np.int64(27), datetime.date(2023, 7, 31): np.int64(48), datetime.date(2023, 8, 1): np.int64(2), datetime.date(2023, 8, 3): np.int64(23), datetime.date(2023, 8, 10): np.int64(46), datetime.date(2023, 8, 14): np.int64(28), datetime.date(2023, 8, 17): np.int64(44), datetime.date(2023, 8, 22): np.int64(47), datetime.date(2023, 8, 29): np.int64(219), datetime.date(2023, 9, 1): np.int64(7), datetime.date(2023, 9, 4): np.int64(8), datetime.date(2023, 9, 6): np.int64(1), datetime.date(2023, 9, 8): np.int64(8), datetime.date(2023, 9, 11): np.int64(27), datetime.date(2023, 9, 14): np.int64(24), datetime.date(2023, 9, 18): np.int64(71), datetime.date(2023, 9, 19): np.int64(4), datetime.date(2023, 9, 22): np.int64(69), datetime.date(2023, 9, 27): np.int64(44), datetime.date(2023, 10, 12): np.int64(22), datetime.date(2023, 10, 17): np.int64(16), datetime.date(2023, 10, 24): np.int64(59), datetime.date(2023, 10, 26): np.int64(20), datetime.date(2023, 10, 27): np.int64(15), datetime.date(2023, 10, 30): np.int64(6), datetime.date(2023, 11, 3): np.int64(4), datetime.date(2023, 11, 6): np.int64(31), datetime.date(2023, 11, 7): np.int64(17), datetime.date(2023, 11, 8): np.int64(19), datetime.date(2023, 11, 9): np.int64(18), datetime.date(2023, 11, 13): np.int64(51), datetime.date(2023, 11, 14): np.int64(26), datetime.date(2023, 11, 17): np.int64(45), datetime.date(2023, 11, 20): np.int64(30), datetime.date(2023, 11, 23): np.int64(68), datetime.date(2023, 11, 28): np.int64(103), datetime.date(2023, 11, 30): np.int64(8), datetime.date(2023, 12, 1): np.int64(107), datetime.date(2023, 12, 6): np.int64(32), datetime.date(2023, 12, 7): np.int64(7), datetime.date(2023, 12, 8): np.int64(10), datetime.date(2023, 12, 11): np.int64(26), datetime.date(2023, 12, 12): np.int64(42), datetime.date(2023, 12, 19): np.int64(8), datetime.date(2023, 12, 21): np.int64(12), datetime.date(2023, 12, 25): np.int64(13), datetime.date(2023, 12, 27): np.int64(16), datetime.date(2023, 12, 28): np.int64(59), datetime.date(2023, 12, 29): np.int64(45), datetime.date(2024, 1, 3): np.int64(3), datetime.date(2024, 1, 9): np.int64(5), datetime.date(2024, 1, 11): np.int64(28), datetime.date(2024, 1, 12): np.int64(22), datetime.date(2024, 1, 15): np.int64(42), datetime.date(2024, 1, 16): np.int64(4), datetime.date(2024, 1, 18): np.int64(4), datetime.date(2024, 1, 23): np.int64(6), datetime.date(2024, 1, 24): np.int64(57), datetime.date(2024, 1, 25): np.int64(29), datetime.date(2024, 1, 26): np.int64(5), datetime.date(2024, 2, 6): np.int64(55), datetime.date(2024, 2, 7): np.int64(18), datetime.date(2024, 2, 8): np.int64(3), datetime.date(2024, 2, 19): np.int64(19), datetime.date(2024, 2, 20): np.int64(4), datetime.date(2024, 2, 22): np.int64(1), datetime.date(2024, 2, 27): np.int64(1), datetime.date(2024, 2, 29): np.int64(156), datetime.date(2024, 3, 1): np.int64(42), datetime.date(2024, 3, 4): np.int64(64), datetime.date(2024, 3, 5): np.int64(6), datetime.date(2024, 3, 8): np.int64(57), datetime.date(2024, 3, 11): np.int64(386), datetime.date(2024, 3, 15): np.int64(10), datetime.date(2024, 3, 18): np.int64(27), datetime.date(2024, 3, 20): np.int64(5), datetime.date(2024, 3, 26): np.int64(44), datetime.date(2024, 3, 28): np.int64(20), datetime.date(2024, 3, 29): np.int64(167), datetime.date(2024, 4, 1): np.int64(115), datetime.date(2024, 4, 9): np.int64(5), datetime.date(2024, 4, 11): np.int64(11), datetime.date(2024, 4, 15): np.int64(46), datetime.date(2024, 4, 17): np.int64(97), datetime.date(2024, 4, 18): np.int64(21), datetime.date(2024, 4, 19): np.int64(28), datetime.date(2024, 4, 24): np.int64(1), datetime.date(2024, 4, 25): np.int64(5), datetime.date(2024, 4, 26): np.int64(21), datetime.date(2024, 4, 29): np.int64(22), datetime.date(2024, 5, 6): np.int64(19), datetime.date(2024, 5, 7): np.int64(15), datetime.date(2024, 5, 9): np.int64(16), datetime.date(2024, 5, 13): np.int64(11), datetime.date(2024, 5, 17): np.int64(151), datetime.date(2024, 5, 20): np.int64(76), datetime.date(2024, 5, 22): np.int64(39), datetime.date(2024, 5, 27): np.int64(30), datetime.date(2024, 5, 29): np.int64(18), datetime.date(2024, 6, 4): np.int64(10), datetime.date(2024, 6, 12): np.int64(22), datetime.date(2024, 6, 14): np.int64(4), datetime.date(2024, 6, 18): np.int64(10), datetime.date(2024, 6, 26): np.int64(45), datetime.date(2024, 6, 28): np.int64(21), datetime.date(2024, 7, 1): np.int64(30), datetime.date(2024, 7, 2): np.int64(4), datetime.date(2024, 7, 9): np.int64(38), datetime.date(2024, 7, 11): np.int64(368), datetime.date(2024, 7, 12): np.int64(9), datetime.date(2024, 7, 15): np.int64(8), datetime.date(2024, 7, 16): np.int64(1), datetime.date(2024, 7, 18): np.int64(3), datetime.date(2024, 7, 19): np.int64(4), datetime.date(2024, 7, 26): np.int64(60), datetime.date(2024, 7, 29): np.int64(6), datetime.date(2024, 7, 31): np.int64(61), datetime.date(2024, 8, 7): np.int64(7), datetime.date(2024, 8, 8): np.int64(8), datetime.date(2024, 8, 13): np.int64(10), datetime.date(2024, 8, 15): np.int64(80), datetime.date(2024, 8, 16): np.int64(37), datetime.date(2024, 8, 19): np.int64(22), datetime.date(2024, 8, 23): np.int64(27), datetime.date(2024, 8, 26): np.int64(68), datetime.date(2024, 8, 30): np.int64(27), datetime.date(2024, 9, 5): np.int64(4), datetime.date(2024, 9, 10): np.int64(20), datetime.date(2024, 9, 18): np.int64(31), datetime.date(2024, 9, 19): np.int64(253), datetime.date(2024, 9, 20): np.int64(27), datetime.date(2024, 9, 23): np.int64(10), datetime.date(2024, 9, 24): np.int64(197), datetime.date(2024, 9, 26): np.int64(4), datetime.date(2024, 9, 27): np.int64(15), datetime.date(2024, 9, 30): np.int64(7), datetime.date(2024, 10, 10): np.int64(2), datetime.date(2024, 10, 16): np.int64(113), datetime.date(2024, 10, 18): np.int64(507), datetime.date(2024, 10, 22): np.int64(80), datetime.date(2024, 10, 23): np.int64(4), datetime.date(2024, 10, 25): np.int64(5), datetime.date(2024, 10, 28): np.int64(15), datetime.date(2024, 10, 31): np.int64(97), datetime.date(2024, 11, 4): np.int64(61), datetime.date(2024, 11, 5): np.int64(488), datetime.date(2024, 11, 7): np.int64(44), datetime.date(2024, 11, 11): np.int64(30), datetime.date(2024, 11, 13): np.int64(11), datetime.date(2024, 11, 19): np.int64(57), datetime.date(2024, 11, 20): np.int64(66), datetime.date(2024, 11, 21): np.int64(65), datetime.date(2024, 11, 26): np.int64(1), datetime.date(2024, 11, 27): np.int64(11), datetime.date(2024, 11, 29): np.int64(20), datetime.date(2024, 12, 2): np.int64(6), datetime.date(2024, 12, 3): np.int64(10), datetime.date(2024, 12, 5): np.int64(24), datetime.date(2024, 12, 6): np.int64(23), datetime.date(2024, 12, 11): np.int64(223), datetime.date(2024, 12, 12): np.int64(27), datetime.date(2024, 12, 18): np.int64(14), datetime.date(2024, 12, 19): np.int64(25), datetime.date(2024, 12, 20): np.int64(98), datetime.date(2024, 12, 24): np.int64(68), datetime.date(2024, 12, 26): np.int64(9), datetime.date(2024, 12, 27): np.int64(16), datetime.date(2024, 12, 30): np.int64(13), datetime.date(2025, 1, 7): np.int64(9), datetime.date(2025, 1, 8): np.int64(15), datetime.date(2025, 1, 13): np.int64(5), datetime.date(2025, 1, 14): np.int64(7), datetime.date(2025, 1, 17): np.int64(12), datetime.date(2025, 1, 24): np.int64(50), datetime.date(2025, 2, 6): np.int64(316), datetime.date(2025, 2, 7): np.int64(44), datetime.date(2025, 2, 10): np.int64(18), datetime.date(2025, 2, 12): np.int64(5), datetime.date(2025, 2, 14): np.int64(5), datetime.date(2025, 2, 17): np.int64(24), datetime.date(2025, 2, 19): np.int64(51), datetime.date(2025, 2, 20): np.int64(168), datetime.date(2025, 2, 21): np.int64(34), datetime.date(2025, 2, 25): np.int64(39), datetime.date(2025, 2, 26): np.int64(22), datetime.date(2025, 2, 27): np.int64(17), datetime.date(2025, 3, 4): np.int64(42), datetime.date(2025, 3, 5): np.int64(14), datetime.date(2025, 3, 6): np.int64(110), datetime.date(2025, 3, 11): np.int64(13), datetime.date(2025, 3, 14): np.int64(42), datetime.date(2025, 3, 19): np.int64(14), datetime.date(2025, 3, 24): np.int64(37), datetime.date(2025, 3, 26): np.int64(67), datetime.date(2025, 3, 27): np.int64(25), datetime.date(2025, 4, 1): np.int64(56), datetime.date(2025, 4, 2): np.int64(11), datetime.date(2025, 4, 3): np.int64(27), datetime.date(2025, 4, 8): np.int64(26), datetime.date(2025, 4, 9): np.int64(20), datetime.date(2025, 4, 11): np.int64(12), datetime.date(2025, 4, 14): np.int64(36), datetime.date(2025, 4, 16): np.int64(1), datetime.date(2025, 4, 18): np.int64(1), datetime.date(2025, 4, 22): np.int64(13), datetime.date(2025, 4, 24): np.int64(16), datetime.date(2025, 4, 29): np.int64(81), datetime.date(2025, 5, 6): np.int64(335), datetime.date(2025, 5, 8): np.int64(21), datetime.date(2025, 5, 12): np.int64(15), datetime.date(2025, 5, 14): np.int64(11), datetime.date(2025, 5, 19): np.int64(69), datetime.date(2025, 5, 20): np.int64(86), datetime.date(2025, 5, 21): np.int64(14), datetime.date(2025, 5, 26): np.int64(42), datetime.date(2025, 5, 29): np.int64(202), datetime.date(2025, 6, 3): np.int64(29), datetime.date(2025, 6, 4): np.int64(23), datetime.date(2025, 6, 5): np.int64(7), datetime.date(2025, 6, 6): np.int64(9), datetime.date(2025, 6, 9): np.int64(33), datetime.date(2025, 6, 11): np.int64(16), datetime.date(2025, 6, 12): np.int64(21), datetime.date(2025, 6, 16): np.int64(27), datetime.date(2025, 6, 18): np.int64(17), datetime.date(2025, 6, 20): np.int64(35), datetime.date(2025, 6, 23): np.int64(63), datetime.date(2025, 6, 24): np.int64(88), datetime.date(2025, 6, 25): np.int64(19), datetime.date(2025, 6, 30): np.int64(7), datetime.date(2025, 7, 1): np.int64(10), datetime.date(2025, 7, 3): np.int64(18), datetime.date(2025, 7, 4): np.int64(5), datetime.date(2025, 7, 7): np.int64(29), datetime.date(2025, 7, 8): np.int64(108), datetime.date(2025, 7, 10): np.int64(28), datetime.date(2025, 7, 14): np.int64(29), datetime.date(2025, 7, 16): np.int64(78), datetime.date(2025, 7, 17): np.int64(35), datetime.date(2025, 7, 18): np.int64(21), datetime.date(2025, 7, 21): np.int64(137), datetime.date(2025, 7, 22): np.int64(29), datetime.date(2025, 7, 24): np.int64(37), datetime.date(2025, 7, 28): np.int64(18), datetime.date(2025, 7, 29): np.int64(20), datetime.date(2025, 7, 30): np.int64(21), datetime.date(2025, 8, 4): np.int64(91), datetime.date(2025, 8, 5): np.int64(60), datetime.date(2025, 8, 6): np.int64(27), datetime.date(2025, 8, 7): np.int64(21), datetime.date(2025, 8, 8): np.int64(7), datetime.date(2025, 8, 11): np.int64(29), datetime.date(2025, 8, 12): np.int64(9), datetime.date(2025, 8, 13): np.int64(11), datetime.date(2025, 8, 15): np.int64(56), datetime.date(2025, 8, 18): np.int64(46), datetime.date(2025, 8, 20): np.int64(46), datetime.date(2025, 8, 21): np.int64(31), datetime.date(2025, 8, 22): np.int64(4), datetime.date(2025, 8, 25): np.int64(41), datetime.date(2025, 8, 28): np.int64(28), datetime.date(2025, 8, 29): np.int64(29), datetime.date(2025, 9, 1): np.int64(75), datetime.date(2025, 9, 5): np.int64(67), datetime.date(2025, 9, 8): np.int64(34), datetime.date(2025, 9, 10): np.int64(16), datetime.date(2025, 9, 11): np.int64(12), datetime.date(2025, 9, 17): np.int64(11), datetime.date(2025, 9, 22): np.int64(33), datetime.date(2025, 9, 24): np.int64(54), datetime.date(2025, 9, 25): np.int64(30), datetime.date(2025, 9, 29): np.int64(25), datetime.date(2025, 9, 30): np.int64(16), datetime.date(2025, 10, 9): np.int64(19), datetime.date(2025, 10, 13): np.int64(9), datetime.date(2025, 10, 15): np.int64(13), datetime.date(2025, 10, 16): np.int64(10), datetime.date(2025, 10, 21): np.int64(94), datetime.date(2025, 10, 22): np.int64(6), datetime.date(2025, 10, 23): np.int64(57), datetime.date(2025, 10, 24): np.int64(33), datetime.date(2025, 10, 27): np.int64(12), datetime.date(2025, 10, 28): np.int64(12), datetime.date(2025, 10, 29): np.int64(23), datetime.date(2025, 11, 3): np.int64(51), datetime.date(2025, 11, 5): np.int64(36), datetime.date(2025, 11, 6): np.int64(43), datetime.date(2025, 11, 7): np.int64(12), datetime.date(2025, 11, 10): np.int64(26), datetime.date(2025, 11, 12): np.int64(7), datetime.date(2025, 11, 13): np.int64(30), datetime.date(2025, 11, 19): np.int64(23), datetime.date(2025, 11, 25): np.int64(51), datetime.date(2025, 11, 27): np.int64(17), datetime.date(2025, 11, 28): np.int64(23), datetime.date(2025, 12, 1): np.int64(2), datetime.date(2025, 12, 5): np.int64(4), datetime.date(2025, 12, 8): np.int64(12), datetime.date(2025, 12, 12): np.int64(16), datetime.date(2025, 12, 15): np.int64(45), datetime.date(2025, 12, 17): np.int64(19), datetime.date(2025, 12, 18): np.int64(34), datetime.date(2025, 12, 19): np.int64(24), datetime.date(2025, 12, 22): np.int64(24), datetime.date(2025, 12, 23): np.int64(9), datetime.date(2025, 12, 24): np.int64(16), datetime.date(2025, 12, 25): np.int64(16), datetime.date(2025, 12, 26): np.int64(4), datetime.date(2025, 12, 29): np.int64(14), datetime.date(2025, 12, 30): np.int64(11), datetime.date(2025, 12, 31): np.int64(26), datetime.date(2026, 1, 5): np.int64(116), datetime.date(2026, 1, 6): np.int64(101), datetime.date(2026, 1, 7): np.int64(31), datetime.date(2026, 1, 8): np.int64(90), datetime.date(2026, 1, 9): np.int64(36), datetime.date(2026, 1, 12): np.int64(22), datetime.date(2026, 1, 15): np.int64(12), datetime.date(2026, 1, 19): np.int64(70), datetime.date(2026, 1, 21): np.int64(26), datetime.date(2026, 1, 23): np.int64(60), datetime.date(2026, 1, 27): np.int64(12), datetime.date(2026, 1, 28): np.int64(11), datetime.date(2026, 1, 29): np.int64(17), datetime.date(2026, 2, 3): np.int64(60), datetime.date(2026, 2, 4): np.int64(40), datetime.date(2026, 2, 5): np.int64(10), datetime.date(2026, 2, 6): np.int64(13), datetime.date(2026, 2, 9): np.int64(56), datetime.date(2026, 2, 11): np.int64(4), datetime.date(2026, 2, 25): np.int64(42), datetime.date(2026, 2, 27): np.int64(24), datetime.date(2026, 3, 2): np.int64(8), datetime.date(2026, 3, 6): np.int64(44), datetime.date(2026, 3, 10): np.int64(61), datetime.date(2026, 3, 11): np.int64(26), datetime.date(2026, 3, 18): np.int64(9), datetime.date(2026, 3, 24): np.int64(51), datetime.date(2026, 3, 25): np.int64(33), datetime.date(2026, 3, 27): np.int64(14), datetime.date(2026, 3, 30): np.int64(7), datetime.date(2026, 4, 1): np.int64(2), datetime.date(2026, 4, 7): np.int64(4), datetime.date(2026, 4, 8): np.int64(152), datetime.date(2026, 4, 10): np.int64(47), datetime.date(2026, 4, 13): np.int64(15), datetime.date(2026, 4, 14): np.int64(5), datetime.date(2026, 4, 16): np.int64(26), datetime.date(2026, 4, 17): np.int64(7), datetime.date(2026, 4, 20): np.int64(28), datetime.date(2026, 4, 21): np.int64(21), datetime.date(2026, 4, 22): np.int64(52)}
+2026-05-07 15:54:30.926 | INFO     | SimLoader  | 策略 ma5_angle 今日(2026-05-07)无信号
+2026-05-07 15:54:30.930 | INFO     | ParquetPipeline | ParquetPipeline | Fetching daily k-lines from 20260427 to 20260507...
+2026-05-07 15:54:31.110 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260507...
+2026-05-07 15:54:31.237 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260506...
+2026-05-07 15:54:31.935 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260430...
+2026-05-07 15:54:32.662 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260429...
+2026-05-07 15:54:33.356 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260428...
+2026-05-07 15:54:34.079 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260427...
+2026-05-07 15:54:34.770 | INFO     | ParquetPipeline | ParquetPipeline | Writing 5507 stocks to Parquet...
+2026-05-07 15:55:40.480 | INFO     | DuckDB     | DuckDB | 创建虚拟视图成功: kline_daily_view -> E:/1target/p9_project/quant-platform/data/parquet/daily/*.parquet
+2026-05-07 15:55:40.482 | INFO     | ParquetPipeline | ParquetPipeline | Daily K-lines fully synced.
+2026-05-07 17:30:00.015 | INFO     | CronScheduler | CronScheduler ========= [全自动日线/面料收取管道] 起步 =========
+2026-05-07 17:30:02.059 | ERROR    | System     | QMTGateway | 获取股票列表异常: HTTPConnectionPool(host='127.0.0.1', port=8081): Max retries exceeded with url: /api/stocklist?details=false (Caused by NewConnectionError("HTTPConnection(host='127.0.0.1', port=8081): Failed to establish a new connection: [WinError 10061] 由于目标计算机积极拒绝，无法连接。"))
+2026-05-07 17:30:02.060 | INFO     | TushareSync | Fetching stock basics from Tushare...
+2026-05-07 17:30:02.507 | INFO     | DuckDB     | 更新股票元数据: 5513 条
+2026-05-07 17:30:02.508 | INFO     | TushareSync | Successfully synced 5513 stock basics.
+2026-05-07 17:30:02.509 | INFO     | TushareSync | Fetching daily basics snapshot from Tushare (Date: Latest)...
+2026-05-07 17:30:04.390 | INFO     | TushareSync | Pulling more financial indicators (ROE, Margin) in chunks of 100...
+2026-05-07 17:32:46.253 | INFO     | DuckDB     | 更新股票基本面数据: 5493 条
+2026-05-07 17:32:46.254 | INFO     | TushareSync | Successfully synced 5493 fundamentals records with enhanced indicators.
+2026-05-07 17:32:49.661 | INFO     | ParquetPipeline | ParquetPipeline | Fetching daily k-lines from 20260430 to 20260507...
+2026-05-07 17:32:49.837 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260507...
+2026-05-07 17:32:50.658 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260506...
+2026-05-07 17:32:51.411 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260430...
+2026-05-07 17:32:52.822 | INFO     | ParquetPipeline | ParquetPipeline | Writing 5499 stocks to Parquet...
+2026-05-07 17:34:05.704 | INFO     | DuckDB     | DuckDB | 创建虚拟视图成功: kline_daily_view -> E:/1target/p9_project/quant-platform/data/parquet/daily/*.parquet
+2026-05-07 17:34:05.704 | INFO     | ParquetPipeline | ParquetPipeline | Daily K-lines fully synced.
+2026-05-07 17:34:05.785 | INFO     | CronScheduler | CronScheduler ========= [收取管道] 完美结束 =========
+2026-05-07 20:43:29.053 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成 (含热点板块)
+2026-05-07 20:43:29.054 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-05-07 20:43:29.559 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-05-07 20:43:29.562 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 08:30 执行。
+2026-05-07 20:43:29.562 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 17:30 执行。
+2026-05-07 20:43:29.563 | INFO     | CronScheduler | CronScheduler | Redis→DuckDB 收割机已安排在每个工作日 15:30 执行。
+2026-05-07 20:43:29.563 | INFO     | CronScheduler | CronScheduler | 模拟盘尾盘交易已安排在 14:52 执行。
+2026-05-07 20:43:29.563 | INFO     | CronScheduler | CronScheduler | 盘中监控全量扫描已安排（每分钟，兜底）。
+2026-05-07 20:43:29.563 | INFO     | CronScheduler | CronScheduler | 概念数据同步已安排在每日 09:00 执行。
+2026-05-07 20:43:29.564 | INFO     | CronScheduler | CronScheduler | 板块热度重算已安排在每个交易日 5 分钟/次。
+2026-05-07 20:43:29.564 | INFO     | CronScheduler | CronScheduler | 收盘热度终版快照已安排在 15:30 执行。
+2026-05-07 20:43:29.564 | INFO     | CronScheduler | CronScheduler | 自动调度服务(APScheduler) 已启动。
+2026-05-07 20:43:34.575 | INFO     | ParquetPipeline | ParquetPipeline | Fetching daily k-lines from 20260427 to 20260507...
+2026-05-07 20:43:34.695 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260507...
+2026-05-07 20:43:35.432 | INFO     | API-SimTrader | 手动触发模拟盘交易: 2026-05-07
+2026-05-07 20:43:35.462 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260506...
+2026-05-07 20:43:36.192 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260430...
+2026-05-07 20:43:36.989 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260429...
+2026-05-07 20:43:37.714 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260428...
+2026-05-07 20:43:38.491 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260427...
+2026-05-07 20:43:39.243 | INFO     | ParquetPipeline | ParquetPipeline | Writing 5510 stocks to Parquet...
+2026-05-07 20:44:27.579 | INFO     | SimLoader  | 腾讯行情已注入: 4958 只股票
+2026-05-07 20:44:29.824 | INFO     | Screener   | 🧬 [Loader] 识别到类继承策略: MA5AngleOriginalStrategy
+2026-05-07 20:45:03.089 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (1/5)
+2026-05-07 20:45:03.676 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (2/5)
+2026-05-07 20:45:04.251 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (3/5)
+2026-05-07 20:45:04.829 | WARNING  | DuckDB     | DuckDB | 数据库占用中，准备重试... (4/5)
+2026-05-07 20:45:05.421 | ERROR    | DuckDB     | DuckDB | 无法连接到数据库: IO Error: Cannot open file "E:\1target\p9_project\quant-platform\data\meta\meta.db": 另一个程序正在使用此文件，进程无法访问。
+
+File is already open in 
+C:\Python314\python.exe (PID 29988)
+2026-05-07 20:45:05.430 | ERROR    | DuckDB     | DuckDB | 初始化表结构失败: IO Error: Cannot open file "E:\1target\p9_project\quant-platform\data\meta\meta.db": 另一个程序正在使用此文件，进程无法访问。
+
+File is already open in 
+C:\Python314\python.exe (PID 29988)
+2026-05-07 20:45:32.778 | INFO     | DuckDB     | DuckDB | 创建虚拟视图成功: kline_daily_view -> E:/1target/p9_project/quant-platform/data/parquet/daily/*.parquet
+2026-05-07 20:45:32.780 | INFO     | ParquetPipeline | ParquetPipeline | Daily K-lines fully synced.
+2026-05-07 20:48:36.513 | INFO     | API-SimTrader | 开关: 卖出=执行(close) 选股=关 买入=不买
+2026-05-07 20:48:38.265 | INFO     | API-SimTrader | 开关: 卖出=执行(close) 选股=开 买入=不买
+2026-05-07 20:49:12.041 | INFO     | API-SimTrader | 开关: 卖出=执行(close) 选股=关 买入=不买
+2026-05-07 20:49:12.532 | INFO     | API-SimTrader | 开关: 卖出=执行(close) 选股=开 买入=不买
+2026-05-07 20:49:22.568 | INFO     | API-SimTrader | 开关: 卖出=执行(close) 选股=开 买入=执行
+2026-05-07 20:50:32.104 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成 (含热点板块)
+2026-05-07 20:50:32.105 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\scripts\..\data\meta\meta.db
+2026-05-07 20:52:26.995 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成 (含热点板块)
+2026-05-07 20:52:26.996 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\scripts\..\data\meta\meta.db
+2026-05-07 21:30:29.185 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成 (含热点板块)
+2026-05-07 21:30:29.186 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-05-07 21:37:32.786 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成 (含热点板块)
+2026-05-07 21:37:32.786 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\scripts\..\data\meta\meta.db
+2026-05-07 21:42:28.869 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成 (含热点板块)
+2026-05-07 21:42:28.869 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-05-07 21:42:29.339 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-05-07 21:42:29.343 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 08:30 执行。
+2026-05-07 21:42:29.344 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 17:30 执行。
+2026-05-07 21:42:29.344 | INFO     | CronScheduler | CronScheduler | Redis→DuckDB 收割机已安排在每个工作日 15:30 执行。
+2026-05-07 21:42:29.345 | INFO     | CronScheduler | CronScheduler | 模拟盘尾盘交易已安排在 14:52 执行。
+2026-05-07 21:42:29.345 | INFO     | CronScheduler | CronScheduler | 盘中监控全量扫描已安排（每分钟，兜底）。
+2026-05-07 21:42:29.345 | INFO     | CronScheduler | CronScheduler | 概念数据同步已安排在每日 09:00 执行。
+2026-05-07 21:42:29.345 | INFO     | CronScheduler | CronScheduler | 板块热度重算已安排在每个交易日 5 分钟/次。
+2026-05-07 21:42:29.346 | INFO     | CronScheduler | CronScheduler | 收盘热度终版快照已安排在 15:30 执行。
+2026-05-07 21:42:29.346 | INFO     | CronScheduler | CronScheduler | 自动调度服务(APScheduler) 已启动。
+2026-05-07 21:42:34.356 | INFO     | ParquetPipeline | ParquetPipeline | Fetching daily k-lines from 20260427 to 20260507...
+2026-05-07 21:42:34.514 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260507...
+2026-05-07 21:42:35.257 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260506...
+2026-05-07 21:42:35.993 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260430...
+2026-05-07 21:42:36.752 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260429...
+2026-05-07 21:42:37.482 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260428...
+2026-05-07 21:42:38.196 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260427...
+2026-05-07 21:42:38.953 | INFO     | ParquetPipeline | ParquetPipeline | Writing 5510 stocks to Parquet...
+2026-05-07 21:43:31.564 | INFO     | DuckDB     | DuckDB | 创建虚拟视图成功: kline_daily_view -> E:/1target/p9_project/quant-platform/data/parquet/daily/*.parquet
+2026-05-07 21:43:31.564 | INFO     | ParquetPipeline | ParquetPipeline | Daily K-lines fully synced.

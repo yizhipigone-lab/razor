@@ -1,0 +1,182 @@
+{
+  "trading": {
+    "max_buy_amount": 10000,
+    "order_lot_size": 100,
+    "order_price_type": "auto"
+  },
+  "auto_trade": {
+    "enabled": false,
+    "delay_seconds": 300,
+    "max_amount_per_stock": 10000
+  },
+  "cron": {
+    "sync_time": "17:00",
+    "enabled": true,
+    "sync_times": [
+      "08:30",
+      "17:30"
+    ]
+  },
+  "risk": {
+    "trailing_stop_activate_pct": 8.0,
+    "trailing_stop_drawdown_pct": 2.0,
+    "hard_stop_loss_pct": -5.5,
+    "staged_take_profit": [
+      {
+        "profit_pct": 4.0,
+        "sell_ratio": 0.2,
+        "label": "TP1"
+      },
+      {
+        "profit_pct": 14.0,
+        "sell_ratio": 0.5,
+        "sell_all": true,
+        "label": "TP2"
+      }
+    ],
+    "time_exit_days": 7,
+    "time_exit_min_profit_pct": 1.0,
+    "time_exit_force_days": 10,
+    "breakeven_threshold_pct": 99,
+    "breakeven_stop_pnl_pct": -9,
+    "use_atr_stop": false,
+    "atr_stop_multiplier": 2.5
+  },
+  "strategy": {
+    "ma5_angle": {
+      "vol_threshold": 1.5,
+      "breadth_threshold": 0,
+      "use_rsi": false,
+      "rsi_min": 40,
+      "rsi_max": 75,
+      "use_macd": false,
+      "daily_signal_cap": 0
+    }
+  },
+  "optimizer": {
+    "search_space": {
+      "tp1_profit": {
+        "min": 2.0,
+        "max": 6.0,
+        "step": 0.5
+      },
+      "tp2_profit": {
+        "min": 8.0,
+        "max": 16.0,
+        "step": 1.0
+      },
+      "tp1_ratio": {
+        "min": 0.15,
+        "max": 0.35,
+        "step": 0.05
+      },
+      "tp2_ratio": {
+        "min": 0.4,
+        "max": 0.7,
+        "step": 0.05
+      },
+      "hard_stop_loss_pct": {
+        "min": -7.0,
+        "max": -4.5,
+        "step": 0.5
+      },
+      "trailing_activate_pct": {
+        "min": 6.0,
+        "max": 11.0,
+        "step": 0.5
+      },
+      "trailing_drawdown_pct": {
+        "min": 1.5,
+        "max": 3.0,
+        "step": 0.25
+      },
+      "breakeven_threshold_pct": {
+        "min": 2.0,
+        "max": 6.0,
+        "step": 0.5
+      },
+      "breakeven_stop_pnl_pct": {
+        "min": 0.5,
+        "max": 2.0,
+        "step": 0.5
+      },
+      "time_exit_days": {
+        "min": 5,
+        "max": 12,
+        "step": 1
+      }
+    }
+  },
+  "monitor": {
+    "poll_interval_seconds": 60,
+    "market_index_codes": [
+      "000001.SH",
+      "399001.SZ",
+      "399006.SZ"
+    ]
+  },
+  "data": {
+    "history_years": 1,
+    "update_time": "17:00",
+    "auto_sync": "daily",
+    "default_exchanges": [
+      "SSE",
+      "SZSE"
+    ]
+  },
+  "gateway": {
+    "active_gateway": "qmt",
+    "ths_client_path": "/qmt/userdata_mini",
+    "qmt_path": "/qmt/userdata_mini",
+    "account_id": "1010303391",
+    "qmt_account_id": "1010303391",
+    "qmt_market_mode": "B"
+  },
+  "log": {
+    "level": "INFO",
+    "retention_days": 30
+  },
+  "backtest": {
+    "initial_capital": 1000000,
+    "position_size": 50000,
+    "use_portfolio": true,
+    "streak_pause": 3,
+    "pause_days": 2,
+    "intraday_freq": "min1",
+    "apply_costs": true,
+    "use_hot_concept": false,
+    "hot_concept_top_n": 5
+  },
+  "hot_sector": {
+    "enabled": true,
+    "refresh_minutes": 5,
+    "sector_weight": 0.6,
+    "concept_weight": 0.4,
+    "min_constituent_stocks": 3,
+    "redis_ttl_seconds": 600,
+    "enable_ths_concepts": true,
+    "enable_tushare_concepts": true,
+    "last_updated": "05/07 15:31"
+  },
+  "风险": {
+    "hard_stop_loss_pct": -5.5,
+    "trailing_stop_activate_pct": 8.0,
+    "trailing_stop_drawdown_pct": 2.0,
+    "time_exit_days": 7,
+    "breakeven_threshold_pct": 99,
+    "breakeven_stop_pnl_pct": -9,
+    "staged_take_profit": [
+      {
+        "profit_pct": 4.0,
+        "sell_ratio": 0.2,
+        "label": "TP1"
+      },
+      {
+        "profit_pct": 14.0,
+        "sell_ratio": 0.5,
+        "sell_all": true,
+        "label": "TP2"
+      }
+    ]
+  }
+}
