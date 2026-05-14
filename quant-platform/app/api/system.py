@@ -231,4 +231,58 @@ async def get_bars(code: str, freq: str = "daily", limit: int = 400):
         log.error(traceback.format_exc())
         return []
 
+# ─── 日志查询 API ─────────────────────────────────────────────
+
+LOG_DIR = Path(__file__).resolve().parent.parent.parent / "logs"
+
+
+@router.get("/api/logs/dates")
+async def log_dates():
+    """返回有日志的日期列表"""
+    dates = []
+    for f in sorted(LOG_DIR.glob("????-??-??.log"), reverse=True):
+        name = f.stem
+        if len(name) == 10 and name[4] == '-' and name[7] == '-':
+            dates.append(name)
+    return {"status": "ok", "dates": dates[:60]}
+
+
+@router.get("/api/logs/query")
+async def log_query(date: str = "", keyword: str = "", limit: int = 200):
+    """按日期和关键词搜索日志"""
+    import re
+    # 安全校验
+    if date and not re.match(r'^\d{4}-\d{2}-\d{2}$', date):
+        return {"status": "error", "message": "日期格式错误，应为 YYYY-MM-DD"}
+    if keyword:
+        keyword = re.sub(r'[^\w一-鿿%+\-.:@ ]', '', keyword)
+
+    fp = LOG_DIR / f"{date}.log" if date else None
+    if date and not fp.exists():
+        return {"status": "ok", "lines": [], "total": 0, "message": f"无 {date} 的日志"}
+
+    files = [fp] if date else sorted(LOG_DIR.glob("????-??-??.log"), reverse=True)[:7]
+
+    lines = []
+    for f in files:
+        if not f.exists():
+            continue
+        try:
+            with open(f, 'r', encoding='utf-8', errors='replace') as fh:
+                for raw in fh:
+                    if keyword and keyword.lower() not in raw.lower():
+                        continue
+                    raw = raw.strip()
+                    if raw:
+                        lines.append({"date": f.stem, "line": raw[:500]})
+                    if len(lines) >= limit:
+                        break
+        except Exception:
+            continue
+        if len(lines) >= limit:
+            break
+
+    return {"status": "ok", "lines": lines, "total": len(lines)}
+
+
 # ─── AI 智能体 API ─────────────────────────────────────────────
