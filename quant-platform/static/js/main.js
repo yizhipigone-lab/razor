@@ -1035,6 +1035,13 @@ function updateProgress(ctx, step, total, msg) {
   msgEl.textContent = msg;
 }
 function hideProgress(ctx) {
+  // 统一处理所有上下文的进度条隐藏
+  if (ctx === 'simple-bt') {
+    const wrap = document.getElementById('simple-bt-progress');
+    if (wrap) wrap.style.display = 'none';
+    document.getElementById('btn-simple-bt-run').disabled = false;
+    return;
+  }
   const prefix = ctx === 'backtest' ? 'bt' : ctx === 'dl' ? 'dl' : 'scan';
   const wrap = document.getElementById(`${prefix}-progress`);
   if (wrap) setTimeout(() => wrap.classList.remove('active'), 1500);
@@ -1937,21 +1944,13 @@ function closeChart() {
   }
 }
 
-// ─── Monitor ──────────────────────────────────────────────────
-async function startMonitor() {
-  await fetch('/api/monitor/start', {method:'POST'});
-  document.getElementById('monitor-active-dot').classList.add('connected');
-  document.getElementById('monitor-status-text').textContent = '监控引擎：活跃中 (正在接收 QMT 实时 Tick)';
-  addLog('ok', '实时风控引擎已启动');
+function showToast(msg, type='info') {
+  const el = document.getElementById('toast') || document.createElement('div');
+  if (!el.id) { el.id = 'toast'; el.style.cssText = 'position:fixed;bottom:20px;right:20px;padding:10px 20px;border-radius:8px;z-index:9999;font-size:13px;transition:opacity .3s'; document.body.appendChild(el); }
+  el.style.background = type==='error'?'var(--red)' : type==='warn'?'var(--yellow)' : 'var(--primary)';
+  el.style.color = '#fff'; el.textContent = msg; el.style.opacity = '1';
+  clearTimeout(el._t); el._t = setTimeout(() => { el.style.opacity = '0'; }, 3000);
 }
-
-async function stopMonitor() {
-  await fetch('/api/monitor/stop', {method:'POST'});
-  document.getElementById('monitor-active-dot').classList.remove('connected');
-  document.getElementById('monitor-status-text').textContent = '监控引擎：已停止';
-  addLog('warn', '实时风控引擎已停止');
-}
-
 
 function updateTimeExitLabel() {
   const input = document.getElementById('set-days');
@@ -1961,11 +1960,6 @@ function updateTimeExitLabel() {
   if (label) label.textContent = `第${days}天`;
 }
 
-
-async function runOnce() {
-  await fetch('/api/monitor/run_once', {method:'POST'});
-  addLog('info', '已触发一次风控检查...');
-}
 async function loadSectors() {
   const data = await fetch('/api/market/sectors').then(r => r.json()).catch(() => []);
   const tbody = document.getElementById('sector-tbody');
@@ -3683,6 +3677,7 @@ function _getSwitches() {
     auto_scan: document.getElementById('sim-auto-scan')?.checked || false,
     auto_buy:  document.getElementById('sim-auto-buy')?.checked  || false,
     sell_mode: document.getElementById('sim-sell-mode')?.value || 'close',
+    broker_enabled: document.getElementById('sim-broker-enabled')?.checked || false,
   };
 }
 
@@ -3693,6 +3688,8 @@ function _setSwitchesUI(s) {
   });
   const modeEl = document.getElementById('sim-sell-mode');
   if (modeEl && s.sell_mode) modeEl.value = s.sell_mode;
+  const brokerEl = document.getElementById('sim-broker-enabled');
+  if (brokerEl && s.broker_enabled !== undefined) brokerEl.checked = !!s.broker_enabled;
 }
 
 async function updateSimSellMode() {
@@ -3989,12 +3986,6 @@ function showProgress(ctx, msg) {
 function updateProgressFill(ctx, step, total) {
   const fill = document.getElementById(ctx === 'simple-bt' ? 'simple-bt-fill' : ctx + '-fill');
   if (fill && total > 0) fill.style.width = (step / total * 100) + '%';
-}
-
-function hideProgress(ctx) {
-  const wrap = document.getElementById(ctx === 'simple-bt' ? 'simple-bt-progress' : ctx + '-progress');
-  if (wrap) wrap.style.display = 'none';
-  if (ctx === 'simple-bt') document.getElementById('btn-simple-bt-run').disabled = false;
 }
 
 function renderSimpleBtResults(summary, equity, trades, indices) {

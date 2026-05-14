@@ -571,8 +571,8 @@ class AIBacktestOptimizer:
     @staticmethod
     def _default_search_space() -> dict:
         # 以系统配置的 risk 参数为基线，范围 ≤ 2×
-        tp1 = settings.get("risk", "staged_take_profit", default=[])[0]["profit_pct"] if settings.get("risk", "staged_take_profit", default=[]) else 3.0
-        tp2 = settings.get("risk", "staged_take_profit", default=[])[1]["profit_pct"] if len(settings.get("risk", "staged_take_profit", default=[])) >= 2 else 5.0
+        tp1 = settings.get("risk", "take_profit_tiers", default=[])[0]["profit_pct"] if settings.get("risk", "take_profit_tiers", default=[]) else 3.0
+        tp2 = settings.get("risk", "take_profit_tiers", default=[])[1]["profit_pct"] if len(settings.get("risk", "take_profit_tiers", default=[])) >= 2 else 5.0
         return {
             "tp1_profit":              {"min": max(0.5, tp1 * 0.3), "max": tp1 * 2.0, "step": 0.5},
             "tp2_profit":              {"min": max(1.0, tp2 * 0.5), "max": tp2 * 2.0, "step": 0.5},

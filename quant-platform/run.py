@@ -78,26 +78,6 @@ def cmd_backtest(strategy_name: str, start=None, end=None):
     return result
 
 
-def cmd_monitor_start():
-    """命令：启动盘中监控"""
-    from app.monitor.engine import monitor_engine
-    gateway = get_gateway()
-
-    def order_callback(code, volume, reason, trade_type):
-        gateway.sell(code=code, price=0, volume=volume, reason=reason)
-
-    monitor_engine._order_callback = order_callback
-    monitor_engine.start()
-    log.info("盘中监控已启动（Ctrl+C 停止）")
-    try:
-        import time
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        monitor_engine.stop()
-        log.info("监控已停止")
-
-
 def cmd_buy(code: str, price: float):
     """命令：手工买入"""
     from core.settings import calc_buy_volume
@@ -128,7 +108,6 @@ if __name__ == "__main__":
   python run.py scan MA金叉           # 执行选股
   python run.py scan MACD金叉         # 执行选股
   python run.py backtest MA金叉       # 历史回测
-  python run.py monitor               # 启动盘中监控
   python run.py buy 000001 12.5       # 手工买入
         """)
         sys.exit(0)
@@ -142,8 +121,6 @@ if __name__ == "__main__":
     elif cmd == "backtest":
         strategy = sys.argv[2] if len(sys.argv) > 2 else "MA金叉"
         cmd_backtest(strategy)
-    elif cmd == "monitor":
-        cmd_monitor_start()
     elif cmd == "buy":
         if len(sys.argv) >= 4:
             cmd_buy(sys.argv[2], float(sys.argv[3]))

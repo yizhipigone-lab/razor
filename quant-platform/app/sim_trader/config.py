@@ -66,3 +66,4 @@ SELL_MODE = "close"  # 卖出模式："intraday"(盘中Tick) | "close"(尾盘价
 # ═══════════ 盘中监控 ═══════════
 MONITOR_ENABLED = False     # 启动时是否自动开启盘中监控
 MONITOR_MODE = "intraday"   # "intraday"(触发即卖) | "close"(仅告警,尾盘才卖)
+BROKER_ENABLED  = False     # 是否通过gateway执行真实券商委托（需 QMT/同花顺 已连接）

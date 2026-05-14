@@ -136,32 +136,6 @@ async def update_env_keys(body: EnvKeysUpdate):
         return {"status": "error", "message": str(e)}
 
 
-@router.post("/api/monitor/start")
-async def start_monitor():
-    from app.monitor.engine import monitor_engine
-    gw = get_gateway()
-    def _order_cb(code, volume, reason, trade_type):
-        gw.sell(code, 0, volume, reason=reason)
-    monitor_engine._order_callback = _order_cb
-    monitor_engine.start()
-    return {"status": "ok", "message": "盘中监控已启动"}
-
-@router.post("/api/monitor/stop")
-async def stop_monitor():
-    from app.monitor.engine import monitor_engine
-    monitor_engine.stop()
-    return {"status": "ok", "message": "盘中监控已停止"}
-
-@router.post("/api/monitor/run_once")
-async def run_monitor_once():
-    """手工触发一次风控检查（盘中调试用）"""
-    def _run():
-        from app.monitor.engine import monitor_engine
-        monitor_engine.run_risk_check()
-        sync_broadcast({"type": "log", "msg": "风控检查完成"})
-    run_in_thread(_run)
-    return {"status": "started"}
-
 # ─── K 线数据（同步/图表统一接口） ────────────────────────────
 @router.get("/api/bars/{code}")
 async def get_bars(code: str, freq: str = "daily", limit: int = 400):

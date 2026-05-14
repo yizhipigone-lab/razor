@@ -57,13 +57,12 @@
   <button onclick="switchTab('trades')">📋 交易记录</button>
   <button onclick="switchTab('backtest')">🔬 回测</button>
   <button onclick="switchTab('ai-backtest')">🤖 AI 回测</button>
-  <button onclick="switchTab('monitor')">🛡️ 监控</button>
   <button onclick="switchTab('data')">💾 数据管理</button>
   <button onclick="switchTab('factory')">🏭 策略工厂</button>
   <button onclick="switchTab('reports')">📑 报告仓库</button>
   <button onclick="switchTab('settings')">⚙️ 系统设置</button>
   <button id="btn-tab-radar" onclick="switchTab('radar')" style="border-left: 1px solid var(--border); margin-left: 5px;">🔥 热点板块</button>
-  <button id="btn-tab-sim" onclick="switchTab('sim-trader')" style="border-left: 1px solid var(--border); margin-left: 5px;">🤖 模拟盘</button>
+  <button id="btn-tab-sim" onclick="switchTab('sim-trader')" style="border-left: 1px solid var(--border); margin-left: 5px;">📈 交易控制</button>
 </nav>
 
 <!-- Main -->
@@ -863,23 +862,6 @@
         </div>
       </div>
 
-      <!-- ══ 监控 TAB ═══════════════════════════════════ -->
-      <div id="tab-monitor">
-        <div class="card" style="max-width: 600px; margin: 40px auto; text-align: center; padding: 40px;">
-          <div style="font-size: 48px; margin-bottom: 20px;">🗼</div>
-          <h2 style="margin-bottom: 10px;">实时风控指挥中心</h2>
-          <p style="color: var(--text2); margin-bottom: 30px;">系统将根据 QMT 实时 Tick 数据执行毫秒级风控计算</p>
-          <div style="display: flex; justify-content: center; gap: 15px;">
-            <button class="btn btn-success" style="padding: 12px 30px; font-size: 15px;" onclick="startMonitor()">▶ 开启实时监控</button>
-            <button class="btn btn-danger" style="padding: 12px 30px; font-size: 15px;" onclick="stopMonitor()">■ 停止监控</button>
-          </div>
-          <div id="monitor-status-dot" style="margin-top: 25px; display: flex; align-items: center; justify-content: center; gap: 8px;">
-            <div class="badge-ws" id="monitor-active-dot"></div>
-            <span id="monitor-status-text" style="font-size: 12px; color: var(--text2);">监控引擎：未就绪</span>
-          </div>
-        </div>
-      </div>
-
       <!-- ══ 数据管理 TAB ══════════════════════════════ -->
       <div id="tab-data">
         <div class="card">
@@ -1605,6 +1587,14 @@
               <span class="toggle-slider"></span>
             </label>
             <span style="font-size:11px;color:var(--text2)">买入</span>
+          </div>
+          <div style="margin-top:4px;padding-top:4px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px">
+            <span style="font-size:11px;color:var(--text2);white-space:nowrap">券商委托</span>
+            <label class="toggle-switch" style="margin:0">
+              <input type="checkbox" id="sim-broker-enabled" onchange="updateSimSwitches()">
+              <span class="toggle-slider"></span>
+            </label>
+            <span style="font-size:10px;color:var(--yellow)">⚠ 开启将通过gateway执行真实委托</span>
           </div>
         </div>
         <div class="grid-3" style="margin-bottom:var(--gap)">

@@ -15,6 +15,9 @@ from typing import Optional, Dict, List, Tuple
 from collections import Counter
 
 from app.sim_trader.config import *
+from core.logger import get_logger
+
+log = get_logger("SimEngine")
 
 
 @dataclass
@@ -175,6 +178,7 @@ class SimTraderEngine:
                        shares=shares, cost=cost, strategy_name=strategy_name)
         self.cash -= cost
         self.positions[code] = pos
+        log.info(f"[买入] {code} 价格={price:.2f} 数量={shares} 金额={cost:.0f} 剩余现金={self.cash:.0f} 策略={strategy_name}")
         if self._store:
             self._store.save_positions(self.positions)
             self._store.save_state(
@@ -186,9 +190,11 @@ class SimTraderEngine:
 
     def check_stops(self, today: date, snapshot: dict,
                     trading_dates: List[date],
-                    prev_snap: dict = None) -> List[Tuple]:
+                    prev_snap: dict = None,
+                    readonly: bool = False) -> List[Tuple]:
         """
-        按优先级检查所有持仓的止盈止损
+        按优先级检查所有持仓的止盈止损。
+        readonly=True 时不修改持仓状态（用于告警模式）。
         返回: [(pos, exit_price, reason, partial_shares_or_None), ...]
         """
         sells = []
@@ -206,8 +212,8 @@ class SimTraderEngine:
             current_pct = close_p / pos.entry_price - 1
             hold_days = sum(1 for td in trading_dates if pos.entry_date <= td <= today)
 
-            # 0. 除权跳空保护：检测隔夜跳空下跌，调整入场价避免误触发硬止损
-            if prev_snap:
+            # 0. 除权跳空保护（readonly 模式跳过，不修改持仓状态）
+            if not readonly and prev_snap:
                 prev_bar = prev_snap.get(code)
                 if prev_bar and prev_bar.get('close', 0) > 0:
                     overnight_gap = close_p / prev_bar['close'] - 1
@@ -235,18 +241,23 @@ class SimTraderEngine:
                 sells.append((pos, close_p, f"时间强制({hold_days}天)", None))
                 continue
 
-            # 3. 多档阶梯止盈（在 peak_price 更新前检查，避免 TP 拉宽 TR 回撤基准）
+            # 3. 多档阶梯止盈
+            tp_triggered_local = set()
             for idx, tier in enumerate(TAKE_PROFIT_TIERS):
-                if not pos.is_tier_triggered(idx) and current_pct >= tier['profit_pct']:
+                triggered = pos.is_tier_triggered(idx) if not readonly else (idx in tp_triggered_local)
+                if not triggered and current_pct >= tier['profit_pct']:
                     ss = int(pos.remaining_shares * tier['sell_ratio'] / 100) * 100
                     if ss >= 100:
-                        pos.mark_tier_triggered(idx)
+                        if readonly:
+                            tp_triggered_local.add(idx)
+                        else:
+                            pos.mark_tier_triggered(idx)
                         sells.append((pos, close_p,
                             f"TP{idx+1} +{tier['profit_pct']*100:.0f}%({current_pct*100:.1f}%)", ss))
                         break
 
-            # 更新峰值（在 TP 之后，避免 TP 当天的高点拉宽 TR 回撤）
-            if high_p > pos.peak_price:
+            # 更新峰值（在 TP 之后；readonly 模式跳过）
+            if not readonly and high_p > pos.peak_price:
                 pos.peak_price = high_p
             peak_pct = pos.peak_price / pos.entry_price - 1
 
@@ -290,6 +301,8 @@ class SimTraderEngine:
         self.cash += ss * exit_price
         self._trade_count += 1
 
+        log.info(f"[卖出] {pos.code} 价格={exit_price:.2f} 数量={ss} 收益={rp:.1f}% 利润={profit:.0f} 原因={reason} 剩余现金={self.cash:.0f}")
+
         return Trade(
             code=pos.code, entry_date=pos.entry_date,
             exit_date=exit_date or date.today(),
@@ -325,6 +338,20 @@ class SimTraderEngine:
                 if self._store:
                     self._store.save_trade(trade)
 
+                # 真实券商委托（需 BROKER_ENABLED=True 且 gateway 可用）
+                from app.sim_trader.config import BROKER_ENABLED
+                if BROKER_ENABLED:
+                    try:
+                        from core.gateway import get_gateway
+                        gw = get_gateway()
+                        gw.sell(code=trade.code, price=exit_price,
+                                volume=trade.shares, reason=reason)
+                        log.info(f"券商委托: {trade.code} 卖出 {trade.shares}股 @ {exit_price:.2f} [{reason}]")
+                    except Exception as e:
+                        log.error(f"券商委托失败 {trade.code}: {e}")
+
+        if sells:
+            log.info(f"[卖出阶段] 共执行 {len(sells)} 笔卖出")
         # 清理已平仓
         self.positions = {k: v for k, v in self.positions.items() if v.is_active}
         # 保存当日快照供次日除权跳空保护
@@ -339,6 +366,7 @@ class SimTraderEngine:
 
     def record(self, today: date, snapshot: dict):
         eq = self.total_equity(snapshot)
+        log.info(f"[快照] 日期={today} 权益={eq:,.0f} 现金={self.cash:,.0f} 持仓={self.position_count}")
         self.equity_curve.append({
             'date': today,
             'equity': eq,
