@@ -1,14 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-MA5 角度策略 — 收盘前1分钟精确执行版回测
-============================================
+MA5 角度策略 �?收盘�?分钟精确执行版回�?============================================
 假设：收盘前1分钟可以按目标价退出（只要未跌停）
-跌停处理：
-  Mode A: 跌停仍可卖出（按跌停价）
+跌停处理�?  Mode A: 跌停仍可卖出（按跌停价）
   Mode B: 等打开跌停后当天收盘价卖出
-与OHLC版完整对比
-"""
+与OHLC版完整对�?"""
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 if hasattr(sys.stdout, 'reconfigure'):
@@ -28,8 +25,7 @@ warnings.filterwarnings('ignore')
 from database.duckdb_manager import db, PARQUET_DAILY_DIR
 from app.screener.strategies.ma5_angle import generate_signals
 
-# ═══════════════════════════════════════════════════════════════
-INITIAL_CAPITAL = 1_000_000
+# ══════════════════════════════════════════════════════════════�?INITIAL_CAPITAL = 1_000_000
 POSITION_CAP    = 50_000
 HARD_STOP       = -0.055
 TP1_PCT         = 0.04
@@ -50,13 +46,11 @@ LOAD_START     = date(2022, 1, 1)
 
 SIGNAL_PARAMS = {
     "version": "improved", "filter_st": True, "filter_bj": True,
-    "sh_red_filter": False,
     "vol_threshold": 1.5, "close_position_threshold": 0.8,
     "disable_quality_sort": True,
     "filter_consecutive_up": False, "filter_gap_quality": False,
 }
-# ═══════════════════════════════════════════════════════════════
-
+# ══════════════════════════════════════════════════════════════�?
 
 @dataclass
 class Position:
@@ -103,7 +97,7 @@ def is_limit_down(code, close, prev_close):
         return False
     pct = (close / prev_close - 1) * 100
     if code.startswith(('300','301','688','689')):
-        return pct <= -19.9  # 科创板/创业板20%
+        return pct <= -19.9  # 科创�?创业�?0%
     elif code.startswith(('8','4')):
         return pct <= -29.9  # 北交所30%
     else:
@@ -111,7 +105,7 @@ def is_limit_down(code, close, prev_close):
 
 
 def get_limit_down_limit(code, prev_close):
-    """跌停价"""
+    """跌停�?""
     if prev_close is None or prev_close <= 0:
         return 0
     if code.startswith(('300','301','688','689')):
@@ -124,11 +118,8 @@ def get_limit_down_limit(code, prev_close):
 
 class ClosePreciseEngine:
     """
-    收盘前1分钟精确执行引擎
-    - 止损：如果当日Low触及止损价 且 未跌停 → 按止损价退出（精确-5.5%）
-    - 止盈：如果当日High触及止盈价 → 按止盈价退出
-    - 移动止盈：High更新峰值，Low检查回撤
-    - 跌停处理：根据mode决定
+    收盘�?分钟精确执行引擎
+    - 止损：如果当日Low触及止损�?�?未跌�?�?按止损价退出（精确-5.5%�?    - 止盈：如果当日High触及止盈�?�?按止盈价退�?    - 移动止盈：High更新峰值，Low检查回�?    - 跌停处理：根据mode决定
     """
     def __init__(self, trading_dates, sh_index, mode='A'):
         self.cash = INITIAL_CAPITAL
@@ -147,8 +138,7 @@ class ClosePreciseEngine:
             'hit_limit_down': 0,        # 曾跌停的持仓
             'consecutive_ld_events': 0,  # 连续跌停事件
             'ld_exits': 0,              # 因跌停退出的
-            'max_consecutive_ld': 0,    # 最长连续跌停
-            'ld_details': [],           # 跌停详情
+            'max_consecutive_ld': 0,    # 最长连续跌�?            'ld_details': [],           # 跌停详情
         }
 
     def total_equity(self, prices):
@@ -178,8 +168,7 @@ class ClosePreciseEngine:
 
     def check_stops(self, d: date, daily_bars: dict) -> List[Tuple]:
         """
-        收盘前1分钟精确检查
-        daily_bars: {code: {'open','high','low','close','prev_close'}}
+        收盘�?分钟精确检�?        daily_bars: {code: {'open','high','low','close','prev_close'}}
         """
         sells = []
         for code, pos in list(self.positions.items()):
@@ -196,14 +185,13 @@ class ClosePreciseEngine:
             close_p = bar['close']
             prev_c  = bar.get('prev_close', close_p)
 
-            # 更新峰值
-            if high_p > pos.peak_price:
+            # 更新峰�?            if high_p > pos.peak_price:
                 pos.peak_price = high_p
             pos.peak_profit_pct = pos.peak_price / pos.entry_price - 1
 
             hold_days = self._td(pos.entry_date, d)
 
-            # ── 检查跌停状态 ──
+            # ── 检查跌停状�?──
             is_ld = is_limit_down(code, close_p, prev_c)
             if is_ld:
                 pos.consecutive_limit_down += 1
@@ -216,31 +204,29 @@ class ClosePreciseEngine:
             else:
                 pos.consecutive_limit_down = 0
 
-            # ── 1. 硬止损 -5.5% ──
+            # ── 1. 硬止�?-5.5% ──
             hard_stop_price = pos.entry_price * (1 + HARD_STOP)
             if low_p <= hard_stop_price:
                 if not is_ld:
-                    # 未跌停 → 收盘前1分钟精确执行止损
+                    # 未跌�?�?收盘�?分钟精确执行止损
                     sells.append((pos, hard_stop_price,
-                        f"硬止损(-5.5%)", None))
+                        f"硬止�?-5.5%)", None))
                     continue
                 else:
-                    # 跌停了 → 根据mode处理
+                    # 跌停�?�?根据mode处理
                     if self.mode == 'A':
                         # Mode A: 跌停仍可卖出（按跌停价）
-                        # 跌停价可能比止损价更低
-                        ld_price = get_limit_down_limit(code, prev_c)
+                        # 跌停价可能比止损价更�?                        ld_price = get_limit_down_limit(code, prev_c)
                         actual_exit = max(ld_price, hard_stop_price * 0.99)  # 卖在跌停价或更差
                         sells.append((pos, actual_exit,
-                            f"硬止损跌停({((actual_exit/pos.entry_price)-1)*100:.1f}%)", None))
+                            f"硬止损跌�?{((actual_exit/pos.entry_price)-1)*100:.1f}%)", None))
                         self.ld_stats['ld_exits'] += 1
                         continue
                     else:
-                        # Mode B: 等打开跌停，今天不卖
-                        # 但如果连续跌停超过3天，强制卖出
+                        # Mode B: 等打开跌停，今天不�?                        # 但如果连续跌停超�?天，强制卖出
                         if pos.consecutive_limit_down >= 3:
                             sells.append((pos, close_p,
-                                f"连续跌停强制({pos.consecutive_limit_down}天)", None))
+                                f"连续跌停强制({pos.consecutive_limit_down}�?", None))
                             self.ld_stats['ld_exits'] += 1
                             continue
                         # 否则跳过止损检查，继续持有
@@ -251,10 +237,10 @@ class ClosePreciseEngine:
                 if is_ld:
                     # 跌停中先不强制，等打开（除非连续多天）
                     if pos.consecutive_limit_down >= 3:
-                        sells.append((pos, close_p, f"时间强制+跌停({hold_days}天)", None))
+                        sells.append((pos, close_p, f"时间强制+跌停({hold_days}�?", None))
                         continue
                 else:
-                    sells.append((pos, close_p, f"时间强制({hold_days}天)", None))
+                    sells.append((pos, close_p, f"时间强制({hold_days}�?", None))
                     continue
 
             # ── 3. TP2 +14% ──
@@ -282,16 +268,16 @@ class ClosePreciseEngine:
                         f"移动止盈(峰{pos.peak_profit_pct*100:.1f}%回{dd_from_peak*100:.1f}%)", None))
                     continue
 
-            # ── 6. 保本线 ──
+            # ── 6. 保本�?──
             if pos.peak_profit_pct >= 0.03 and low_p <= pos.entry_price and not is_ld:
-                sells.append((pos, pos.entry_price, f"保本(曾+{pos.peak_profit_pct*100:.1f}%)", None))
+                sells.append((pos, pos.entry_price, f"保本(�?{pos.peak_profit_pct*100:.1f}%)", None))
                 continue
 
             # ── 7. 时间条件 ──
             current_profit = close_p / pos.entry_price - 1
             if hold_days > TIME_EXIT and current_profit > 0.01:
                 if not is_ld:
-                    sells.append((pos, close_p, f"时间条件({hold_days}天+{current_profit*100:.1f}%)", None))
+                    sells.append((pos, close_p, f"时间条件({hold_days}�?{current_profit*100:.1f}%)", None))
                     continue
 
         return sells
@@ -402,8 +388,7 @@ def compute_stats(engine, name):
     ah = np.mean([t.hold_days for t in trades])
     ed = Counter(t.exit_reason.split('(')[0] for t in trades)
 
-    # 硬止损详细
-    hs = [t for t in trades if '硬止损' in t.exit_reason]
+    # 硬止损详�?    hs = [t for t in trades if '硬止�? in t.exit_reason]
     hs_avg = np.mean([t.return_pct for t in hs]) if hs else 0
     hs_med = np.median([t.return_pct for t in hs]) if hs else 0
     hs_worst = min([t.return_pct for t in hs]) if hs else 0
@@ -442,9 +427,9 @@ def compute_stats(engine, name):
 def run_backtest(mode='A'):
     """mode: 'A'=跌停可卖, 'B'=等打开跌停"""
     t0 = time.time()
-    mode_label = {'A': '跌停可卖(按跌停价)', 'B': '等打开跌停(收盘价退出)'}[mode]
+    mode_label = {'A': '跌停可卖(按跌停价)', 'B': '等打开跌停(收盘价退�?'}[mode]
     print(f"\n{'='*72}")
-    print(f"  收盘前1分钟精确执行 — Mode {mode}: {mode_label}")
+    print(f"  收盘�?分钟精确执行 �?Mode {mode}: {mode_label}")
     print(f"{'='*72}")
 
     bars = db.load_all_bars(freq="daily", start=LOAD_START, end=BACKTEST_END)
@@ -456,8 +441,7 @@ def run_backtest(mode='A'):
     bars["date"] = pd.to_datetime(bars["date"]).dt.date
     bars = bars.sort_values(["code", "date"])
 
-    # 计算前日收盘价（用于判断跌停）
-    bars['prev_close'] = bars.groupby('code')['close'].shift(1)
+    # 计算前日收盘价（用于判断跌停�?    bars['prev_close'] = bars.groupby('code')['close'].shift(1)
 
     sig = generate_signals(bars, **SIGNAL_PARAMS)
     sig = sig[(sig["date"] >= BACKTEST_START) & (sig["date"] <= BACKTEST_END)].copy()
@@ -529,7 +513,7 @@ def run_backtest(mode='A'):
 
         if (i + 1) % 150 == 0:
             print(f"  {d} | {i+1}/{len(trading_dates)} | "
-                  f"净值 {engine.total_equity(closes):,.0f} | 持仓 {engine.pos_count()}")
+                  f"净�?{engine.total_equity(closes):,.0f} | 持仓 {engine.pos_count()}")
 
     stats = compute_stats(engine, f"Mode {mode}")
     stats['runtime'] = time.time() - t0
@@ -539,30 +523,30 @@ def run_backtest(mode='A'):
 def print_report(stats, engine):
     s = stats
     if s.get('error'):
-        print("无交易")
+        print("无交�?)
         return
 
-    print(f"\n  ┌─────────────────────────────────────────────────────────┐")
-    print(f"  │ {s['name']:<55} │")
-    print(f"  │ 初始资金: {INITIAL_CAPITAL:>13,}  最终净值: {s['final_eq']:>13,.0f}         │")
-    print(f"  │ 总收益: {s['total_ret']:>+10.2f}%  年化: {s['ann_ret']:>+8.2f}%  回撤: {s['max_dd']:>+7.2f}%         │")
-    print(f"  │ 夏普: {s['sharpe']:>6.2f}  PF: {s['profit_factor']:>5.2f}  胜率: {s['win_rate']:>5.1f}%                   │")
-    print(f"  │ 均盈: {s['avg_win']:>+7.2f}%  均亏: {s['avg_loss']:>+7.2f}%  均笔: {s['avg_trade']:>+7.2f}%               │")
-    print(f"  │ 交易: {s['trades']:>6}笔  均持: {s['avg_hold']:>4.1f}天                            │")
-    print(f"  └─────────────────────────────────────────────────────────┘")
+    print(f"\n  ┌─────────────────────────────────────────────────────────�?)
+    print(f"  �?{s['name']:<55} �?)
+    print(f"  �?初始资金: {INITIAL_CAPITAL:>13,}  最终净�? {s['final_eq']:>13,.0f}         �?)
+    print(f"  �?总收�? {s['total_ret']:>+10.2f}%  年化: {s['ann_ret']:>+8.2f}%  回撤: {s['max_dd']:>+7.2f}%         �?)
+    print(f"  �?夏普: {s['sharpe']:>6.2f}  PF: {s['profit_factor']:>5.2f}  胜率: {s['win_rate']:>5.1f}%                   �?)
+    print(f"  �?均盈: {s['avg_win']:>+7.2f}%  均亏: {s['avg_loss']:>+7.2f}%  均笔: {s['avg_trade']:>+7.2f}%               �?)
+    print(f"  �?交易: {s['trades']:>6}�? 均持: {s['avg_hold']:>4.1f}�?                           �?)
+    print(f"  └─────────────────────────────────────────────────────────�?)
 
-    print(f"\n  ┌─────────────────────────────────────────────────────────┐")
-    print(f"  │ 硬止损: {s['hs_count']:>5}笔  均亏: {s['hs_avg']:>+7.2f}%  中位: {s['hs_med']:>+7.2f}%  最差: {s['hs_worst']:>+7.2f}%    │")
-    print(f"  │ 跌停交易: {s['ld_trades']:>4}笔  均亏: {s['ld_avg']:>+7.2f}%                                   │")
-    print(f"  └─────────────────────────────────────────────────────────┘")
+    print(f"\n  ┌─────────────────────────────────────────────────────────�?)
+    print(f"  �?硬止�? {s['hs_count']:>5}�? 均亏: {s['hs_avg']:>+7.2f}%  中位: {s['hs_med']:>+7.2f}%  最�? {s['hs_worst']:>+7.2f}%    �?)
+    print(f"  �?跌停交易: {s['ld_trades']:>4}�? 均亏: {s['ld_avg']:>+7.2f}%                                   �?)
+    print(f"  └─────────────────────────────────────────────────────────�?)
 
     ld = s['ld_stats']
-    print(f"\n  ┌─────────────────────────────────────────────────────────┐")
-    print(f"  │ 跌停统计                                               │")
-    print(f"  │ 总持仓: {ld['total_positions']:>5}  曾跌停: {ld['hit_limit_down']:>5} ({ld['hit_limit_down']/max(ld['total_positions'],1)*100:>4.1f}%)                │")
-    print(f"  │ 连续跌停事件: {ld['consecutive_ld_events']:>5}  跌停退出: {ld['ld_exits']:>5}                     │")
-    print(f"  │ 最长连续跌停: {ld['max_consecutive_ld']:>5}天                                     │")
-    print(f"  └─────────────────────────────────────────────────────────┘")
+    print(f"\n  ┌─────────────────────────────────────────────────────────�?)
+    print(f"  �?跌停统计                                               �?)
+    print(f"  �?总持�? {ld['total_positions']:>5}  曾跌�? {ld['hit_limit_down']:>5} ({ld['hit_limit_down']/max(ld['total_positions'],1)*100:>4.1f}%)                �?)
+    print(f"  �?连续跌停事件: {ld['consecutive_ld_events']:>5}  跌停退�? {ld['ld_exits']:>5}                     �?)
+    print(f"  �?最长连续跌�? {ld['max_consecutive_ld']:>5}�?                                    �?)
+    print(f"  └─────────────────────────────────────────────────────────�?)
 
     print(f"\n  [退出分布]")
     print(f"  {'原因':<32} {'笔数':>6} {'占比':>8}")
@@ -577,8 +561,7 @@ def print_report(stats, engine):
         print(f"  {int(yr):<6} {row['ret']:>+9.2f} {row['dd']:>9.2f} {int(row.get('trades',0)):>8} {row.get('wr',0):>7.1f}")
 
 
-# ═══════════════════════════════════════════════════════════════
-if __name__ == "__main__":
+# ══════════════════════════════════════════════════════════════�?if __name__ == "__main__":
     # 运行两个模式 + 加载OHLC版数据做对比
     results = {}
 
@@ -608,26 +591,26 @@ if __name__ == "__main__":
     ohlc_sharpe = ohlc_eq['daily_ret'].mean() / ohlc_eq['daily_ret'].std() * np.sqrt(252)
     ohlc_wins = (ohlc_tr['ret_pct'] > 0).sum()
     ohlc_wr = ohlc_wins / len(ohlc_tr) * 100
-    ohlc_hs = ohlc_tr[ohlc_tr['reason'].str.startswith('硬止损')]
+    ohlc_hs = ohlc_tr[ohlc_tr['reason'].str.startswith('硬止�?)]
     ohlc_pf = ohlc_tr[ohlc_tr['ret_pct']>0]['ret_pct'].sum() / abs(ohlc_tr[ohlc_tr['ret_pct']<=0]['ret_pct'].sum())
 
-    print(f"\n  {'指标':<24} {'OHLC版(Low执行)':<22} {'Mode A(跌停可卖)':<22} {'Mode B(等打开跌停)':<22}")
+    print(f"\n  {'指标':<24} {'OHLC�?Low执行)':<22} {'Mode A(跌停可卖)':<22} {'Mode B(等打开跌停)':<22}")
     print(f"  {'-'*90}")
-    print(f"  {'总收益%':<24} {ohlc_total_ret:>+20.2f} {results['A']['total_ret']:>+20.2f} {results['B']['total_ret']:>+20.2f}")
+    print(f"  {'总收�?':<24} {ohlc_total_ret:>+20.2f} {results['A']['total_ret']:>+20.2f} {results['B']['total_ret']:>+20.2f}")
     print(f"  {'年化%':<24} {((ohlc_fe/INITIAL_CAPITAL)**(365.25/(BACKTEST_END-BACKTEST_START).days)-1)*100:>+20.2f} {results['A']['ann_ret']:>+20.2f} {results['B']['ann_ret']:>+20.2f}")
-    print(f"  {'最大回撤%':<24} {ohlc_max_dd:>+20.2f} {results['A']['max_dd']:>+20.2f} {results['B']['max_dd']:>+20.2f}")
+    print(f"  {'最大回�?':<24} {ohlc_max_dd:>+20.2f} {results['A']['max_dd']:>+20.2f} {results['B']['max_dd']:>+20.2f}")
     print(f"  {'夏普':<24} {ohlc_sharpe:>20.2f} {results['A']['sharpe']:>20.2f} {results['B']['sharpe']:>20.2f}")
     print(f"  {'胜率%':<24} {ohlc_wr:>20.1f} {results['A']['win_rate']:>20.1f} {results['B']['win_rate']:>20.1f}")
     print(f"  {'PF':<24} {ohlc_pf:>20.2f} {results['A']['profit_factor']:>20.2f} {results['B']['profit_factor']:>20.2f}")
     print(f"  {'交易笔数':<24} {len(ohlc_tr):>20} {results['A']['trades']:>20} {results['B']['trades']:>20}")
-    print(f"  {'均持(天)':<24} {ohlc_tr['hold_days'].mean():>20.1f} {results['A']['avg_hold']:>20.1f} {results['B']['avg_hold']:>20.1f}")
+    print(f"  {'均持(�?':<24} {ohlc_tr['hold_days'].mean():>20.1f} {results['A']['avg_hold']:>20.1f} {results['B']['avg_hold']:>20.1f}")
 
-    print(f"\n  {'硬止损':-^90}")
-    print(f"  {'硬止损笔数':<24} {len(ohlc_hs):>20} {results['A']['hs_count']:>20} {results['B']['hs_count']:>20}")
-    print(f"  {'硬止损均亏%':<24} {ohlc_hs['ret_pct'].mean():>+20.2f} {results['A']['hs_avg']:>+20.2f} {results['B']['hs_avg']:>+20.2f}")
-    print(f"  {'硬止损最差%':<24} {ohlc_hs['ret_pct'].min():>+20.2f} {results['A']['hs_worst']:>+20.2f} {results['B']['hs_worst']:>+20.2f}")
+    print(f"\n  {'硬止�?:-^90}")
+    print(f"  {'硬止损笔�?:<24} {len(ohlc_hs):>20} {results['A']['hs_count']:>20} {results['B']['hs_count']:>20}")
+    print(f"  {'硬止损均�?':<24} {ohlc_hs['ret_pct'].mean():>+20.2f} {results['A']['hs_avg']:>+20.2f} {results['B']['hs_avg']:>+20.2f}")
+    print(f"  {'硬止损最�?':<24} {ohlc_hs['ret_pct'].min():>+20.2f} {results['A']['hs_worst']:>+20.2f} {results['B']['hs_worst']:>+20.2f}")
 
     print(f"\n  {'跌停':-^90}")
     for k in ['A', 'B']:
         ld = results[k]['ld_stats']
-        print(f"  Mode {k}: 总持仓{ld['total_positions']} | 曾跌停{ld['hit_limit_down']} ({ld['hit_limit_down']/max(ld['total_positions'],1)*100:.1f}%) | 连续跌停事件{ld['consecutive_ld_events']} | 最长{ld['max_consecutive_ld']}天 | 跌停退出{ld['ld_exits']}")
+        print(f"  Mode {k}: 总持仓{ld['total_positions']} | 曾跌停{ld['hit_limit_down']} ({ld['hit_limit_down']/max(ld['total_positions'],1)*100:.1f}%) | 连续跌停事件{ld['consecutive_ld_events']} | 最长{ld['max_consecutive_ld']}�?| 跌停退出{ld['ld_exits']}")

@@ -1,10 +1,10 @@
 """
 盘中实时监控器 — 内嵌于 sim_trader
-始终监听 tick，开关控制执行/告警，模式控制盘中/尾盘时机。
+优先级链与回测 simple_runner 完全一致：HS → TF → TP2 → TP1 → TR → TC
+模式: intraday(触发即卖) | close(仅告警)
 """
-import math
 import threading
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Optional, Dict
 
 from core.logger import get_logger
@@ -19,12 +19,33 @@ class IntradayMonitor:
 
     def __init__(self, engine: "SimTraderEngine"):
         self.engine = engine
+        self.enabled = False
+        self.mode = "close"          # "intraday"（触发即卖）| "close"（仅告警）
         self._intraday_peak: Dict[str, float] = {}
         self._lock = threading.Lock()
-        event_engine.register(EVENT_TICK, self._on_tick)
-        log.info("盘中监控器已就绪")
+        self._tick_handler = None
+        log.info("盘中监控器已创建（待启动）")
 
-    # ── Tick 驱动 ─────────────────────────────
+    # ── 开关控制 ────────────────────────────────
+
+    def start(self):
+        if self.enabled:
+            return
+        self._tick_handler = self._on_tick
+        event_engine.register(EVENT_TICK, self._tick_handler)
+        self.enabled = True
+        log.info(f"盘中监控已启动，模式={self.mode}")
+
+    def stop(self):
+        if not self.enabled:
+            return
+        if self._tick_handler:
+            event_engine.unregister(EVENT_TICK, self._tick_handler)
+            self._tick_handler = None
+        self.enabled = False
+        log.info("盘中监控已停止")
+
+    # ── Tick 驱动 ───────────────────────────────
 
     def _on_tick(self, event):
         if not self._in_trading_hours():
@@ -61,7 +82,7 @@ class IntradayMonitor:
             return
 
         reason, partial_qty = result
-        if self.engine.auto_sell:
+        if self.engine.auto_sell and self.mode == "intraday":
             self._execute_sell(pos, price, reason, partial_qty)
         else:
             sync_broadcast({
@@ -69,50 +90,54 @@ class IntradayMonitor:
                 "code": code,
                 "price": round(price, 2),
                 "reason": reason,
-                "mode": "卖出开关关闭",
+                "mode": "尾盘监控" if self.mode == "close" else "卖出开关关闭",
             })
-            log.info(f"[风险告警] {code} {reason}（卖出开关关闭，不执行）")
+            log.info(f"[风险告警] {code} {reason}（模式={self.mode}）")
 
-    # ── 风控优先级链 ──────────────────────────
+    # ── 风控优先级链（与回测 simple_runner 完全一致）──
 
     def _check_position(self, pos, current_price: float, session_peak: float):
         """
-        与 engine.check_stops 保持一致的优先级：
-        1. TP2 +14% → 全清
-        2. TP1 +4% → 卖 20%
-        3. 移动止盈：峰值 ≥ +8% 且回撤 ≥ 2%
-        4. 硬止损 -5.5%
+        优先级：HS → TF → 多档止盈 → TR → TC
         返回 (reason, partial_qty) 或 None
         """
         from app.sim_trader.config import (
-            HARD_STOP, TP1_PCT, TP1_SELL_RATIO, TP2_PCT,
+            HARD_STOP, TAKE_PROFIT_TIERS,
             TRAIL_ACTIVATE, TRAIL_DD,
+            TIME_EXIT_DAYS, TIME_EXIT_PROFIT, TIME_FORCE_DAYS,
         )
 
         entry = pos.entry_price
         current_pct = current_price / entry - 1
 
-        # 1. TP2
-        if not pos.tp2_triggered and current_pct >= TP2_PCT:
-            return (f"TP2 +14%({current_pct*100:.1f}%)", None)
+        # 1. 硬止损 HS: -6.0%
+        if current_pct <= HARD_STOP:
+            return (f"HS({current_pct*100:.1f}%)", None)
 
-        # 2. TP1
-        if not pos.tp1_triggered and current_pct >= TP1_PCT:
-            ss = int(pos.remaining_shares * TP1_SELL_RATIO / 100) * 100
-            if ss >= 100:
-                return (f"TP1 +4%({current_pct*100:.1f}%)", ss)
+        # 2. 时间强制 TF: 持仓 > 9天
+        hold_days = (date.today() - pos.entry_date).days
+        if hold_days > TIME_FORCE_DAYS:
+            return (f"TF({hold_days}天)", None)
 
-        # 3. 移动止盈
+        # 3. 多档阶梯止盈
+        for idx, tier in enumerate(TAKE_PROFIT_TIERS):
+            if not pos.is_tier_triggered(idx) and current_pct >= tier['profit_pct']:
+                ss = int(pos.remaining_shares * tier['sell_ratio'] / 100) * 100
+                if ss >= 100:
+                    pos.mark_tier_triggered(idx)
+                    return (f"TP{idx+1}({current_pct*100:.1f}%)", ss)
+
+        # 4. 移动止盈 TR: 峰≥+3% 且 回撤≥1%
         overall_peak = max(pos.peak_price, session_peak)
         peak_pct = overall_peak / entry - 1
         if peak_pct >= TRAIL_ACTIVATE:
             dd = current_price / overall_peak - 1
             if dd <= -TRAIL_DD:
-                return (f"移动止盈(峰{peak_pct*100:.1f}%回{dd*100:.1f}%)", None)
+                return (f"TR(峰{peak_pct*100:.1f}%回{dd*100:.1f}%)", None)
 
-        # 4. 硬止损
-        if current_pct <= HARD_STOP:
-            return (f"硬止损({current_pct*100:.1f}%)", None)
+        # 6. 时间条件 TC: >3天 且 >3%
+        if hold_days > TIME_EXIT_DAYS and current_pct > TIME_EXIT_PROFIT:
+            return (f"TC({hold_days}天+{current_pct*100:.1f}%)", None)
 
         return None
 
@@ -125,18 +150,17 @@ class IntradayMonitor:
                 exit_timing="intraday",
             )
         if trade:
-            # 更新连败计数
+            # 连败计数
             if trade.return_pct <= 0:
                 self.engine.consecutive_losses += 1
             else:
                 self.engine.consecutive_losses = 0
                 self.engine.pause_until = None
-            if self.engine.consecutive_losses >= 5:
-                from datetime import timedelta
-                self.engine.pause_until = date.today() + timedelta(days=3)
+            from app.sim_trader.config import LOSS_STREAK_PAUSE, PAUSE_DAYS
+            if self.engine.consecutive_losses >= LOSS_STREAK_PAUSE:
+                self.engine.pause_until = date.today() + timedelta(days=PAUSE_DAYS)
 
             self.engine.trades.append(trade)
-            # 清理已平仓
             self.engine.positions = {
                 k: v for k, v in self.engine.positions.items() if v.is_active
             }
@@ -155,7 +179,7 @@ class IntradayMonitor:
             })
             log.info(f"[盘中卖出] {pos.code} {reason} 价格={price:.2f}")
 
-    # ── 全量扫描兜底（无 QMT 时用 TDX/腾讯行情） ──
+    # ── 全量扫描兜底（无 QMT 时用 TDX）──
 
     def run_full_scan(self):
         """全量扫描：拉取行情 → 遍历持仓 → 风控判断"""
@@ -163,7 +187,6 @@ class IntradayMonitor:
         if not active:
             return
 
-        # 用多源行情拉取
         from app.data_manager.engine import get_realtime_quote
         import pandas as pd
 
@@ -184,7 +207,7 @@ class IntradayMonitor:
             price = float(q.iloc[0]["price"])
             self._check_and_act(pos.code, price)
 
-    # ── 辅助 ──────────────────────────────────
+    # ── 辅助 ────────────────────────────────────
 
     @staticmethod
     def _in_trading_hours() -> bool:

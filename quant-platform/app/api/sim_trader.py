@@ -154,7 +154,8 @@ async def sim_trader_status():
         'consecutive_losses': engine.consecutive_losses,
         'paused': engine.pause_until is not None and today <= engine.pause_until,
         'today': str(today),
-        'monitor_enabled': engine.auto_sell,
+        'monitor_enabled': engine.monitor_enabled,
+        'monitor_mode': engine.monitor.mode if engine.monitor else 'close',
         'auto_sell': engine.auto_sell,
         'auto_scan': engine.auto_scan,
         'auto_buy': engine.auto_buy,
@@ -310,19 +311,22 @@ async def sim_trader_set_config(data: dict):
 @router.get("/api/sim-trader/monitor")
 async def sim_trader_monitor_status():
     """获取自动执行开关状态"""
-    from app.sim_trader.config import AUTO_SELL, AUTO_SCAN, AUTO_BUY, SELL_MODE
+    from app.sim_trader.config import AUTO_SELL, AUTO_SCAN, AUTO_BUY, SELL_MODE, MONITOR_ENABLED, MONITOR_MODE
+    engine = get_engine()
     return {
         "status": "ok",
         "auto_sell": AUTO_SELL,
         "auto_scan": AUTO_SCAN,
         "auto_buy": AUTO_BUY,
         "sell_mode": SELL_MODE,
+        "monitor_enabled": engine.monitor_enabled if engine else False,
+        "monitor_mode": engine.monitor.mode if engine and engine.monitor else MONITOR_MODE,
     }
 
 
 @router.post("/api/sim-trader/monitor")
 async def sim_trader_monitor_control(data: dict):
-    """设置自动执行开关"""
+    """设置自动执行开关和盘中监控"""
     import app.sim_trader.config as _cfg
     if "auto_sell" in data:
         _cfg.AUTO_SELL = bool(data["auto_sell"])
@@ -332,13 +336,32 @@ async def sim_trader_monitor_control(data: dict):
         _cfg.AUTO_BUY = bool(data["auto_buy"])
     if "sell_mode" in data:
         _cfg.SELL_MODE = data["sell_mode"]
+
+    # 盘中监控控制
+    engine = get_engine()
+    if engine and engine.monitor:
+        if "monitor_enabled" in data:
+            if bool(data["monitor_enabled"]):
+                if "monitor_mode" in data:
+                    engine.monitor.mode = data["monitor_mode"]
+                    _cfg.MONITOR_MODE = data["monitor_mode"]
+                engine.monitor.start()
+            else:
+                engine.monitor.stop()
+        elif "monitor_mode" in data:
+            engine.monitor.mode = data["monitor_mode"]
+            _cfg.MONITOR_MODE = data["monitor_mode"]
+
     log.info(f"开关: 卖出={'执行' if _cfg.AUTO_SELL else '告警'}({_cfg.SELL_MODE}) "
              f"选股={'开' if _cfg.AUTO_SCAN else '关'} "
-             f"买入={'执行' if _cfg.AUTO_BUY else '不买'}")
+             f"买入={'执行' if _cfg.AUTO_BUY else '不买'} "
+             f"监控={'开' if (engine and engine.monitor_enabled) else '关'}")
     return {
         "status": "ok",
         "auto_sell": _cfg.AUTO_SELL,
         "auto_scan": _cfg.AUTO_SCAN,
         "auto_buy": _cfg.AUTO_BUY,
         "sell_mode": _cfg.SELL_MODE,
+        "monitor_enabled": engine.monitor_enabled if engine else False,
+        "monitor_mode": engine.monitor.mode if engine and engine.monitor else _cfg.MONITOR_MODE,
     }

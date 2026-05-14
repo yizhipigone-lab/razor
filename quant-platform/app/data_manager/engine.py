@@ -239,11 +239,20 @@ def get_realtime_quote(code_list: list) -> pd.DataFrame:
                 tdx_queries = []
                 tdx_to_orig = {}
                 for c in batch_codes:
-                    clean_code = str(c).split('.')[0]
-                    # 修正：沪市代码以 '6' 或 '000' 开头(指数)
-                    market = 1 if (clean_code.startswith('6') or clean_code.startswith('000')) else 0
+                    c_str = str(c)
+                    if '.' in c_str:
+                        parts = c_str.split('.')
+                        clean_code = parts[0]
+                        # 优先用后缀判断市场，避免 000858.SZ 被误判为沪市
+                        suffix = parts[1].upper()
+                        market = 1 if suffix == 'SH' else 0
+                    else:
+                        clean_code = c_str
+                        # 无后缀时用前缀推断：6xx/000(指数)→沪市，其余→深市
+                        market = 1 if (clean_code.startswith('6') or
+                                       (clean_code.startswith('000') and len(clean_code) <= 6)) else 0
                     tdx_queries.append((market, clean_code))
-                    tdx_to_orig[clean_code] = str(c)
+                    tdx_to_orig[clean_code] = c_str
                 
                 quotes = api.get_security_quotes(tdx_queries)
                 if quotes:

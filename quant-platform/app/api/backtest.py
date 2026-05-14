@@ -479,3 +479,296 @@ async def delete_ai_backtest_history(hist_id: int):
     return {"status": "ok", "message": f"已删除 AI 回测历史 {hist_id}"}
 
 
+# ═══════════════════════════════════════════════════════════
+# 简化回测 API（日线收盘价，纯 parquet，无 DuckDB）
+# ═══════════════════════════════════════════════════════════
+
+import copy
+import json as _json
+from pathlib import Path as _Path
+
+_BT_CONFIG_FILE = ROOT_DIR / "output" / "backtest_config.json"
+_BT_RESULTS_DIR = ROOT_DIR / "output" / "backtest_results"
+_BT_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _default_bt_config() -> dict:
+    """从 sim_trader config 读取默认回测配置"""
+    from app.sim_trader.config import (
+        INITIAL_CAPITAL, POSITION_SIZE, MIN_BUY_AMT,
+        HARD_STOP, TAKE_PROFIT_TIERS,
+        TRAIL_ACTIVATE, TRAIL_DD,
+        TIME_EXIT_DAYS, TIME_EXIT_PROFIT, TIME_FORCE_DAYS,
+        LOSS_STREAK_HALVE, LOSS_STREAK_PAUSE, PAUSE_DAYS,
+        SAME_STOCK_COOLDOWN, SIGNAL_PARAMS,
+        USE_ATR_TRAIL, ATR_TRAIL_MULTIPLIER,
+    )
+    return {
+        "initial_capital": INITIAL_CAPITAL,
+        "position_size": POSITION_SIZE,
+        "min_buy_amt": MIN_BUY_AMT,
+        "hard_stop": HARD_STOP,
+        "take_profit_tiers": copy.deepcopy(TAKE_PROFIT_TIERS),
+        "trail_activate": TRAIL_ACTIVATE,
+        "trail_dd": TRAIL_DD,
+        "time_exit_days": TIME_EXIT_DAYS,
+        "time_exit_profit": TIME_EXIT_PROFIT,
+        "time_force_days": TIME_FORCE_DAYS,
+        "loss_streak_halve": LOSS_STREAK_HALVE,
+        "loss_streak_pause": LOSS_STREAK_PAUSE,
+        "pause_days": PAUSE_DAYS,
+        "same_stock_cooldown": SAME_STOCK_COOLDOWN,
+        "use_atr_trail": USE_ATR_TRAIL,
+        "atr_trail_multiplier": ATR_TRAIL_MULTIPLIER,
+        "signal_params": copy.deepcopy(SIGNAL_PARAMS),
+        "start_date": "2023-01-01",
+        "end_date": str(date.today()),
+    }
+
+
+def _load_bt_config() -> dict:
+    try:
+        if _BT_CONFIG_FILE.exists():
+            with open(_BT_CONFIG_FILE, 'r', encoding='utf-8') as f:
+                return _json.load(f)
+    except Exception:
+        pass
+    cfg = _default_bt_config()
+    _save_bt_config(cfg)
+    return cfg
+
+
+def _save_bt_config(cfg: dict):
+    _BT_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(_BT_CONFIG_FILE, 'w', encoding='utf-8') as f:
+        _json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+
+@router.get("/api/backtest/simple-config")
+async def get_simple_bt_config():
+    """获取回测配置（首次从系统配置复制）"""
+    cfg = _load_bt_config()
+    # 同时返回系统配置，方便前端对比
+    sys_cfg = _default_bt_config()
+    return {"status": "ok", "config": cfg, "system_config": sys_cfg}
+
+
+@router.post("/api/backtest/simple-config")
+async def save_simple_bt_config(body: dict):
+    """保存回测配置（独立于系统交易配置）"""
+    cfg = body.get("config", body)
+    _save_bt_config(cfg)
+    log.info("回测配置已保存")
+    return {"status": "ok", "message": "回测配置已保存"}
+
+
+@router.post("/api/backtest/simple-config/reset")
+async def reset_simple_bt_config():
+    """重置回测配置为系统默认值"""
+    cfg = _default_bt_config()
+    _save_bt_config(cfg)
+    return {"status": "ok", "message": "已重置为系统配置", "config": cfg}
+
+
+@router.post("/api/backtest/apply-to-system")
+async def apply_bt_to_system():
+    """将当前回测配置应用到系统交易配置"""
+    import app.sim_trader.config as sc
+    cfg = _load_bt_config()
+    try:
+        sc.HARD_STOP = float(cfg.get('hard_stop', sc.HARD_STOP))
+        sc.TRAIL_ACTIVATE = float(cfg.get('trail_activate', sc.TRAIL_ACTIVATE))
+        sc.TRAIL_DD = float(cfg.get('trail_dd', sc.TRAIL_DD))
+        sc.TIME_EXIT_DAYS = int(cfg.get('time_exit_days', sc.TIME_EXIT_DAYS))
+        sc.TIME_EXIT_PROFIT = float(cfg.get('time_exit_profit', sc.TIME_EXIT_PROFIT))
+        sc.TIME_FORCE_DAYS = int(cfg.get('time_force_days', sc.TIME_FORCE_DAYS))
+        sc.LOSS_STREAK_HALVE = int(cfg.get('loss_streak_halve', sc.LOSS_STREAK_HALVE))
+        sc.LOSS_STREAK_PAUSE = int(cfg.get('loss_streak_pause', sc.LOSS_STREAK_PAUSE))
+        sc.PAUSE_DAYS = int(cfg.get('pause_days', sc.PAUSE_DAYS))
+        sc.SAME_STOCK_COOLDOWN = int(cfg.get('same_stock_cooldown', sc.SAME_STOCK_COOLDOWN))
+        sc.INITIAL_CAPITAL = int(cfg.get('initial_capital', sc.INITIAL_CAPITAL))
+        sc.POSITION_SIZE = int(cfg.get('position_size', sc.POSITION_SIZE))
+        sc.MIN_BUY_AMT = int(cfg.get('min_buy_amt', sc.MIN_BUY_AMT))
+        # 多档止盈
+        tiers = cfg.get('take_profit_tiers', sc.TAKE_PROFIT_TIERS)
+        sc.TAKE_PROFIT_TIERS = tiers
+        # 信号参数
+        sp = cfg.get('signal_params', sc.SIGNAL_PARAMS)
+        sc.SIGNAL_PARAMS = sp
+
+        # 同步写入 app_setting.json
+        from core.settings import settings
+        settings.reload()
+        risk = settings._data.get('risk', {})
+        risk['hard_stop_loss_pct'] = sc.HARD_STOP * 100
+        risk['trailing_stop_activate_pct'] = sc.TRAIL_ACTIVATE * 100
+        risk['trailing_stop_drawdown_pct'] = sc.TRAIL_DD * 100
+        risk['time_exit_days'] = sc.TIME_EXIT_DAYS
+        risk['time_exit_min_profit_pct'] = sc.TIME_EXIT_PROFIT * 100
+        risk['time_exit_force_days'] = sc.TIME_FORCE_DAYS
+        risk['take_profit_tiers'] = [
+            {'profit_pct': t['profit_pct'], 'sell_ratio': t['sell_ratio']}
+            for t in sc.TAKE_PROFIT_TIERS
+        ]
+        settings._data['risk'] = risk
+        settings._data['backtest'] = {**settings._data.get('backtest', {}),
+            'hard_stop': sc.HARD_STOP,
+            'take_profit_tiers': sc.TAKE_PROFIT_TIERS,
+            'trail_activate': sc.TRAIL_ACTIVATE, 'trail_dd': sc.TRAIL_DD,
+            'time_exit_days': sc.TIME_EXIT_DAYS, 'time_exit_profit': sc.TIME_EXIT_PROFIT,
+            'time_force_days': sc.TIME_FORCE_DAYS,
+            'loss_streak_halve': sc.LOSS_STREAK_HALVE, 'loss_streak_pause': sc.LOSS_STREAK_PAUSE,
+            'pause_days': sc.PAUSE_DAYS, 'same_stock_cooldown': sc.SAME_STOCK_COOLDOWN,
+        }
+        settings.save()
+        log.info("回测配置已应用到系统配置")
+        return {"status": "ok", "message": "回测配置已应用到系统配置"}
+    except Exception as e:
+        log.error(f"应用配置失败: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@router.post("/api/backtest/run-simple")
+async def run_simple_backtest(body: dict):
+    """执行日线收盘价回测"""
+    from app.backtest.simple_runner import run_backtest
+    import threading as _th
+
+    params = body.get("params", body)
+    # 确保日期正确
+    if 'start_date' not in params:
+        params['start_date'] = date(2023, 1, 1)
+    if 'end_date' not in params:
+        params['end_date'] = date.today()
+
+    # 保存配置
+    _save_bt_config(params)
+
+    stop_evt = _th.Event()
+    with _stop_events_lock:
+        stop_events['simple_bt'] = stop_evt
+
+    def _run():
+        try:
+            def _prog(step, total, msg):
+                sync_broadcast({
+                    "type": "backtest_progress",
+                    "step": step, "total": total, "msg": msg,
+                    "context": "simple_bt"
+                })
+
+            # 加载股票名称映射
+            stock_names = {}
+            try:
+                df_names = db.conn.execute("SELECT code, name FROM stocks").fetchdf()
+                stock_names = dict(zip(df_names['code'], df_names['name']))
+            except Exception:
+                pass
+
+            result = run_backtest(params, progress_cb=_prog, stop_event=stop_evt,
+                                  stock_names=stock_names)
+
+            if result.get('status') == 'stopped':
+                sync_broadcast({"type": "log", "level": "warn", "msg": "回测已停止"})
+                return
+
+            # 持久化结果
+            result_id = None
+            try:
+                import time as _time
+                result_id = f"bt_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{int(_time.time())}"
+                save_data = {
+                    'id': result_id,
+                    'created_at': str(datetime.now()),
+                    'summary': result['summary'],
+                    'equity': result['equity'],
+                    'trades': result['trades'],
+                    'indices': result['indices'],
+                    'daily_trades': result.get('daily_trades', {}),
+                    'params': result.get('params', {}),
+                }
+                save_path = _BT_RESULTS_DIR / f"{result_id}.json"
+                with open(save_path, 'w', encoding='utf-8') as f:
+                    _json.dump(save_data, f, ensure_ascii=False, default=str)
+                log.info(f"回测结果已保存: {result_id}")
+            except Exception as _se:
+                log.warning(f"回测结果保存失败: {_se}")
+
+            sync_broadcast({
+                "type": "simple_bt_done",
+                "result_id": result_id,
+                "summary": result['summary'],
+                "equity": result['equity'],
+                "trades": result['trades'],
+                "indices": result['indices'],
+                "daily_trades": result.get('daily_trades', {}),
+                "params": result.get('params', {}),
+            })
+        except Exception as e:
+            import traceback
+            log.error(f"简化回测崩溃: {e}\n{traceback.format_exc()}")
+            sync_broadcast({"type": "log", "level": "error", "msg": f"回测失败: {e}"})
+        finally:
+            with _stop_events_lock:
+                if 'simple_bt' in stop_events:
+                    del stop_events['simple_bt']
+
+    run_in_thread(_run)
+    return {"status": "started", "message": "回测已开始"}
+
+
+@router.post("/api/backtest/run-simple/stop")
+async def stop_simple_backtest():
+    with _stop_events_lock:
+        if 'simple_bt' in stop_events:
+            stop_events['simple_bt'].set()
+            return {"status": "ok", "message": "停止信号已发送"}
+    return {"status": "error", "message": "无正在运行的回测"}
+
+
+@router.get("/api/backtest/simple/history")
+async def list_simple_bt_history(limit: int = 20):
+    """列出历史回测结果"""
+    files = sorted(_BT_RESULTS_DIR.glob("bt_*.json"), reverse=True)
+    items = []
+    for f in files[:limit]:
+        try:
+            with open(f, 'r', encoding='utf-8') as fp:
+                data = _json.load(fp)
+            items.append({
+                'id': data.get('id', f.stem),
+                'created_at': data.get('created_at', ''),
+                'total_return': data['summary'].get('total_return'),
+                'max_drawdown': data['summary'].get('max_drawdown'),
+                'win_rate': data['summary'].get('win_rate'),
+                'calmar': data['summary'].get('calmar'),
+                'trades': data['summary'].get('trades'),
+                'start_date': data['summary'].get('start_date'),
+                'end_date': data['summary'].get('end_date'),
+            })
+        except Exception:
+            pass
+    return {"status": "ok", "data": items, "total": len(files)}
+
+
+@router.get("/api/backtest/simple/history/{result_id}")
+async def get_simple_bt_history(result_id: str):
+    """加载指定回测结果的完整数据"""
+    fp = _BT_RESULTS_DIR / f"{result_id}.json"
+    if not fp.exists():
+        return {"status": "error", "message": "结果不存在"}
+    with open(fp, 'r', encoding='utf-8') as f:
+        data = _json.load(f)
+    return {"status": "ok", "data": data}
+
+
+@router.delete("/api/backtest/simple/history/{result_id}")
+async def delete_simple_bt_history(result_id: str):
+    """删除回测结果"""
+    fp = _BT_RESULTS_DIR / f"{result_id}.json"
+    if fp.exists():
+        fp.unlink()
+        return {"status": "ok", "message": "已删除"}
+    return {"status": "error", "message": "文件不存在"}
+
+

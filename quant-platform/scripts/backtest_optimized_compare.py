@@ -1,9 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-MA5 角度策略 — 优化版回测（多方案对比）
-在基线回测基础上测试多种优化方案
-"""
+MA5 角度策略 �?优化版回测（多方案对比）
+在基线回测基础上测试多种优化方�?"""
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 if hasattr(sys.stdout, 'reconfigure'):
@@ -23,8 +22,7 @@ warnings.filterwarnings('ignore')
 from database.duckdb_manager import db, PARQUET_DAILY_DIR
 from app.screener.strategies.ma5_angle import generate_signals
 
-# ═══════════════════════════════════════════════════════════════
-INITIAL_CAPITAL = 1_000_000
+# ══════════════════════════════════════════════════════════════�?INITIAL_CAPITAL = 1_000_000
 BACKTEST_START = date(2023, 1, 1)
 BACKTEST_END   = date(2026, 5, 2)
 BUFFER_DAYS    = 365
@@ -34,15 +32,13 @@ BASE_SIGNAL_PARAMS = {
     "version": "improved",
     "filter_st": True,
     "filter_bj": True,
-    "sh_red_filter": True,
     "vol_threshold": 1.5,
     "close_position_threshold": 0.8,
     "disable_quality_sort": True,
     "filter_consecutive_up": False,
     "filter_gap_quality": False,
 }
-# ═══════════════════════════════════════════════════════════════
-
+# ══════════════════════════════════════════════════════════════�?
 
 @dataclass
 class Position:
@@ -117,7 +113,7 @@ class BacktestEngine:
         return {}  # 后续实现
 
     def market_state(self, d: date) -> str:
-        """判断市场状态: bull / neutral / bear"""
+        """判断市场状�? bull / neutral / bear"""
         if self.sh_index.empty:
             return 'neutral'
         row = self.sh_index[self.sh_index['date'] == d]
@@ -169,17 +165,16 @@ class BacktestEngine:
             hd = self._td_between(pos.entry_date, d)
             rem = pos.remaining_shares
 
-            # 1. 硬止损（熊市收紧）
-            hs = self.hard_stop
+            # 1. 硬止损（熊市收紧�?            hs = self.hard_stop
             if market == 'bear':
                 hs = self.hard_stop * 1.3  # 熊市收紧30%
             if cp <= hs:
-                sells.append((pos, price, f"硬止损({cp*100:.1f}%)", None))
+                sells.append((pos, price, f"硬止�?{cp*100:.1f}%)", None))
                 continue
 
             # 2. 时间强制
             if hd > self.time_force:
-                sells.append((pos, price, f"时间强制({hd}天)", None))
+                sells.append((pos, price, f"时间强制({hd}�?", None))
                 continue
 
             # 3. TP2
@@ -207,7 +202,7 @@ class BacktestEngine:
             if market == 'bear':
                 te = max(3, self.time_exit - 2)
             if hd > te and cp > 0.01:
-                sells.append((pos, price, f"时间条件({hd}天+{cp*100:.1f}%)", None))
+                sells.append((pos, price, f"时间条件({hd}�?{cp*100:.1f}%)", None))
                 continue
 
         return sells
@@ -254,38 +249,34 @@ class BacktestEngine:
                                   'positions': self.position_count()})
 
 
-# ═══════════════════════════════════════════════════════════════
-#  优化方案定义
-# ═══════════════════════════════════════════════════════════════
-# 每个方案是一个 config dict，覆盖基线的参数
+# ══════════════════════════════════════════════════════════════�?#  优化方案定义
+# ══════════════════════════════════════════════════════════════�?# 每个方案是一�?config dict，覆盖基线的参数
 
 CONFIGS = {
     "baseline": {
         "name": "1.基线(当前策略)",
     },
     "market_filter": {
-        "name": "2.市场状态过滤",
+        "name": "2.市场状态过�?,
         "use_market_filter": True,
         "use_dynamic_position": True,  # 牛市满仓/熊市半仓
     },
     "tighter_exit": {
-        "name": "3.收紧退出",
-        "hard_stop": -0.045,        # 从-5.5%收紧到-4.5%
-        "time_exit": 5,             # 从7天提前到5天
-        "time_force": 8,            # 从10天提前到8天
-        "trail_activate": 0.06,     # 从8%降到6%
-        "trail_dd": 0.025,          # 从2%放宽到2.5%
+        "name": "3.收紧退�?,
+        "hard_stop": -0.045,        # �?5.5%收紧�?4.5%
+        "time_exit": 5,             # �?天提前到5�?        "time_force": 8,            # �?0天提前到8�?        "trail_activate": 0.06,     # �?%降到6%
+        "trail_dd": 0.025,          # �?%放宽�?.5%
     },
     "better_tp": {
         "name": "4.优化止盈",
-        "tp1_pct": 0.05,            # 从4%→5%
-        "tp1_ratio": 0.30,          # 从20%→30%
-        "tp2_pct": 0.12,            # 从14%→12%
-        "trail_activate": 0.07,     # 从8%→7%
-        "trail_dd": 0.025,          # 从2%→2.5%
+        "tp1_pct": 0.05,            # �?%�?%
+        "tp1_ratio": 0.30,          # �?0%�?0%
+        "tp2_pct": 0.12,            # �?4%�?2%
+        "trail_activate": 0.07,     # �?%�?%
+        "trail_dd": 0.025,          # �?%�?.5%
     },
     "combo_aggressive": {
-        "name": "5.组合优化(激进)",
+        "name": "5.组合优化(激�?",
         "use_market_filter": True,
         "use_dynamic_position": True,
         "hard_stop": -0.045,
@@ -304,8 +295,7 @@ CONFIGS = {
         "name": "6.组合优化(稳健)",
         "use_market_filter": True,
         "use_dynamic_position": True,
-        "hard_stop": -0.04,         # 更紧的止损
-        "time_exit": 5,
+        "hard_stop": -0.04,         # 更紧的止�?        "time_exit": 5,
         "time_force": 7,
         "tp1_pct": 0.04,
         "tp1_ratio": 0.25,
@@ -333,7 +323,7 @@ def load_sh_index():
 
 
 def run_config(config, bars, bt_bars, trading_dates, snaps, sig_by_date):
-    """运行单个配置的回测"""
+    """运行单个配置的回�?""
     engine = BacktestEngine(trading_dates, load_sh_index(), config)
 
     for d in trading_dates:
@@ -370,8 +360,7 @@ def run_config(config, bars, bt_bars, trading_dates, snaps, sig_by_date):
                 if active and 'quality' in active[0]:
                     active.sort(key=lambda x: x['quality'], reverse=True)
 
-                # 动态仓位
-                max_pos = int(engine.cash / engine.max_position()) + 1
+                # 动态仓�?                max_pos = int(engine.cash / engine.max_position()) + 1
                 for si in active[:max_pos]:
                     code = si['code']
                     ep = closes.get(code)
@@ -390,7 +379,7 @@ def run_config(config, bars, bt_bars, trading_dates, snaps, sig_by_date):
 def compute_stats(engine, config_name):
     """计算回测统计"""
     if not engine.equity_curve:
-        return {'name': config_name, 'error': '无交易'}
+        return {'name': config_name, 'error': '无交�?}
     eq_df = pd.DataFrame(engine.equity_curve)
     fe = eq_df['equity'].iloc[-1]
     tr = (fe / INITIAL_CAPITAL - 1) * 100
@@ -441,10 +430,9 @@ def compute_stats(engine, config_name):
     max_win_month = m_agg['ret'].max()
     max_loss_month = m_agg['ret'].min()
 
-    # 最大连续盈利/亏损
+    # 最大连续盈�?亏损
     eq_df['win_streak'] = (eq_df['daily_ret'] > 0).astype(int)
-    # 简单起见用月度的
-
+    # 简单起见用月度�?
     return {
         'name': config_name,
         'final_eq': fe,
@@ -474,11 +462,10 @@ def compute_stats(engine, config_name):
     }
 
 
-# ═══════════════════════════════════════════════════════════════
-def main():
+# ══════════════════════════════════════════════════════════════�?def main():
     t0 = time.time()
     print("=" * 80)
-    print("  MA5 角度策略 — 多方案优化对比回测")
+    print("  MA5 角度策略 �?多方案优化对比回�?)
     print(f"  区间: {BACKTEST_START} ~ {BACKTEST_END}")
     print("=" * 80)
 
@@ -492,7 +479,7 @@ def main():
     bars = bars.dropna(subset=["close"])
     bars["date"] = pd.to_datetime(bars["date"]).dt.date
     bars = bars.sort_values(["code", "date"])
-    print(f"  {bars['code'].nunique():,} 只股票, {len(bars):,} 行")
+    print(f"  {bars['code'].nunique():,} 只股�? {len(bars):,} �?)
 
     # ── 信号 ──────────────────────────────────────────
     print(f"\n[2/4] 生成信号 ...")
@@ -521,8 +508,8 @@ def main():
             'quality': float(r.get('quality', 0)),
         })
 
-    # ── 运行所有方案 ──────────────────────────────────
-    print(f"\n[3/4] 运行 {len(CONFIGS)} 个方案 ...")
+    # ── 运行所有方�?──────────────────────────────────
+    print(f"\n[3/4] 运行 {len(CONFIGS)} 个方�?...")
     results = []
     for key, cfg in CONFIGS.items():
         print(f"  {cfg['name']} ...", end=' ')
@@ -536,7 +523,7 @@ def main():
         else:
             print(stats['error'])
 
-    # ── 输出对比表 ────────────────────────────────────
+    # ── 输出对比�?────────────────────────────────────
     print(f"\n[4/4] 方案对比")
     print("\n" + "=" * 100)
     print(f"{'方案':<24} {'收益%':>8} {'年化%':>8} {'回撤%':>8} {'夏普':>7} {'卡玛':>7} {'胜率%':>7} {'PF':>6} {'交易':>6} {'均持':>5}")
@@ -551,8 +538,7 @@ def main():
               f"{r['trades']:>6} {r['avg_hold']:>4.1f}d")
     print("=" * 100)
 
-    # 与基线对比
-    if baseline and 'error' not in baseline:
+    # 与基线对�?    if baseline and 'error' not in baseline:
         print(f"\n  [与基线对比]")
         print(f"  {'方案':<24} {'收益Δ':>10} {'回撤Δ':>10} {'胜率Δ':>10} {'PFΔ':>10}")
         print(f"  {'-'*60}")
@@ -567,12 +553,12 @@ def main():
 
     print(f"\n  总耗时: {time.time()-t0:.0f}s")
 
-    # ── 月度明细对最优方案 ─────────────────────────────
+    # ── 月度明细对最优方�?─────────────────────────────
     best = max(results, key=lambda x: x.get('calmar', -999))
-    print(f"\n  最优方案(卡玛比率): {best['name']}")
-    print(f"  月胜率: {best['pos_months']}/{best['pos_months']+best['neg_months']}"
+    print(f"\n  最优方�?卡玛比率): {best['name']}")
+    print(f"  月胜�? {best['pos_months']}/{best['pos_months']+best['neg_months']}"
           f" ({best['pos_months']/(best['pos_months']+best['neg_months'])*100:.0f}%)")
-    print(f"  均赢月: {best['avg_win_month']:+.2f}%  均亏月: {best['avg_loss_month']:+.2f}%")
+    print(f"  均赢�? {best['avg_win_month']:+.2f}%  均亏�? {best['avg_loss_month']:+.2f}%")
     print(f"  最佳月: {best['max_win_month']:+.2f}%  最差月: {best['max_loss_month']:+.2f}%")
 
     return results

@@ -18,7 +18,20 @@ class DataPipelineScheduler:
         if not self._scheduler.running:
             self._scheduler.start()
             self._schedule_jobs()
+            self._init_monitor()
             log.info("CronScheduler | 自动调度服务(APScheduler) 已启动。")
+
+    def _init_monitor(self):
+        """根据配置启停盘中监控"""
+        from app.sim_trader.config import MONITOR_ENABLED, MONITOR_MODE
+        from app.api.sim_trader import get_engine
+        engine = get_engine()
+        if MONITOR_ENABLED and engine.monitor:
+            engine.monitor.mode = MONITOR_MODE
+            engine.monitor.start()
+            log.info(f"CronScheduler | 盘中监控已自动启动，模式={MONITOR_MODE}")
+        else:
+            log.info(f"CronScheduler | 盘中监控未自动启动（MONITOR_ENABLED={MONITOR_ENABLED}）")
 
     def stop(self):
         if self._scheduler.running:
@@ -129,6 +142,18 @@ class DataPipelineScheduler:
             )
             log.info("CronScheduler | 收盘热度终版快照已安排在 15:30 执行。")
 
+        # ── 指数日线自动更新（盘后） ──
+        self._scheduler.add_job(
+            self.sync_index_daily,
+            'cron',
+            day_of_week='mon-fri',
+            hour=15,
+            minute=35,
+            id="index_daily_sync",
+            replace_existing=True
+        )
+        log.info("CronScheduler | 指数日线更新已安排在 15:35 执行。")
+
     def reload_config(self):
         """配置被修改后重新挂载任务"""
         self._schedule_jobs()
@@ -142,6 +167,17 @@ class DataPipelineScheduler:
                 engine.monitor.run_full_scan()
         except Exception as e:
             log.warning(f"CronScheduler | [监控扫描] 异常: {e}")
+
+    async def sync_index_daily(self):
+        """盘后自动更新指数日线数据"""
+        try:
+            from app.data_manager.index_updater import update_all_indices
+            result = update_all_indices()
+            added = sum(result.values())
+            if added > 0:
+                log.info(f"CronScheduler | [指数更新] 更新了 {len(result)} 个指数，共 {added} 条")
+        except Exception as e:
+            log.warning(f"CronScheduler | [指数更新] 异常: {e}")
 
     async def redis_harvest_to_duckdb(self):
         """

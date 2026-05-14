@@ -1,4 +1,4 @@
-// ─── WebSocket ────────────────────────────────────────────────
+﻿// ─── WebSocket ────────────────────────────────────────────────
 let ws, wsReady = false;
 const wsDot = document.getElementById('ws-dot');
 
@@ -741,6 +741,16 @@ function handleWS(msg) {
     toggleTaskButtons('backtest', false);
     // 自动刷新回测历史列表
     setTimeout(() => loadBacktestHistory(), 800);
+  } else if (msg.type === 'simple_bt_done') {
+    _lastSimpleBtResult = { summary: msg.summary, equity: msg.equity, trades: msg.trades, indices: msg.indices, dailyTrades: msg.daily_trades, resultId: msg.result_id };
+    renderSimpleBtResults(msg.summary, msg.equity, msg.trades, msg.indices);
+    _simpleBtDailyTrades = msg.daily_trades || {};
+    setTimeout(() => loadSimpleBtHistory(), 500);
+    addLog('ok', '回测完成: 收益' + msg.summary.total_return + '% DD' + msg.summary.max_drawdown + '% Calmar' + msg.summary.calmar.toFixed(2));
+    hideProgress('simple-bt');
+  } else if (msg.type === 'backtest_progress' && msg.context === 'simple_bt') {
+    showProgress('simple-bt', msg.msg);
+    updateProgressFill('simple-bt', msg.step, msg.total);
   } else if (msg.type === 'done') {
     addLog('ok', getMsg(msg));
     hideProgress('dl');
@@ -3352,63 +3362,118 @@ function onWlSearchKeydown(evt) {
 }
 
 // ─── Watchlist CRUD ────────────────────────────────────────────
-async function loadWatchlist() {
+// ─── 自选股（优化版：缓存 + 并行 + 即时渲染）────────────────────
+let _wlCache = null;       // { list, quotes } 缓存
+let _wlLoading = false;    // 防止重复请求
+
+async function loadWatchlist(forceRefresh) {
   const tbody = document.getElementById('watchlist-tbody');
-  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center">加载中...</td></tr>';
-  try {
-    const list = await fetch('/api/watchlist').then(r => r.json());
-    if (list.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center">【无】暂无自选股记录</td></tr>';
-      return;
-    }
-    let html = '';
-    list.forEach(w => {
-      // 统一前端展示逻辑：如果代码不含点且长度为6，自动加上展示用的后缀（仅为视觉美观）
-      let displayCode = w.code;
-      if (!displayCode.includes('.') && displayCode.length === 6) {
-         displayCode = displayCode.startsWith('6') ? displayCode + '.SH' : displayCode + '.SZ';
-      }
-      
-      html += `<tr class="wl-row" data-code="${w.code}">
-        <td><a href="https://stockpage.10jqka.com.cn/${w.code.split('.')[0]}/" target="_blank" style="color:#58a6ff;text-decoration:none;font-weight:600">${displayCode}</a></td>
-        <td style="color:#e6edf3;font-weight:500">${w.name || '-'}</td>
-        <td class="live-price" style="font-weight:bold;font-size:16px;color:#aaa">---</td>
-        <td class="live-pct" style="color:#aaa">---</td>
-        <td style="color:#8b949e;font-size:12px">${w.sector || '-'}</td>
-        <td class="time-col" style="color:#777;font-size:11px">${w.added_at ? w.added_at.substring(0, 19) : '-'}</td>
-        <td><button class="btn btn-ghost btn-sm" onclick="delWatchlist('${w.code}')">🗑️ 移除</button></td>
-      </tr>`;
-    });
-    tbody.innerHTML = html;
+  if (!tbody) return;
 
-    // 渲染完成后拉一次行情快照
-    const codes = list.map(w => w.code).join(',');
-    if (codes) {
-      fetch(`/api/market/quotes?codes=${codes}`).then(r => r.json()).then(data => {
-        // 将 quotes 数组转为 dict keyed by code
-        const qd = {};
-        (data.quotes || []).forEach(q => { if (q.code) qd[q.code] = q; });
-        document.querySelectorAll('#watchlist-tbody tr.wl-row').forEach(tr => {
-          const code = tr.getAttribute('data-code');
-          const q = qd[code] || qd[code?.split('.')[0]] || {};
-          if (q.price) {
-            const priceEl = tr.querySelector('.live-price');
-            const pctEl = tr.querySelector('.live-pct');
-            const pct = q.change_pct || 0;
-            const color = pct >= 0 ? '#3fb950' : '#f85149';
-            if (priceEl) { priceEl.textContent = q.price.toFixed(2); priceEl.style.color = color; }
-            if (pctEl) { pctEl.textContent = (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%'; pctEl.style.color = color; }
-          }
-        });
-      }).catch(() => {});
+  // 防止并发重复请求
+  if (_wlLoading) return;
 
-      // 重新订阅实时推送（新增自选股后需要让后端也推送该股票）
-      if (window.marketUpdater) window.marketUpdater.resubscribe();
-    }
-  } catch (e) {
-    console.error(e);
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:red">加载失败</td></tr>';
+  // 如果有缓存且不强制刷新，直接用缓存渲染（瞬间显示）
+  if (!forceRefresh && _wlCache) {
+    _renderWatchlistTable(_wlCache.list, _wlCache.quotes);
+    return;
   }
+
+  // 首次加载：显示加载中
+  if (!_wlCache) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text2)">加载中...</td></tr>';
+  }
+  // 有缓存时不清空，保留旧数据显示
+
+  _wlLoading = true;
+  try {
+    // 并行请求：列表 + 行情同时发起
+    const [listResp, quotesResp] = await Promise.all([
+      fetch('/api/watchlist').then(r => r.json()),
+      (async () => {
+        // 如果有缓存代码，直接复用；否则等列表回来再补发
+        if (_wlCache && _wlCache.list.length > 0) {
+          const codes = _wlCache.list.map(w => w.code).join(',');
+          return fetch('/api/market/quotes?codes=' + codes).then(r => r.json()).catch(() => null);
+        }
+        return null; // 等列表加载完再补
+      })()
+    ]);
+
+    const list = Array.isArray(listResp) ? listResp : [];
+
+    // 如果行情还没拿到（首次加载），用列表代码拉行情
+    let quotesData = quotesResp;
+    if (!quotesData && list.length > 0) {
+      const codes = list.map(w => w.code).join(',');
+      quotesData = await fetch('/api/market/quotes?codes=' + codes).then(r => r.json()).catch(() => null);
+    }
+
+    // 解析行情为 dict
+    const quotes = {};
+    if (quotesData && quotesData.quotes) {
+      quotesData.quotes.forEach(q => { if (q.code) quotes[q.code] = q; });
+    }
+    // 合并旧缓存中的价格（新行情没返回的保留旧值）
+    if (_wlCache && _wlCache.quotes) {
+      for (const [code, q] of Object.entries(_wlCache.quotes)) {
+        if (!quotes[code]) quotes[code] = q;
+      }
+    }
+
+    // 更新缓存
+    _wlCache = { list, quotes };
+
+    // 渲染
+    _renderWatchlistTable(list, quotes);
+
+    // 重新订阅实时推送
+    if (window.marketUpdater) window.marketUpdater.resubscribe();
+  } catch (e) {
+    console.error('loadWatchlist:', e);
+    if (!_wlCache) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:red">加载失败</td></tr>';
+    }
+  } finally {
+    _wlLoading = false;
+  }
+}
+
+function _renderWatchlistTable(list, quotes) {
+  const tbody = document.getElementById('watchlist-tbody');
+  if (!tbody) return;
+
+  if (list.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center">【无】暂无自选股记录</td></tr>';
+    return;
+  }
+
+  let html = '';
+  list.forEach(w => {
+    let displayCode = w.code;
+    if (!displayCode.includes('.') && displayCode.length === 6) {
+      displayCode = displayCode.startsWith('6') ? displayCode + '.SH' : displayCode + '.SZ';
+    }
+    // 用缓存价格或 ---
+    const q = quotes[w.code] || {};
+    const price = q.price;
+    const pct = q.change_pct;
+    const priceColor = price ? (pct >= 0 ? '#3fb950' : '#f85149') : '#aaa';
+    const priceText = price ? price.toFixed(2) : '---';
+    const pctText = pct !== undefined ? ((pct >= 0 ? '+' : '') + pct.toFixed(2) + '%') : '---';
+    const pctColor = pct !== undefined ? priceColor : '#aaa';
+
+    html += '<tr class="wl-row" data-code="' + w.code + '">' +
+      '<td><a href="https://stockpage.10jqka.com.cn/' + w.code.split('.')[0] + '/" target="_blank" style="color:#58a6ff;text-decoration:none;font-weight:600">' + displayCode + '</a></td>' +
+      '<td style="color:#e6edf3;font-weight:500">' + (w.name || '-') + '</td>' +
+      '<td class="live-price" style="font-weight:bold;font-size:16px;color:' + priceColor + '">' + priceText + '</td>' +
+      '<td class="live-pct" style="color:' + pctColor + '">' + pctText + '</td>' +
+      '<td style="color:#8b949e;font-size:12px">' + (w.sector || '-') + '</td>' +
+      '<td class="time-col" style="color:#777;font-size:11px">' + (w.added_at ? w.added_at.substring(0, 19) : '-') + '</td>' +
+      '<td><button class="btn btn-ghost btn-sm" onclick="delWatchlist(\'' + w.code + '\')">🗑️ 移除</button></td>' +
+      '</tr>';
+  });
+  tbody.innerHTML = html;
 }
 
 async function addWatchlist() {
@@ -3436,7 +3501,7 @@ async function addWatchlist() {
     document.getElementById('add-wl-code').value = '';
     _wlActiveCode = ''; _wlActiveName = '';
     closeWlDropdown();
-    loadWatchlist();
+    _wlCache = null; loadWatchlist(true);
   } else {
     addLog('error', res.message || '添加失败');
   }
@@ -3445,7 +3510,7 @@ async function addWatchlist() {
 async function delWatchlist(code) {
   if (!confirm(`确认移除自选股 ${code} 吗?`)) return;
   const res = await fetch(`/api/watchlist/${code}`, {method: 'DELETE'}).then(r => r.json());
-  if (res.status === 'ok') { addLog('ok', res.message); loadWatchlist(); }
+  if (res.status === 'ok') { addLog('ok', res.message); _wlCache = null; loadWatchlist(true); }
   else { addLog('error', res.message); }
 }
 
@@ -3510,6 +3575,8 @@ async function loadSimTraderStatus() {
       auto_scan: data.auto_scan !== undefined ? data.auto_scan : true,
       auto_buy: data.auto_buy || false,
       sell_mode: data.sell_mode || 'close',
+      monitor_enabled: data.monitor_enabled || false,
+      monitor_mode: data.monitor_mode || 'intraday',
     });
 
     // 渲染持仓
@@ -3647,6 +3714,46 @@ async function updateSimSwitches() {
 
 function updateMonitorUI(s) {
   _setSwitchesUI(s);
+  // 监控状态
+  const monCb = document.getElementById('sim-monitor-enabled');
+  if (monCb && s.monitor_enabled !== undefined) monCb.checked = s.monitor_enabled;
+  const monMode = document.getElementById('sim-monitor-mode');
+  if (monMode && s.monitor_mode) monMode.value = s.monitor_mode;
+  _updateMonitorStatusDot(s.monitor_enabled);
+}
+
+function _updateMonitorStatusDot(enabled) {
+  const dot = document.getElementById('sim-monitor-status');
+  const label = document.getElementById('sim-monitor-label');
+  if (dot) dot.style.background = enabled ? '#3fb950' : '#555';
+  if (label) label.textContent = enabled ? '运行中' : '未启动';
+}
+
+async function updateSimMonitor() {
+  const enabled = document.getElementById('sim-monitor-enabled')?.checked || false;
+  const mode = document.getElementById('sim-monitor-mode')?.value || 'intraday';
+  _updateMonitorStatusDot(enabled);
+  try {
+    const data = await fetch('/api/sim-trader/monitor', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ monitor_enabled: enabled, monitor_mode: mode })
+    }).then(r => r.json());
+    if (data.status === 'ok') {
+      addLog('ok', '监控' + (enabled ? '已开启(' + mode + ')' : '已关闭'));
+    }
+  } catch (e) { addLog('error', '监控开关设置失败: ' + e.message); }
+}
+
+async function updateSimMonitorMode() {
+  const enabled = document.getElementById('sim-monitor-enabled')?.checked || false;
+  if (!enabled) return;  // 监控关闭时不发送
+  const mode = document.getElementById('sim-monitor-mode')?.value || 'intraday';
+  try {
+    await fetch('/api/sim-trader/monitor', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ monitor_mode: mode })
+    });
+  } catch (e) { console.error('updateSimMonitorMode:', e); }
 }
 
 // ─── Global Date Bug Fix ──────────────────────────────────────
@@ -3663,3 +3770,632 @@ document.addEventListener('input', (e) => {
 
 // 页面初始化逻辑已在上方的 window.onload 中合并。
 
+// ═══════════════════════════════════════════════════════════
+// 简化回测模块 (simple backtest)
+// ═══════════════════════════════════════════════════════════
+
+let _simpleBtChart = null;
+let _simpleBtDailyTrades = {};
+let _lastSimpleBtResult = null;
+
+async function loadBtSimpleConfig() {
+  try {
+    const resp = await fetch('/api/backtest/simple-config');
+    const data = await resp.json();
+    if (data.status !== 'ok') return;
+    const cfg = data.config;
+    // 填充普通字段
+    const map = {
+      'sbt-capital': 'initial_capital', 'sbt-pos-size': 'position_size',
+      'sbt-min-buy': 'min_buy_amt', 'sbt-cooldown': 'same_stock_cooldown',
+      'sbt-hs': 'hard_stop', 'sbt-ta': 'trail_activate', 'sbt-td': 'trail_dd',
+      'sbt-ted': 'time_exit_days', 'sbt-tep': 'time_exit_profit',
+      'sbt-tfd': 'time_force_days', 'sbt-lsh': 'loss_streak_halve',
+      'sbt-lsp': 'loss_streak_pause', 'sbt-pd': 'pause_days',
+    };
+    for (const [elId, key] of Object.entries(map)) {
+      if (cfg[key] !== undefined) {
+        const el = document.getElementById(elId);
+        if (el) {
+          if (typeof cfg[key] === 'number' && cfg[key] < 1 && cfg[key] > -1) {
+            el.value = (cfg[key] * 100).toFixed(1);
+          } else {
+            el.value = cfg[key];
+          }
+        }
+      }
+    }
+    // ATR 配置
+    const atrCb = document.getElementById('sbt-atr');
+    if (atrCb && cfg.use_atr_trail !== undefined) atrCb.checked = cfg.use_atr_trail;
+    const atrMul = document.getElementById('sbt-atr-mul');
+    if (atrMul && cfg.atr_trail_multiplier !== undefined) atrMul.value = cfg.atr_trail_multiplier;
+    // 填充多档止盈
+    var tiers = cfg.take_profit_tiers || [];
+    var container = document.getElementById('sbt-tiers-container');
+    if (container && tiers.length > 0) {
+      container.innerHTML = '';
+      var colors = ['#d29922','#3fb950','#58a6ff','#a371f7','#f59e0b'];
+      tiers.forEach(function(t, i) {
+        var c = colors[i % colors.length];
+        var div = document.createElement('div');
+        div.className = 'bt-cfg-grid';
+        div.style.marginBottom = '4px';
+        div.innerHTML =
+          '<div class="bt-cfg-item"><label><span class="reason-tag" style="color:'+c+'">TP'+(i+1)+'</span> 盈利%</label><input type="number" class="sbt-tier-pct" step="0.5" value="'+(t.profit_pct*100).toFixed(1)+'"></div>'+
+          '<div class="bt-cfg-item"><label><span class="reason-tag" style="color:'+c+'">TP'+(i+1)+'</span> 卖出%</label><input type="number" class="sbt-tier-ratio" step="5" value="'+(t.sell_ratio*100)+'"></div>';
+        container.appendChild(div);
+      });
+    }
+    if (cfg.start_date) document.getElementById('sbt-start').value = cfg.start_date;
+    if (cfg.end_date) document.getElementById('sbt-end').value = cfg.end_date;
+    const sp = cfg.signal_params || {};
+    document.getElementById('sbt-qs').checked = !sp.disable_quality_sort;
+    addLog('ok', '已加载回测配置');
+  } catch (e) {
+    addLog('error', '加载回测配置失败: ' + e.message);
+  }
+}
+
+function _collectBtConfig() {
+  const map = {
+    'sbt-capital': 'initial_capital', 'sbt-pos-size': 'position_size',
+    'sbt-min-buy': 'min_buy_amt', 'sbt-cooldown': 'same_stock_cooldown',
+    'sbt-hs': 'hard_stop',
+    'sbt-ta': 'trail_activate', 'sbt-td': 'trail_dd',
+    'sbt-ted': 'time_exit_days', 'sbt-tep': 'time_exit_profit',
+    'sbt-tfd': 'time_force_days', 'sbt-lsh': 'loss_streak_halve',
+    'sbt-lsp': 'loss_streak_pause', 'sbt-pd': 'pause_days',
+  };
+  const cfg = {};
+  for (const [elId, key] of Object.entries(map)) {
+    const el = document.getElementById(elId);
+    if (!el) continue;
+    let val = parseFloat(el.value);
+    if (isNaN(val)) continue;
+    if (key === 'hard_stop' || key === 'trail_activate' || key === 'trail_dd' ||
+        key === 'time_exit_profit') {
+      val = val / 100;
+    }
+    cfg[key] = val;
+  }
+  // 收集多档止盈
+  cfg.take_profit_tiers = [];
+  document.querySelectorAll('#sbt-tiers-container .bt-cfg-grid').forEach(row => {
+    const pctEl = row.querySelector('.sbt-tier-pct');
+    const ratioEl = row.querySelector('.sbt-tier-ratio');
+    if (pctEl && ratioEl) {
+      const pct = parseFloat(pctEl.value) / 100;
+      const ratio = parseFloat(ratioEl.value) / 100;
+      if (!isNaN(pct) && !isNaN(ratio) && pct > 0 && ratio > 0) {
+        cfg.take_profit_tiers.push({ profit_pct: pct, sell_ratio: ratio });
+      }
+    }
+  });
+  cfg.use_atr_trail = document.getElementById('sbt-atr')?.checked || false;
+  cfg.atr_trail_multiplier = parseFloat(document.getElementById('sbt-atr-mul')?.value) || 1.0;
+  cfg.start_date = document.getElementById('sbt-start').value || '2023-01-01';
+  cfg.end_date = document.getElementById('sbt-end').value || new Date().toISOString().slice(0, 10);
+  cfg.signal_params = {
+    version: 'improved', filter_st: true, filter_bj: true,
+    vol_threshold: 1.5, close_position_threshold: 0.8,
+    disable_quality_sort: !document.getElementById('sbt-qs').checked,
+    filter_consecutive_up: false, filter_gap_quality: false,
+  };
+  return cfg;
+}
+
+function addBtTier() {
+  var container = document.getElementById('sbt-tiers-container');
+  var idx = container.querySelectorAll('.bt-cfg-grid').length;
+  var colors = ['#d29922','#3fb950','#58a6ff','#a371f7','#f59e0b'];
+  var c = colors[idx % colors.length];
+  var div = document.createElement('div');
+  div.className = 'bt-cfg-grid';
+  div.style.marginBottom = '4px';
+  div.innerHTML =
+    '<div class="bt-cfg-item"><label><span class="reason-tag" style="color:'+c+'">TP'+(idx+1)+'</span> 盈利%</label><input type="number" class="sbt-tier-pct" step="0.5" value="'+(4+idx*3)+'.0"></div>'+
+    '<div class="bt-cfg-item"><label><span class="reason-tag" style="color:'+c+'">TP'+(idx+1)+'</span> 卖出%</label><input type="number" class="sbt-tier-ratio" step="5" value="'+(Math.min(15+idx*10,50))+'"></div>';
+  container.appendChild(div);
+}
+
+function delBtTier() {
+  var container = document.getElementById('sbt-tiers-container');
+  var rows = container.querySelectorAll('.bt-cfg-grid');
+  if (rows.length <= 1) return;
+  rows[rows.length - 1].remove();
+}
+
+async function saveBtSimpleConfig() {
+  const cfg = _collectBtConfig();
+  try {
+    await fetch('/api/backtest/simple-config', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config: cfg }),
+    });
+    addLog('ok', '回测配置已保存');
+  } catch (e) {
+    addLog('error', '保存失败: ' + e.message);
+  }
+}
+
+async function applyBtToSystem() {
+  if (!confirm('将当前回测参数写入实盘系统配置？这会覆盖模拟盘的止盈止损等参数。')) return;
+  try {
+    const cfg = _collectBtConfig();
+    await fetch('/api/backtest/simple-config', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config: cfg }),
+    });
+    const resp = await fetch('/api/backtest/apply-to-system', { method: 'POST' });
+    const data = await resp.json();
+    if (data.status === 'ok') { addLog('ok', '已填入系统配置'); }
+    else { addLog('error', data.message || '失败'); }
+  } catch (e) { addLog('error', '填入系统失败: ' + e.message); }
+}
+
+async function resetBtSimpleConfig() {
+  try {
+    const resp = await fetch('/api/backtest/simple-config/reset', { method: 'POST' });
+    const data = await resp.json();
+    if (data.status === 'ok') {
+      await loadBtSimpleConfig();
+      addLog('ok', '已重置为系统配置');
+    }
+  } catch (e) {
+    addLog('error', '重置失败: ' + e.message);
+  }
+}
+
+async function runSimpleBacktest() {
+  const cfg = _collectBtConfig();
+  // 先保存
+  await saveBtSimpleConfig();
+
+  document.getElementById('simple-bt-result').style.display = 'none';
+  showProgress('simple-bt', '正在启动回测...');
+  document.getElementById('btn-simple-bt-run').disabled = true;
+
+  try {
+    await fetch('/api/backtest/run-simple', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ params: cfg }),
+    });
+  } catch (e) {
+    addLog('error', '启动回测失败: ' + e.message);
+    hideProgress('simple-bt');
+    document.getElementById('btn-simple-bt-run').disabled = false;
+  }
+}
+
+function showProgress(ctx, msg) {
+  const wrap = document.getElementById(ctx === 'simple-bt' ? 'simple-bt-progress' : ctx + '-progress');
+  if (!wrap) return;
+  wrap.style.display = 'block';
+  const msgEl = document.getElementById(ctx === 'simple-bt' ? 'simple-bt-msg' : ctx + '-msg');
+  if (msgEl) msgEl.textContent = msg;
+}
+
+function updateProgressFill(ctx, step, total) {
+  const fill = document.getElementById(ctx === 'simple-bt' ? 'simple-bt-fill' : ctx + '-fill');
+  if (fill && total > 0) fill.style.width = (step / total * 100) + '%';
+}
+
+function hideProgress(ctx) {
+  const wrap = document.getElementById(ctx === 'simple-bt' ? 'simple-bt-progress' : ctx + '-progress');
+  if (wrap) wrap.style.display = 'none';
+  if (ctx === 'simple-bt') document.getElementById('btn-simple-bt-run').disabled = false;
+}
+
+function renderSimpleBtResults(summary, equity, trades, indices) {
+  // 显示结果区
+  document.getElementById('simple-bt-result').style.display = 'block';
+
+  // 汇总卡片
+  const cards = document.getElementById('simple-bt-cards');
+  cards.innerHTML = `
+    <div class="stat-card"><div class="label">总收益</div><div class="value" style="color:${summary.total_return>=0?'#22c55e':'#ef4444'}">${summary.total_return >= 0 ? '+' : ''}${summary.total_return}%</div></div>
+    <div class="stat-card"><div class="label">最大回撤 / 胜率</div><div class="value">${summary.max_drawdown}% / ${summary.win_rate}%</div></div>
+    <div class="stat-card"><div class="label">交易笔数 / 期末净值</div><div class="value">${summary.trades} / ${(summary.final_equity/10000).toFixed(0)}万</div></div>
+    <div class="stat-card"><div class="label">均盈 / 均亏</div><div class="value">+${summary.avg_win}% / ${summary.avg_loss}%</div></div>
+    <div class="stat-card"><div class="label">盈亏比 / 盈利月</div><div class="value">${summary.profit_factor} / ${summary.positive_months}</div></div>
+    <div class="stat-card"><div class="label">交易日 / 信号</div><div class="value">${summary.trading_days} / ${summary.signals}</div></div>
+  `;
+
+  // 退出原因
+  if (summary.exit_reasons) {
+    const reasons = Object.entries(summary.exit_reasons).map(([k,v]) => `${k}:${v}`).join(' ');
+    document.getElementById('simple-bt-exit-dist').textContent = '退出: ' + reasons;
+  }
+
+  // 交易记录
+  document.getElementById('simple-bt-trade-count').textContent = '(' + trades.length + '笔)';
+  const tbody = document.getElementById('simple-bt-tbody');
+  tbody.innerHTML = trades.slice(-1000).reverse().map(t =>
+    '<tr>'+
+    '<td>'+t.code+'</td><td>'+(t.name||'')+'</td><td>'+(t.shares||0)+'</td>'+
+    '<td>'+t.entry_date+'</td><td>'+t.entry_px+'</td><td>'+(t.entry_total||0).toLocaleString()+'</td>'+
+    '<td>'+t.exit_date+'</td><td>'+t.exit_px+'</td><td>'+(t.exit_total||0).toLocaleString()+'</td>'+
+    '<td style="color:'+(t.profit>=0?'#22c55e':'#ef4444')+'">'+(t.profit>=0?'+':'')+Math.abs(t.profit).toFixed(0)+'</td>'+
+    '<td style="color:'+(t.ret_pct>=0?'#22c55e':'#ef4444')+'">'+(t.ret_pct>=0?'+':'')+t.ret_pct+'%</td>'+
+    '<td>已平仓</td>'+
+    '<td style="font-size:10px;color:var(--text2)">'+t.reason+'</td>'+
+    '<td>'+t.hold_days+'</td>'+
+    '</tr>'
+  ).join('');
+
+  // 图表
+  renderSimpleBtChart(equity, indices, summary.total_return);
+}
+
+function renderSimpleBtChart(equity, indices, totalReturn) {
+  const dom = document.getElementById('simple-bt-chart');
+  if (!dom) return;
+
+  if (_simpleBtChart) _simpleBtChart.dispose();
+  _simpleBtChart = echarts.init(dom);
+
+  const colors = ['#f59e0b', '#ef4444', '#8b5cf6', '#22c55e', '#3b82f6'];
+  const series = [];
+
+  // 策略净值线
+  const eqDates = equity.map(e => e.date);
+  const eqValues = equity.map(e => e.norm);
+  const eqDD = equity.map(e => e.dd);
+
+  series.push({
+    name: '策略 (' + (totalReturn >= 0 ? '+' : '') + totalReturn.toFixed(1) + '%)',
+    type: 'line', data: eqValues, smooth: true,
+    lineStyle: { color: colors[0], width: 2.5 },
+    itemStyle: { color: colors[0] },
+    symbol: 'none',
+  });
+
+  // 指数线
+  let idxIdx = 1;
+  if (indices) {
+    for (const [name, data] of Object.entries(indices)) {
+      if (!data || data.length === 0) continue;
+      // 只用 strategy 的日期范围内的数据
+      const idxMap = {};
+      data.forEach(d => { idxMap[d.date] = d.norm; });
+      const aligned = eqDates.map(d => idxMap[d] || null);
+      series.push({
+        name: name, type: 'line', data: aligned, smooth: true,
+        lineStyle: { color: colors[idxIdx % colors.length], width: 1.5, type: 'dashed' },
+        itemStyle: { color: colors[idxIdx % colors.length] },
+        symbol: 'none',
+      });
+      idxIdx++;
+    }
+  }
+
+  const option = {
+    tooltip: {
+      trigger: 'axis',
+      formatter: function(params) {
+        let html = '<b>' + params[0].axisValue + '</b><br/>';
+        params.forEach(p => {
+          if (p.value !== null && p.value !== undefined) {
+            const ret = ((p.value - 1) * 100).toFixed(1);
+            const color = ret >= 0 ? '#22c55e' : '#ef4444';
+            html += `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${p.color};margin-right:6px"></span>`;
+            html += `${p.seriesName}: <b style="color:${color}">${ret>=0?'+':''}${ret}%</b><br/>`;
+          }
+        });
+        return html;
+      }
+    },
+    legend: { top: 5, textStyle: { color: '#999', fontSize: 11 } },
+    grid: { top: 40, right: 60, bottom: 50, left: 60 },
+    xAxis: { type: 'category', data: eqDates, axisLabel: { color: '#666', fontSize: 10 },
+      splitLine: { show: false } },
+    yAxis: {
+      type: 'value', axisLabel: {
+        color: '#666', fontSize: 10,
+        formatter: v => ((v - 1) * 100).toFixed(0) + '%'
+      },
+      splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } }
+    },
+    series: series,
+  };
+
+  _simpleBtChart.setOption(option);
+  window.addEventListener('resize', () => _simpleBtChart && _simpleBtChart.resize());
+}
+
+// 加载 tab 时自动加载配置
+const _origSwitchTab = switchTab;
+switchTab = function(name) {
+  _origSwitchTab(name);
+  if (name === 'backtest') {
+    setTimeout(() => {
+      if (document.getElementById('sbt-capital') && !document.getElementById('sbt-capital').value) {
+        loadBtSimpleConfig();
+      }
+    }, 300);
+  }
+};
+
+// ══════════════════════════════════════════════════
+// 重载版本（覆盖上面的简化回测渲染函数）
+// ══════════════════════════════════════════════════
+
+renderSimpleBtResults = function(summary, equity, trades, indices) {
+  document.getElementById('simple-bt-result').style.display = 'block';
+  const c2 = (v, unit) => (v !== undefined && v !== null) ? (typeof v === 'number' ? v.toFixed(v < 10 && v > -1 ? 2 : 0) : v) + (unit || '') : '--';
+  const retColor = summary.total_return >= 0 ? '#22c55e' : '#ef4444';
+
+  const cards = document.getElementById('simple-bt-cards');
+  cards.innerHTML = `
+    <div class="stat-card"><div class="label">回测区间</div><div class="value" style="font-size:13px">${summary.start_date} ~ ${summary.end_date}</div></div>
+    <div class="stat-card"><div class="label">总收益率</div><div class="value" style="color:${retColor}">${summary.total_return>=0?'+':''}${c2(summary.total_return)}%</div></div>
+    <div class="stat-card"><div class="label">最大回撤 / 胜率</div><div class="value">${c2(summary.max_drawdown)}% / ${c2(summary.win_rate)}%</div></div>
+    <div class="stat-card"><div class="label">初始资金 / 最终资金</div><div class="value">${(summary.initial_capital/10000).toFixed(0)}万 / ${(summary.final_equity/10000).toFixed(0)}万</div></div>
+    <div class="stat-card"><div class="label">交易天数 / 时长</div><div class="value">${summary.trading_days}天 / ${summary.total_calendar_days||'--'}天</div></div>
+    <div class="stat-card"><div class="label">信号 / 买入 / 卖出 / 交易</div><div class="value">${summary.signals} / ${summary.buy_signals||'--'} / ${summary.sell_signals||'--'} / ${summary.trades}</div></div>
+  `;
+
+  // 风险指标
+  const riskNode = document.getElementById('simple-bt-risk');
+  if (riskNode) riskNode.remove();
+  const riskDiv = document.createElement('div');
+  riskDiv.id = 'simple-bt-risk';
+  riskDiv.className = 'grid-3';
+  riskDiv.style.marginBottom = 'var(--gap)';
+  riskDiv.innerHTML = `
+    <div class="stat-card"><div class="label">夏普比率 / 卡玛比率</div><div class="value">${c2(summary.sharpe)} / ${c2(summary.calmar)}</div></div>
+    <div class="stat-card"><div class="label">索提诺比率 / 盈亏比率</div><div class="value">${c2(summary.sortino)} / ${c2(summary.profit_ratio)}</div></div>
+    <div class="stat-card"><div class="label">利润因子 / 年化收益</div><div class="value">${c2(summary.profit_factor)} / ${c2(summary.ann_return)}%</div></div>
+  `;
+  cards.parentNode.insertBefore(riskDiv, cards.nextSibling);
+
+  // 收益分析
+  const anaNode = document.getElementById('simple-bt-analysis');
+  if (anaNode) anaNode.remove();
+  const analysisDiv = document.createElement('div');
+  analysisDiv.id = 'simple-bt-analysis';
+  analysisDiv.className = 'grid-3';
+  analysisDiv.style.marginBottom = 'var(--gap)';
+  analysisDiv.innerHTML = `
+    <div class="stat-card"><div class="label">最佳交易 / 最差交易</div><div class="value"><span style="color:#22c55e">+${c2(summary.best_trade)}%</span> / <span style="color:#ef4444">${c2(summary.worst_trade)}%</span></div></div>
+    <div class="stat-card"><div class="label">均盈 / 均亏</div><div class="value"><span style="color:#22c55e">+${c2(summary.avg_win)}%</span> / <span style="color:#ef4444">${c2(summary.avg_loss)}%</span></div></div>
+    <div class="stat-card"><div class="label">均盈持仓 / 均亏持仓</div><div class="value">${c2(summary.avg_hold_win)}天 / ${c2(summary.avg_hold_loss)}天</div></div>
+  `;
+  riskDiv.parentNode.insertBefore(analysisDiv, riskDiv.nextSibling);
+
+  if (summary.exit_reasons) {
+    const reasons = Object.entries(summary.exit_reasons).map(([k,v]) => k+':'+v).join('  ');
+    document.getElementById('simple-bt-exit-dist').textContent = '退出: ' + reasons;
+  }
+
+  // 存储所有交易记录用于分页
+  _btAllTrades = trades.slice().reverse();
+  _btTradePage = 0;
+  _renderBtTradePage(0);
+
+  renderSimpleBtChart(equity, indices, summary.total_return);
+};
+
+renderSimpleBtChart = function(equity, indices, totalReturn) {
+  var dom = document.getElementById('simple-bt-chart');
+  if (!dom) return;
+  if (_simpleBtChart) _simpleBtChart.dispose();
+  _simpleBtChart = echarts.init(dom);
+
+  var idxColors = ['#ef4444','#f97316','#eab308','#22c55e','#3b82f6','#8b5cf6','#ec4899','#06b6d4'];
+  var series = [];
+  var eqDates = equity.map(function(e) { return e.date; });
+  var eqValues = equity.map(function(e) { return e.norm; });
+
+  series.push({
+    name: '策略 (' + (totalReturn >= 0 ? '+' : '') + totalReturn.toFixed(1) + '%)',
+    type: 'line', data: eqValues, smooth: true,
+    lineStyle: { color: '#f59e0b', width: 3 }, symbol: 'none',
+  });
+
+  if (indices) {
+    var i = 0;
+    for (var name in indices) {
+      var data = indices[name];
+      if (!data || data.length === 0) continue;
+      var idxMap = {};
+      data.forEach(function(d) { idxMap[d.date] = d.norm; });
+          var alignedRaw = eqDates.map(function(d) { return idxMap[d] || null; });
+          // 重新归一化：回测期间第一个有效值 = 1
+          var firstValid = null;
+          for (var k = 0; k < alignedRaw.length; k++) {
+            if (alignedRaw[k] !== null) { firstValid = alignedRaw[k]; break; }
+          }
+          var aligned = alignedRaw.map(function(v) { return v !== null && firstValid ? v / firstValid : null; });
+          var idxFinal = aligned.filter(function(v) { return v !== null; });
+          var idxRet = idxFinal.length > 0 ? ((idxFinal[idxFinal.length-1] - 1) * 100).toFixed(1) : "N/A";
+      series.push({
+        name: name + ' (' + (idxRet>=0?'+':'') + idxRet + '%)',
+        type: 'line', data: aligned, smooth: true,
+        lineStyle: { color: idxColors[i % idxColors.length], width: 1.2, type: 'dashed' },
+        symbol: 'none',
+      });
+      i++;
+    }
+  }
+
+  _simpleBtChart.setOption({
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: 'rgba(20,22,28,0.95)',
+      borderColor: '#333',
+      textStyle: { color: '#ddd', fontSize: 12 },
+      formatter: function(params) {
+        var html = '<b style="font-size:13px">' + params[0].axisValue + '</b><br/>';
+        params.forEach(function(p) {
+          if (p.value !== null && p.value !== undefined) {
+            var ret = ((p.value - 1) * 100).toFixed(2);
+            var color = ret >= 0 ? '#22c55e' : '#ef4444';
+            html += '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + p.color + ';margin-right:5px"></span>';
+            html += p.seriesName.replace(/\(.*\)$/, '') + ': <b style="color:' + color + '">' + (ret>=0?'+':'') + ret + '%</b><br/>';
+          }
+        });
+        var dateStr = params[0].axisValue;
+        if (typeof _simpleBtDailyTrades !== 'undefined' && _simpleBtDailyTrades[dateStr]) {
+          var day = _simpleBtDailyTrades[dateStr];
+          html += '<hr style="margin:3px 0;border-color:#333"/>';
+          html += '<div style="max-height:260px;overflow-y:auto;font-size:10px;line-height:1.55">';
+          if (day.bought && day.bought.length > 0) {
+            html += '<div style="color:#22c55e;font-weight:600;margin-bottom:2px">买入 ' + day.bought.length + ' 笔</div>';
+            day.bought.forEach(function(b) {
+              html += '<div style="padding-left:2px;color:#aaa">' + b.code + (b.name ? ' <span style="color:#ccc">' + b.name + '</span>' : '') + ' <span style="color:#ddd">@' + b.price + '</span></div>';
+            });
+          }
+          if (day.sold && day.sold.length > 0) {
+            html += '<div style="color:#ef4444;font-weight:600;margin-top:4px;margin-bottom:2px">卖出 ' + day.sold.length + ' 笔</div>';
+            day.sold.forEach(function(s) {
+              var sc = s.ret >= 0 ? '#22c55e' : '#ef4444';
+              html += '<div style="padding-left:2px">';
+              html += '<span style="color:#aaa">' + s.code + '</span>';
+              if (s.name) html += ' <span style="color:#ccc">' + s.name + '</span>';
+              html += ' <span style="color:#ddd">@' + s.price + '</span>';
+              html += ' <span style="color:' + sc + ';font-weight:600">' + (s.ret >= 0 ? '+' : '') + s.ret + '%</span>';
+              html += ' <span style="color:#888;font-size:9px">' + s.reason + '</span>';
+              html += '</div>';
+            });
+          }
+          html += '</div>';
+        }
+        return html;
+      }
+    },
+    legend: { top: 5, textStyle: { color: '#999', fontSize: 10 }, type: 'scroll' },
+    grid: { top: 55, right: 70, bottom: 55, left: 65 },
+    xAxis: { type: 'category', data: eqDates, axisLabel: { color: '#666', fontSize: 9, rotate: 30, interval: Math.floor(eqDates.length / 8) }, splitLine: { show: false } },
+    yAxis: { type: 'value', axisLabel: { color: '#666', fontSize: 10, formatter: function(v) { return ((v-1)*100).toFixed(0)+'%'; } }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } } },
+    series: series,
+  });
+  window.addEventListener('resize', function() { if (_simpleBtChart) _simpleBtChart.resize(); });
+};
+
+// ─── 交易记录分页 + 下载 ──────────────────
+var _btAllTrades = [];
+var _btTradePage = 0;
+var _btPageSize = 100;
+
+function _renderBtTradePage(page) {
+  var total = _btAllTrades.length;
+  var totalPages = Math.ceil(total / _btPageSize);
+  if (page < 0) page = 0;
+  if (page >= totalPages && totalPages > 0) page = totalPages - 1;
+  _btTradePage = page;
+
+  document.getElementById('simple-bt-trade-count').textContent =
+    '(' + total + '笔, ' + (page + 1) + '/' + (totalPages || 1) + '页)';
+
+  var start = page * _btPageSize;
+  var tbody = document.getElementById('simple-bt-tbody');
+  tbody.innerHTML = _btAllTrades.slice(start, start + _btPageSize).map(function(t) {
+    return '<tr>'+
+      '<td>'+t.code+'</td><td>'+(t.name||'')+'</td><td>'+(t.shares||0)+'</td>'+
+      '<td>'+t.entry_date+'</td><td>'+t.entry_px+'</td><td>'+(t.entry_total||0).toLocaleString()+'</td>'+
+      '<td>'+t.exit_date+'</td><td>'+t.exit_px+'</td><td>'+(t.exit_total||0).toLocaleString()+'</td>'+
+      '<td style="color:'+(t.profit>=0?'#22c55e':'#ef4444')+'">'+(t.profit>=0?'+':'')+Math.abs(t.profit).toFixed(0)+'</td>'+
+      '<td style="color:'+(t.ret_pct>=0?'#22c55e':'#ef4444')+'">'+(t.ret_pct>=0?'+':'')+t.ret_pct+'%</td>'+
+      '<td>已平仓</td>'+
+      '<td style="font-size:10px;color:var(--text2)">'+t.reason+'</td>'+
+      '<td>'+t.hold_days+'</td>'+
+      '</tr>';
+  }).join('');
+
+  // 更新分页控件
+  var pag = document.getElementById('simple-bt-pagination');
+  if (pag) {
+    pag.innerHTML = (totalPages > 1)
+      ? '<button class="btn btn-sm" onclick="_renderBtTradePage(0)" '+(page===0?'disabled':'')+'>&#171; 首页</button> '+
+        '<button class="btn btn-sm" onclick="_renderBtTradePage('+(page-1)+')" '+(page===0?'disabled':'')+'>&#8249; 上页</button> '+
+        '<span style="font-size:11px;color:var(--text2);margin:0 8px">'+(page+1)+'/'+totalPages+'</span> '+
+        '<button class="btn btn-sm" onclick="_renderBtTradePage('+(page+1)+')" '+(page>=totalPages-1?'disabled':'')+'>下页 &#8250;</button> '+
+        '<button class="btn btn-sm" onclick="_renderBtTradePage('+(totalPages-1)+')" '+(page>=totalPages-1?'disabled':'')+'>末页 &#187;</button>'
+      : '';
+  }
+}
+
+function downloadBtTradesCSV() {
+  if (_btAllTrades.length === 0) return;
+  var header = '代码,名称,数量,买入日,买入价,买入总额,卖出日,卖出价,卖出总额,盈亏额,收益率,卖出逻辑,持仓天';
+  var rows = _btAllTrades.map(function(t) {
+    return [
+      t.code, t.name||'', t.shares||0,
+      t.entry_date, t.entry_px, t.entry_total||0,
+      t.exit_date, t.exit_px, t.exit_total||0,
+      t.profit, t.ret_pct, t.reason, t.hold_days
+    ].join(',');
+  });
+  var csv = '﻿' + header + '\n' + rows.join('\n');
+  var blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = 'backtest_trades.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ============================================
+// 回测历史记录
+// ============================================
+
+
+async function loadSimpleBtHistory() {
+  try {
+    const resp = await fetch('/api/backtest/simple/history');
+    const data = await resp.json();
+    if (data.status !== 'ok') return;
+    const items = data.data || [];
+    const list = document.getElementById('simple-bt-history-list');
+    if (!list) return;
+    if (!items || items.length === 0) {
+      list.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:8px">暂无回测记录</div>';
+      return;
+    }
+    list.innerHTML = items.map(h => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border);font-size:12px">
+        <span style="color:var(--text)">${h.start_date || h.id}</span>
+        <span style="color:var(--text2)">${h.start_date} ~ ${h.end_date}</span>
+        <span style="color:${h.total_return>=0?'#22c55e':'#ef4444'}">${h.total_return>=0?'+':''}${h.total_return}%</span>
+        <span style="color:var(--text2)">DD ${h.max_drawdown}% | ${h.trades}笔</span>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-ghost btn-sm" onclick="loadSimpleBtHistoryDetail('${h.id}')" style="font-size:11px">加载</button>
+          <button class="btn btn-ghost btn-sm" onclick="deleteSimpleBtHistory('${h.id}')" style="font-size:11px;color:var(--red)">删除</button>
+        </div>
+      </div>
+    `).join('');
+  } catch (e) {
+    console.error('Load history error:', e);
+  }
+}
+
+async function loadSimpleBtHistoryDetail(id) {
+  try {
+    const resp = await fetch('/api/backtest/simple/history/' + id);
+    const data = await resp.json();
+    if (data.status !== 'ok') { addLog('error', '加载失败'); return; }
+    var r = data.data;
+    _lastSimpleBtResult = { summary: r.summary, equity: r.equity, trades: r.trades, indices: r.indices, dailyTrades: r.daily_trades, resultId: id };
+    _simpleBtDailyTrades = r.daily_trades || {};
+    renderSimpleBtResults(r.summary, r.equity, r.trades, r.indices);
+    addLog('ok', '已加载: ' + id);
+  } catch (e) {
+    addLog('error', '加载失败: ' + e.message);
+  }
+}
+
+async function deleteSimpleBtHistory(id) {
+  if (!confirm('确认删除该回测记录？')) return;
+  try {
+    const resp = await fetch('/api/backtest/simple/history/' + id, { method: 'DELETE' });
+    const data = await resp.json();
+    if (data.status === 'ok') {
+      addLog('ok', '已删除');
+      loadSimpleBtHistory();
+    }
+  } catch (e) {
+    addLog('error', '删除失败: ' + e.message);
+  }
+}

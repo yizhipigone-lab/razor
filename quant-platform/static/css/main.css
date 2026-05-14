@@ -331,3 +331,65 @@ tr:hover td { background: #1c2128; }
   }
   .tag-active { color: #10b981; font-size: 11px; font-weight: 500; }
   .tag-deprecated { color: #94a3b8; font-size: 11px; }
+
+  /* ─── 回测配置卡片 ─── */
+  .bt-cfg-group {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+  }
+  .bt-cfg-group .bt-cfg-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .bt-cfg-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+  }
+  .bt-cfg-item {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .bt-cfg-item label {
+    font-size: 11px;
+    color: var(--text2);
+    font-weight: 500;
+  }
+  .bt-cfg-item input {
+    height: 28px;
+    font-size: 12px;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 4px;
+    color: var(--text);
+    padding: 0 8px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .bt-cfg-item input:focus {
+    border-color: var(--accent);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(88,166,255,0.15);
+  }
+  .bt-cfg-item.hs input { border-left: 3px solid #f85149; }
+  .bt-cfg-item.tp1 input { border-left: 3px solid #d29922; }
+  .bt-cfg-item.tp2 input { border-left: 3px solid #3fb950; }
+  .bt-cfg-item.tr input { border-left: 3px solid #58a6ff; }
+  .bt-cfg-item.tc input { border-left: 3px solid #a371f7; }
+  .bt-cfg-item.tf input { border-left: 3px solid #8b949e; }
+  .reason-tag {
+    display: inline-block;
+    font-size: 11px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: rgba(255,255,255,0.06);
+    font-family: monospace;
+  }

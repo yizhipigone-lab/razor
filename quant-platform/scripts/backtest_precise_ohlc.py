@@ -1,13 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-MA5 角度策略 — 精确版回测（用日线OHLC的Low/High做日内模拟）
+MA5 角度策略 �?精确版回测（用日线OHLC的Low/High做日内模拟）
 相比纯日线Close版本，这个版本：
 - 硬止损：用当日最低价检查，触发则按止损价退出（而非收盘价）
-- 移动止盈：用当日最高价更新峰值，最低价检查回撤
-- 分阶段止盈：用当日最高价检查是否触发
-- 这比纯Close版本更精确地模拟了日内执行
-"""
+- 移动止盈：用当日最高价更新峰值，最低价检查回�?- 分阶段止盈：用当日最高价检查是否触�?- 这比纯Close版本更精确地模拟了日内执�?"""
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 if hasattr(sys.stdout, 'reconfigure'):
@@ -27,8 +24,7 @@ warnings.filterwarnings('ignore')
 from database.duckdb_manager import db, PARQUET_DAILY_DIR
 from app.screener.strategies.ma5_angle import generate_signals
 
-# ═══════════════════════════════════════════════════════════════
-INITIAL_CAPITAL = 1_000_000
+# ══════════════════════════════════════════════════════════════�?INITIAL_CAPITAL = 1_000_000
 POSITION_CAP    = 50_000
 HARD_STOP       = -0.055
 TP1_PCT         = 0.04
@@ -50,13 +46,11 @@ LOAD_START     = date(2022, 1, 1)
 
 SIGNAL_PARAMS = {
     "version": "improved", "filter_st": True, "filter_bj": True,
-    "sh_red_filter": False,
     "vol_threshold": 1.5, "close_position_threshold": 0.8,
     "disable_quality_sort": True,
     "filter_consecutive_up": False, "filter_gap_quality": False,
 }
-# ═══════════════════════════════════════════════════════════════
-
+# ══════════════════════════════════════════════════════════════�?
 
 @dataclass
 class Position:
@@ -94,11 +88,7 @@ class Trade:
 class PreciseBacktestEngine:
     """
     精确版回测引擎：
-    - 卖出用当日 OHLC 做精确检查
-      - 硬止损：检查 Low 是否触及止损价，如触及则按止损价退出
-      - 止盈：检查 High 是否触及止盈价
-      - 移动止盈：High更新峰值，Low检查回撤
-    - 买入用当日收盘价
+    - 卖出用当�?OHLC 做精确检�?      - 硬止损：检�?Low 是否触及止损价，如触及则按止损价退�?      - 止盈：检�?High 是否触及止盈�?      - 移动止盈：High更新峰值，Low检查回�?    - 买入用当日收盘价
     """
 
     def __init__(self, trading_dates, sh_index):
@@ -128,8 +118,7 @@ class PreciseBacktestEngine:
     def check_stops(self, d: date, daily_bars: dict) -> List[Tuple]:
         """
         daily_bars: {code: {'open','high','low','close'}}
-        按优先级检查，一次只触发一个退出（最高优先级）
-        """
+        按优先级检查，一次只触发一个退出（最高优先级�?        """
         sells = []
         for code, pos in list(self.positions.items()):
             if not pos.is_active or pos.remaining_shares <= 0:
@@ -144,25 +133,23 @@ class PreciseBacktestEngine:
             low_p   = bar['low']
             close_p = bar['close']
 
-            # 更新日内峰值（用当日最高价）
-            if high_p > pos.peak_price:
+            # 更新日内峰值（用当日最高价�?            if high_p > pos.peak_price:
                 pos.peak_price = high_p
             pos.peak_profit_pct = pos.peak_price / pos.entry_price - 1
 
             hold_days = self._td(pos.entry_date, d)
             rem = pos.remaining_shares
 
-            # ── 1. 硬止损 -5.5%（用当日最低价检查） ──
+            # ── 1. 硬止�?-5.5%（用当日最低价检查） ──
             hard_stop_price = pos.entry_price * (1 + HARD_STOP)
             if low_p <= hard_stop_price:
-                # 按止损价退出（精确执行），而非收盘价
-                sells.append((pos, hard_stop_price,
-                    f"硬止损({HARD_STOP*100:.1f}%)", None))
+                # 按止损价退出（精确执行），而非收盘�?                sells.append((pos, hard_stop_price,
+                    f"硬止�?{HARD_STOP*100:.1f}%)", None))
                 continue
 
-            # ── 2. 时间强制退出 >10天 ──
+            # ── 2. 时间强制退�?>10�?──
             if hold_days > TIME_FORCE:
-                sells.append((pos, close_p, f"时间强制({hold_days}天)", None))
+                sells.append((pos, close_p, f"时间强制({hold_days}�?", None))
                 continue
 
             # ── 3. TP2: +14% 清仓（用最高价检查） ──
@@ -172,7 +159,7 @@ class PreciseBacktestEngine:
                     sells.append((pos, tp2_price, f"TP2 +{TP2_PCT*100:.0f}%", None))
                     continue
 
-            # ── 4. TP1: +4% 卖20%（用最高价检查） ──
+            # ── 4. TP1: +4% �?0%（用最高价检查） ──
             if not pos.tp1_triggered:
                 tp1_price = pos.entry_price * (1 + TP1_PCT)
                 if high_p >= tp1_price:
@@ -190,17 +177,17 @@ class PreciseBacktestEngine:
                         f"移动止盈(峰{pos.peak_profit_pct*100:.1f}%回{dd_from_peak*100:.1f}%)", None))
                     continue
 
-            # ── 6. 保本线（最低价触及成本价+已盈利>3%） ──
+            # ── 6. 保本线（最低价触及成本�?已盈�?3%�?──
             if pos.peak_profit_pct >= 0.03 and low_p <= pos.entry_price:
                 sells.append((pos, pos.entry_price,
-                    f"保本(曾+{pos.peak_profit_pct*100:.1f}%)", None))
+                    f"保本(�?{pos.peak_profit_pct*100:.1f}%)", None))
                 continue
 
             # ── 7. 时间条件 >7天且盈利>1% ──
             current_profit_for_time = close_p / pos.entry_price - 1
             if hold_days > TIME_EXIT and current_profit_for_time > 0.01:
                 sells.append((pos, close_p,
-                    f"时间条件({hold_days}天+{current_profit_for_time*100:.1f}%)", None))
+                    f"时间条件({hold_days}�?{current_profit_for_time*100:.1f}%)", None))
                 continue
 
         return sells
@@ -287,9 +274,9 @@ def load_sh_index():
 def run_precise_backtest():
     t0 = time.time()
     print("=" * 72)
-    print("  MA5 角度策略 — OHLC精确版回测 (用日线Low/High模拟日内)")
+    print("  MA5 角度策略 �?OHLC精确版回�?(用日线Low/High模拟日内)")
     print(f"  区间: {BACKTEST_START} ~ {BACKTEST_END}")
-    print(f"  硬止损: {HARD_STOP*100:+.1f}% (按日Low检查，止损价退出)")
+    print(f"  硬止�? {HARD_STOP*100:+.1f}% (按日Low检查，止损价退�?")
     print("=" * 72)
 
     # ── 1. 加载数据 ──────────────────────────────────
@@ -302,7 +289,7 @@ def run_precise_backtest():
     bars = bars.dropna(subset=["close"])
     bars["date"] = pd.to_datetime(bars["date"]).dt.date
     bars = bars.sort_values(["code", "date"])
-    print(f"  {bars['code'].nunique():,} 只股票, {len(bars):,} 行")
+    print(f"  {bars['code'].nunique():,} 只股�? {len(bars):,} �?)
 
     # ── 2. 信号 ──────────────────────────────────────
     print(f"\n[2/4] 生成信号 ...")
@@ -335,7 +322,7 @@ def run_precise_backtest():
         daily_closes[d] = c_dict
 
     trading_dates = sorted(daily_ohlc.keys())
-    print(f"  交易日: {len(trading_dates):,}")
+    print(f"  交易�? {len(trading_dates):,}")
 
     # 信号索引
     sig_by_date: Dict[date, List[str]] = {}
@@ -392,11 +379,11 @@ def run_precise_backtest():
         if (i + 1) % 100 == 0:
             eq = engine.total_equity(closes)
             print(f"  {d} | {i+1}/{len(trading_dates)} | "
-                  f"净值 {eq:,.0f} | 持仓 {engine.pos_count()}")
+                  f"净�?{eq:,.0f} | 持仓 {engine.pos_count()}")
 
     # ── 报告 ──────────────────────────────────────────
     print(f"\n{'='*72}")
-    print(f"  精确版回测报告")
+    print(f"  精确版回测报�?)
     print(f"{'='*72}")
 
     eq_df = pd.DataFrame(engine.equity_curve)
@@ -440,7 +427,7 @@ def run_precise_backtest():
         ed = Counter(t.exit_reason.split('(')[0] for t in trades)
 
         # 统计硬止损的实际亏损
-        hard_stop_trades = [t for t in trades if t.exit_reason.startswith('硬止损')]
+        hard_stop_trades = [t for t in trades if t.exit_reason.startswith('硬止�?)]
         hs_count = len(hard_stop_trades)
         hs_avg_loss = np.mean([t.return_pct for t in hard_stop_trades]) if hard_stop_trades else 0
         hs_total_loss = sum(t.profit_amount for t in hard_stop_trades)
@@ -474,23 +461,23 @@ def run_precise_backtest():
 
     elapsed = time.time() - t0
 
-    print(f"\n  ┌─────────────────────────────────────────────────┐")
-    print(f"  │ 初始资金: {INITIAL_CAPITAL:>13,}                     │")
-    print(f"  │ 最终净值: {fe:>13,.0f}                     │")
-    print(f"  │ 总收益: {tr:>+12.2f}%  年化: {ann:>+7.2f}%                │")
-    print(f"  │ 最大回撤: {md:>12.2f}%  夏普: {sharpe:>6.2f}                  │")
-    print(f"  │ PF: {pf:>10.2f}  胜率: {wr:>7.1f}%                    │")
-    print(f"  │ 耗时: {elapsed:>10.0f}s  跳过信号: {skipped_signals:>7}              │")
-    print(f"  └─────────────────────────────────────────────────┘")
+    print(f"\n  ┌─────────────────────────────────────────────────�?)
+    print(f"  �?初始资金: {INITIAL_CAPITAL:>13,}                     �?)
+    print(f"  �?最终净�? {fe:>13,.0f}                     �?)
+    print(f"  �?总收�? {tr:>+12.2f}%  年化: {ann:>+7.2f}%                �?)
+    print(f"  �?最大回�? {md:>12.2f}%  夏普: {sharpe:>6.2f}                  �?)
+    print(f"  �?PF: {pf:>10.2f}  胜率: {wr:>7.1f}%                    �?)
+    print(f"  �?耗时: {elapsed:>10.0f}s  跳过信号: {skipped_signals:>7}              �?)
+    print(f"  └─────────────────────────────────────────────────�?)
 
-    print(f"\n  ┌─────────────────────────────────────────────────┐")
-    print(f"  │ 交易统计                                        │")
-    print(f"  │ 总成交: {n:>6}笔  盈: {nw:<6}笔  亏: {nl:<6}笔              │")
-    print(f"  │ 均盈: {aw:>+9.2f}%  均亏: {al:>+9.2f}%                      │")
-    print(f"  │ 均笔: {at_:>+9.2f}%  中位: {med:>+9.2f}%                      │")
-    print(f"  │ 均持: {ah:>9.1f}天                                    │")
-    print(f"  │ 硬止损: {hs_count:>4}笔  均亏: {hs_avg_loss:>+7.2f}%  总亏: {hs_total_loss:>+12,.0f}       │")
-    print(f"  └─────────────────────────────────────────────────┘")
+    print(f"\n  ┌─────────────────────────────────────────────────�?)
+    print(f"  �?交易统计                                        �?)
+    print(f"  �?总成�? {n:>6}�? �? {nw:<6}�? �? {nl:<6}�?             �?)
+    print(f"  �?均盈: {aw:>+9.2f}%  均亏: {al:>+9.2f}%                      �?)
+    print(f"  �?均笔: {at_:>+9.2f}%  中位: {med:>+9.2f}%                      �?)
+    print(f"  �?均持: {ah:>9.1f}�?                                   �?)
+    print(f"  �?硬止�? {hs_count:>4}�? 均亏: {hs_avg_loss:>+7.2f}%  总亏: {hs_total_loss:>+12,.0f}       �?)
+    print(f"  └─────────────────────────────────────────────────�?)
 
     print(f"\n  [退出分布]")
     print(f"  {'原因':<32} {'笔数':>6} {'占比':>8}")
