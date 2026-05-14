@@ -20,6 +20,15 @@ from core.logger import get_logger
 log = get_logger("SimEngine")
 
 
+def _safe_broadcast(data: dict):
+    """安全广播到前端（非 server 环境静默跳过）"""
+    try:
+        from server.websocket.manager import sync_broadcast
+        sync_broadcast(data)
+    except Exception:
+        pass
+
+
 @dataclass
 class Position:
     code: str
@@ -179,6 +188,7 @@ class SimTraderEngine:
         self.cash -= cost
         self.positions[code] = pos
         log.info(f"[买入] {code} 价格={price:.2f} 数量={shares} 金额={cost:.0f} 剩余现金={self.cash:.0f} 策略={strategy_name}")
+        _safe_broadcast({"type":"sim_trader_log","action":"buy","code":code,"price":round(price,2),"shares":shares,"cost":round(cost,0),"cash":round(self.cash,0),"strategy":strategy_name,"date":str(today)})
         if self._store:
             self._store.save_positions(self.positions)
             self._store.save_state(
@@ -302,6 +312,7 @@ class SimTraderEngine:
         self._trade_count += 1
 
         log.info(f"[卖出] {pos.code} 价格={exit_price:.2f} 数量={ss} 收益={rp:.1f}% 利润={profit:.0f} 原因={reason} 剩余现金={self.cash:.0f}")
+        _safe_broadcast({"type":"sim_trader_log","action":"sell","code":pos.code,"price":round(exit_price,2),"shares":ss,"ret_pct":round(rp,1),"profit":round(profit,0),"reason":reason,"cash":round(self.cash,0),"date":str(exit_date or date.today())})
 
         return Trade(
             code=pos.code, entry_date=pos.entry_date,
@@ -367,6 +378,7 @@ class SimTraderEngine:
     def record(self, today: date, snapshot: dict):
         eq = self.total_equity(snapshot)
         log.info(f"[快照] 日期={today} 权益={eq:,.0f} 现金={self.cash:,.0f} 持仓={self.position_count}")
+        _safe_broadcast({"type":"sim_trader_log","action":"snapshot","date":str(today),"equity":round(eq,0),"cash":round(self.cash,0),"positions":self.position_count})
         self.equity_curve.append({
             'date': today,
             'equity': eq,

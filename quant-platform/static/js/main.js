@@ -63,7 +63,7 @@ function switchTab(name) {
   if (name === 'backtest' || name === 'ai-backtest') loadBacktestCapitalDefaults();
   if (name === 'ai-backtest') initAIBacktest();
   if (name === 'radar') loadHotSectorData();
-  if (name === 'sim-trader') loadSimTraderStatus();
+  if (name === 'sim-trader') { loadSimTraderStatus(); initLogDates(); loadSimLogs(); }
 }
 
 // ─── AI 回测 JS ────────────────────────────────────────────
@@ -801,6 +801,8 @@ function handleWS(msg) {
       addLog('warn', `盘中卖出: ${msg.code} ${msg.reason}`);
     }
     loadSimTraderStatus();
+  } else if (msg.type === 'sim_trader_log') {
+    appendSimLog(msg);
   } else if (msg.type === 'risk_alert') {
     addLog('warn', `[风险告警] ${msg.code} ${msg.reason}（${msg.mode}）`);
     createNotification('warn', `风险告警: ${msg.code} ${msg.reason}`);
@@ -3734,6 +3736,61 @@ function _updateMonitorStatusDot(enabled) {
   const label = document.getElementById('sim-monitor-label');
   if (dot) dot.style.background = enabled ? '#3fb950' : '#555';
   if (label) label.textContent = enabled ? '运行中' : '未启动';
+}
+
+// ─── Sim Trader 日志面板 ──────────────────────────────────────
+let _simLogs = [];
+let _simLogDate = '';
+
+async function loadSimLogs() {
+  _simLogDate = document.getElementById('sim-log-date')?.value || '';
+  const kw = document.getElementById('sim-log-search')?.value || '';
+  const params = new URLSearchParams({ limit: 300 });
+  if (_simLogDate) params.set('date', _simLogDate);
+  if (kw) params.set('keyword', kw);
+  try {
+    const r = await fetch('/api/logs/query?' + params);
+    const d = await r.json();
+    if (d.lines) { _simLogs = d.lines; renderSimLogs(); }
+  } catch(e) { console.error('loadSimLogs:', e); }
+}
+
+function appendSimLog(msg) {
+  const a = msg.action;
+  const icon = a === 'buy' ? '🟢' : a === 'sell' ? '🔴' : '📊';
+  const detail = a === 'buy' ? `${msg.code} 买入 ${msg.shares}股 @${msg.price} 金额${msg.cost}`
+    : a === 'sell' ? `${msg.code} 卖出 ${msg.shares}股 @${msg.price} 收益${msg.ret_pct}% 利润${msg.profit} ${msg.reason}`
+    : `权益 ${msg.equity} 现金 ${msg.cash} 持仓 ${msg.positions}`;
+  const line = { date: msg.date, line: `${icon} ${detail}` };
+  _simLogs.unshift(line);
+  if (_simLogs.length > 500) _simLogs.length = 500;
+  renderSimLogs();
+}
+
+function filterSimLogs() {
+  const kw = (document.getElementById('sim-log-search')?.value || '').toLowerCase();
+  const list = document.getElementById('sim-log-list');
+  if (!list) return;
+  let html = '';
+  for (const l of _simLogs) {
+    if (kw && !l.line.toLowerCase().includes(kw)) continue;
+    html += `<div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(l.line)}</div>`;
+  }
+  list.innerHTML = html || '<span style="color:var(--text2)">无匹配</span>';
+}
+
+function renderSimLogs() { filterSimLogs(); }
+
+let _logDatesLoaded = false;
+async function initLogDates() {
+  if (_logDatesLoaded) return;
+  _logDatesLoaded = true;
+  try {
+    const r = await fetch('/api/logs/dates');
+    const d = await r.json();
+    const sel = document.getElementById('sim-log-date');
+    if (sel && d.dates) d.dates.forEach(dt => { const o = document.createElement('option'); o.value = dt; o.textContent = dt; sel.appendChild(o); });
+  } catch(e) {}
 }
 
 async function updateSimMonitor() {
