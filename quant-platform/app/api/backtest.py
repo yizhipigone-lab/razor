@@ -250,7 +250,7 @@ async def ai_backtest_apply(body: dict):
             )
         else:
             tp_plan[-1]["sell_all"] = True
-        settings.set("risk", "staged_take_profit", tp_plan)
+        settings.set("risk", "take_profit_tiers", tp_plan)
         applied.append(f"tp_plan=[{params['tp1_profit']}%/{params['tp2_profit']}%]")
 
     # 同时更新搜索空间基线（以应用后的参数为新的中心值）

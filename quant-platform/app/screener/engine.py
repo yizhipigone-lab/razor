@@ -11,7 +11,6 @@ from core.logger import get_logger
 from core.settings import settings
 from database.duckdb_manager import db
 from app.screener.strategies.base import BaseStrategy
-from app.trader.auto_buyer import auto_buyer
 
 log = get_logger("Screener")
 
@@ -518,9 +517,5 @@ class ScreenerEngine:
             
         # 无论是否选出股票，都必须将其存入历史记录，0条也代表一次真实的拦截记录
         db.save_scan_result(strategy_id, strategy_name, [r['code'] for r in results], strategy_params or {})
-
-        # 触发自动交易买手拦截池
-        if results:
-            auto_buyer.put_signals(results, strategy_name=strategy_name)
 
         return results

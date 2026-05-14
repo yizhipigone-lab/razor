@@ -188,24 +188,32 @@ async def sim_trader_execute():
     sh_idx = load_sh_index()
 
     # 生成当日信号
-    signals = generate_today_signals(bars, today)
+    signals = generate_today_signals(bars, today) if engine.auto_scan else []
     trading_dates = get_trading_dates()
 
-    # 14:52 卖出
-    engine.sell_phase(today, snapshot, trading_dates)
-    sell_count = len([t for t in engine.trades if t.exit_date == today])
+    # 卖出（尊重开关）
+    if engine.auto_sell:
+        engine.sell_phase(today, snapshot, trading_dates)
+        sell_count = len([t for t in engine.trades if t.exit_date == today])
+    else:
+        sell_list = engine.check_stops(today, snapshot, trading_dates, readonly=True)
+        sell_count = len(sell_list)
+        log.info(f"手动执行: AUTO_SELL=False，应卖出{sell_count}笔（未执行）")
 
-    # 14:54 买入
+    # 买入（尊重开关）
     buy_count = 0
-    paused = engine.pause_until is not None and today <= engine.pause_until
-    if not paused and signals:
-        max_new = int(engine.cash / engine.max_buy_amount()) + 1
-        for code, price in signals[:max_new]:
-            if any(t.code == code and (today - t.entry_date).days <= SAME_STOCK_COOLDOWN
-                   for t in engine.trades):
-                continue
-            if engine.execute_buy(today, code, price, strategy_name=STRATEGY_NAME):
-                buy_count += 1
+    if engine.auto_buy:
+        paused = engine.pause_until is not None and today <= engine.pause_until
+        if not paused and signals:
+            max_new = int(engine.cash / engine.max_buy_amount()) + 1
+            for code, price in signals[:max_new]:
+                if any(t.code == code and (today - t.entry_date).days <= SAME_STOCK_COOLDOWN
+                       for t in engine.trades):
+                    continue
+                if engine.execute_buy(today, code, price, strategy_name=STRATEGY_NAME):
+                    buy_count += 1
+    elif signals:
+        log.info(f"手动执行: AUTO_BUY=False，应买入{len(signals)}笔（未执行）")
 
     # 记录
     engine.record(today, snapshot)
@@ -313,7 +321,7 @@ async def sim_trader_set_config(data: dict):
 @router.get("/api/sim-trader/monitor")
 async def sim_trader_monitor_status():
     """获取自动执行开关状态"""
-    from app.sim_trader.config import AUTO_SELL, AUTO_SCAN, AUTO_BUY, SELL_MODE, MONITOR_ENABLED, MONITOR_MODE
+    from app.sim_trader.config import AUTO_SELL, AUTO_SCAN, AUTO_BUY, SELL_MODE, MONITOR_ENABLED, MONITOR_MODE, BROKER_ENABLED
     engine = get_engine()
     return {
         "status": "ok",
@@ -321,6 +329,7 @@ async def sim_trader_monitor_status():
         "auto_scan": AUTO_SCAN,
         "auto_buy": AUTO_BUY,
         "sell_mode": SELL_MODE,
+        "broker_enabled": BROKER_ENABLED,
         "monitor_enabled": engine.monitor_enabled if engine else False,
         "monitor_mode": engine.monitor.mode if engine and engine.monitor else MONITOR_MODE,
     }
@@ -338,6 +347,8 @@ async def sim_trader_monitor_control(data: dict):
         _cfg.AUTO_BUY = bool(data["auto_buy"])
     if "sell_mode" in data:
         _cfg.SELL_MODE = data["sell_mode"]
+    if "broker_enabled" in data:
+        _cfg.BROKER_ENABLED = bool(data["broker_enabled"])
 
     # 盘中监控控制
     engine = get_engine()
@@ -357,6 +368,7 @@ async def sim_trader_monitor_control(data: dict):
     log.info(f"开关: 卖出={'执行' if _cfg.AUTO_SELL else '告警'}({_cfg.SELL_MODE}) "
              f"选股={'开' if _cfg.AUTO_SCAN else '关'} "
              f"买入={'执行' if _cfg.AUTO_BUY else '不买'} "
+             f"券商={'开' if _cfg.BROKER_ENABLED else '关'} "
              f"监控={'开' if (engine and engine.monitor_enabled) else '关'}")
     return {
         "status": "ok",
@@ -364,6 +376,7 @@ async def sim_trader_monitor_control(data: dict):
         "auto_scan": _cfg.AUTO_SCAN,
         "auto_buy": _cfg.AUTO_BUY,
         "sell_mode": _cfg.SELL_MODE,
+        "broker_enabled": _cfg.BROKER_ENABLED,
         "monitor_enabled": engine.monitor_enabled if engine else False,
         "monitor_mode": engine.monitor.mode if engine and engine.monitor else _cfg.MONITOR_MODE,
     }

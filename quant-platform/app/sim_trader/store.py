@@ -171,18 +171,19 @@ class SimTraderStore:
 
     def save_state(self, cash: float, consecutive_losses: int,
                    pause_until: Optional[date], trade_count: int):
-        self.conn.execute("""
-            INSERT OR REPLACE INTO sim_state VALUES ('cash', ?)
-        """, [str(cash)])
-        self.conn.execute("""
-            INSERT OR REPLACE INTO sim_state VALUES ('consecutive_losses', ?)
-        """, [str(consecutive_losses)])
-        self.conn.execute("""
-            INSERT OR REPLACE INTO sim_state VALUES ('pause_until', ?)
-        """, [str(pause_until) if pause_until else ''])
-        self.conn.execute("""
-            INSERT OR REPLACE INTO sim_state VALUES ('trade_count', ?)
-        """, [str(trade_count)])
+        try:
+            self.conn.execute("BEGIN")
+            self.conn.execute("INSERT OR REPLACE INTO sim_state VALUES ('cash', ?)", [str(cash)])
+            self.conn.execute("INSERT OR REPLACE INTO sim_state VALUES ('consecutive_losses', ?)", [str(consecutive_losses)])
+            self.conn.execute("INSERT OR REPLACE INTO sim_state VALUES ('pause_until', ?)", [str(pause_until) if pause_until else ''])
+            self.conn.execute("INSERT OR REPLACE INTO sim_state VALUES ('trade_count', ?)", [str(trade_count)])
+            self.conn.execute("COMMIT")
+        except Exception:
+            try:
+                self.conn.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
 
     def load_state(self) -> dict:
         rows = self.conn.execute(

@@ -117,7 +117,7 @@ class Settings:
     @property
     def staged_take_profit(self) -> list:
         """分阶止盈配置列表"""
-        return self.get("risk", "staged_take_profit", default=[])
+        return self.get("risk", "take_profit_tiers", default=[])
 
     @property
     def time_exit_days(self) -> int:

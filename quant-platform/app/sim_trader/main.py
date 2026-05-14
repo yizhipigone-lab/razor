@@ -1,6 +1,7 @@
 """
-模拟盘交易 — 主入口
-每日流程: 14:52选股买入 → 14:54止盈止损卖出 → 记录
+模拟盘交易 — CLI 历史回放入口
+逐日回放从 SIM_START 到 SIM_END 的完整交易序列（非实时交易）。
+开关 AUTO_SELL/AUTO_BUY 不影响此历史回放模式。
 """
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))

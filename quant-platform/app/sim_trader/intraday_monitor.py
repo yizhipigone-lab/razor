@@ -171,6 +171,18 @@ class IntradayMonitor:
                 k: v for k, v in self.engine.positions.items() if v.is_active
             }
 
+            # 真实券商委托
+            from app.sim_trader.config import BROKER_ENABLED
+            if BROKER_ENABLED:
+                try:
+                    from core.gateway import get_gateway
+                    gw = get_gateway()
+                    gw.sell(code=pos.code, price=price,
+                            volume=trade.shares, reason=reason)
+                    log.info(f"券商委托: {pos.code} 卖出 {trade.shares}股 @ {price:.2f} [{reason}]")
+                except Exception as e:
+                    log.error(f"券商委托失败 {pos.code}: {e}")
+
             sync_broadcast({
                 "type": "sim_trader_update",
                 "today": str(date.today()),

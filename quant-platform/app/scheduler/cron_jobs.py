@@ -182,7 +182,7 @@ class DataPipelineScheduler:
     async def redis_harvest_to_duckdb(self):
         """
         Phase 6.4: 盘后 Redis→DuckDB 持久化收割机
-        将 MonitorEngine 盘中写入 Redis 的持仓最高价和止盈激活状态,
+        将 IntradayMonitor 盘中写入 Redis 的持仓最高价和止盈激活状态,
         统一持久化回 DuckDB, 防止重启后数据丢失.
         """
         log.info("CronScheduler | [Redis收割] 开始将盘中最高价缓存同步回 DuckDB...")
@@ -352,7 +352,7 @@ class DataPipelineScheduler:
 
             if not engine.auto_sell and not engine.auto_buy:
                 # 全部告警：检查但不执行
-                sell_list = engine.check_stops(today, snapshot, trading_dates) if signals or engine.positions else []
+                sell_list = engine.check_stops(today, snapshot, trading_dates, readonly=True) if signals or engine.positions else []
                 sync_broadcast({
                     'type': 'risk_alert',
                     'today': str(today),
@@ -367,7 +367,7 @@ class DataPipelineScheduler:
                 engine.sell_phase(today, snapshot, trading_dates)
                 sell_count = len([t for t in engine.trades if t.exit_date == today])
             else:
-                sell_list = engine.check_stops(today, snapshot, trading_dates)
+                sell_list = engine.check_stops(today, snapshot, trading_dates, readonly=True)
                 sell_count = len(sell_list)
                 if sell_list:
                     sync_broadcast({
