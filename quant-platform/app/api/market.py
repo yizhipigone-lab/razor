@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from database.duckdb_manager import db
 from core.logger import get_logger
 from server.websocket.manager import manager
+from core.event_engine import event_engine, EVENT_TICK
 from app.api.trade import QuotesPushReq
 from pypinyin import lazy_pinyin, Style
 
@@ -184,6 +185,8 @@ async def quotes_push_webhook(req: QuotesPushReq):
             "type": req.type,
             "data": req.data
         })
+        # 转发给事件引擎，驱动 IntradayMonitor 实时风控
+        event_engine.emit(EVENT_TICK, req.data)
         return {"status": "ok"}
     except Exception as e:
         log.error(f"处理行情极速推送错误: {e}")

@@ -10,7 +10,6 @@ import numpy as np
 def generate_signals(df: pd.DataFrame, version: str = "improved",
                      filter_st: bool = True,
                      filter_bj: bool = True,
-                     sh_red_filter: bool = True,
                      vol_threshold: float = 1.5,
                      close_position_threshold: float = 0.8,
                      disable_quality_sort: bool = False,
@@ -22,7 +21,6 @@ def generate_signals(df: pd.DataFrame, version: str = "improved",
       df: 全市场 K 线，含 code/date/open/high/low/close/volume/name
       filter_st: 过滤 ST 股票
       filter_bj: 过滤北交所（8 开头）
-      sh_red_filter: 仅上证红盘日（close > open）保留信号
       vol_threshold: 量比阈值
       close_position_threshold: 收盘在日K线位置阈值
       disable_quality_sort: 禁用质量排序（用于对比测试）
@@ -132,20 +130,6 @@ def generate_signals(df: pd.DataFrame, version: str = "improved",
     result = df[df['buy_signal'] == True].copy()
     result['version'] = version
 
-    # ── 上证红盘日过滤 ────────────────────────────────
-    if sh_red_filter and not result.empty:
-        try:
-            from pathlib import Path as _Path
-            from database.duckdb_manager import PARQUET_DAILY_DIR
-            sh_path = _Path(PARQUET_DAILY_DIR) / "index_000001.parquet"
-            if sh_path.exists():
-                sh = pd.read_parquet(str(sh_path))
-                sh['date'] = pd.to_datetime(sh['date']).dt.date
-                red_dates = set(sh[sh['close'] > sh['open']]['date'].tolist())
-                result = result[result['date'].isin(red_dates)]
-        except Exception:
-            pass
-
     # ── 信号质量评分 ──────────────────────────────────
     if not result.empty and 'x1' in result.columns and not disable_quality_sort:
         angle_norm = (result['x1'] - result['x1'].min()) / (result['x1'].max() - result['x1'].min() + 0.001)
@@ -178,10 +162,10 @@ from app.screener.strategies.base import BaseStrategy
 class MA5AngleOriginalStrategy(BaseStrategy):
     """MA5 角度突破策略"""
     name = "MA5角度_原版"
-    description = "MA5 角度上穿 + 量价确认 + 红盘日过滤"
+    description = "MA5 角度上穿 + 量价确认"
 
     def generate_signals(self, bars):
-        filter_keys = ('filter_st', 'filter_bj', 'sh_red_filter',
+        filter_keys = ('filter_st', 'filter_bj',
                        'vol_threshold', 'close_position_threshold',
                        'disable_quality_sort', 'filter_consecutive_up',
                        'filter_gap_quality')
@@ -190,5 +174,5 @@ class MA5AngleOriginalStrategy(BaseStrategy):
 
 
 PARAMS = {
-    "description": "MA5 角度突破 + 量价确认 + 红盘日过滤",
+    "description": "MA5 角度突破 + 量价确认",
 }

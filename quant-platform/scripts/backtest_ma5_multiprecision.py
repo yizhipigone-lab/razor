@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-MA5 角度策略 — 多精度回测 (2013-01-01 ~ 2026-05-01)
+MA5 角度策略 �?多精度回�?(2013-01-01 ~ 2026-05-01)
 4 种精度模式对比：
   1. 混合精度 (1min > 5min > 日线OHLC)
-  2. 5分钟线 (5min > 日线OHLC)
-  3. 日线OHLC (用最高/最低价模拟盘中)
-  4. 日线收盘价 (仅收盘价)
+  2. 5分钟�?(5min > 日线OHLC)
+  3. 日线OHLC (用最�?最低价模拟盘中)
+  4. 日线收盘�?(仅收盘价)
 """
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -24,8 +24,7 @@ import time
 import warnings
 warnings.filterwarnings('ignore')
 
-# ═══════════════════ 配置 ═══════════════════
-INITIAL_CAPITAL = 1_000_000
+# ══════════════════�?配置 ══════════════════�?INITIAL_CAPITAL = 1_000_000
 POSITION_CAP    = 50_000
 HARD_STOP       = -0.055
 TP1_PCT         = 0.04
@@ -55,7 +54,6 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 SIGNAL_PARAMS = {
     "version": "improved", "filter_st": True, "filter_bj": True,
-    "sh_red_filter": False,
     "vol_threshold": 1.2, "close_position_threshold": 0.6,
     "disable_quality_sort": True,
     "filter_consecutive_up": False, "filter_gap_quality": False,
@@ -99,15 +97,14 @@ class Trade:
     precision: str = ""  # "1min" / "5min" / "daily_ohlc" / "daily_close"
 
 
-# ═══════════════════ 数据加载 ═══════════════════
-
+# ══════════════════�?数据加载 ══════════════════�?
 def load_daily_bars():
-    """从 Parquet 加载全市场日线数据"""
+    """�?Parquet 加载全市场日线数�?""
     print("[加载] 日线数据...", end=" ", flush=True)
     t0 = time.time()
     files = list(DAILY_DIR.glob("*.parquet"))
     if not files:
-        print("ERROR: 无日线文件!")
+        print("ERROR: 无日线文�?")
         return pd.DataFrame()
 
     dfs = []
@@ -131,7 +128,7 @@ def load_daily_bars():
     if "date" in bars.columns:
         bars["date"] = pd.to_datetime(bars["date"]).dt.date
     bars = bars.sort_values(["code", "date"])
-    print(f"{len(bars):,}行, {bars['code'].nunique()}只股票, {time.time()-t0:.0f}s")
+    print(f"{len(bars):,}�? {bars['code'].nunique()}只股�? {time.time()-t0:.0f}s")
     return bars
 
 
@@ -185,10 +182,9 @@ def load_intraday(code: str, d: date, min_dir: Path = None) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-# ═══════════════════ 风控检查 ═══════════════════
-
+# ══════════════════�?风控检�?══════════════════�?
 def check_intraday_stop(pos: Position, bar: dict) -> Optional[Tuple]:
-    """用一根K线的OHLC检查止损/止盈，返回 (exit_price, reason, partial_qty)"""
+    """用一根K线的OHLC检查止�?止盈，返�?(exit_price, reason, partial_qty)"""
     high = float(bar.get('high', bar.get('close', 0)))
     low = float(bar.get('low', bar.get('close', 0)))
     close = float(bar.get('close', 0))
@@ -201,48 +197,47 @@ def check_intraday_stop(pos: Position, bar: dict) -> Optional[Tuple]:
     cp = close / pos.entry_price - 1
     rem = pos.remaining_shares
 
-    # 1. 硬止损: Low触及 -5.5%
+    # 1. 硬止�? Low触及 -5.5%
     if low <= pos.entry_price * (1 + HARD_STOP):
         ep = pos.entry_price * (1 + HARD_STOP)
-        return (ep, f"硬止损({(ep/pos.entry_price-1)*100:.1f}%)", None)
+        return (ep, f"硬止�?{(ep/pos.entry_price-1)*100:.1f}%)", None)
 
     # 2. TP2: +14%
     if not pos.tp2_done and high >= pos.entry_price * (1 + TP2_PCT):
         ep = pos.entry_price * (1 + TP2_PCT)
         return (ep, f"TP2 +14%({cp*100:.1f}%)", None)
 
-    # 3. TP1: +4% → 卖20%
+    # 3. TP1: +4% �?�?0%
     if not pos.tp1_done and high >= pos.entry_price * (1 + TP1_PCT):
         ss = int(rem * TP1_RATIO / 100) * 100
         if ss >= 100:
             ep = pos.entry_price * (1 + TP1_PCT)
             return (ep, f"TP1 +4%({cp*100:.1f}%)", ss)
 
-    # 4. 移动止盈: 峰值≥+8% 且 Low回撤≥2%
+    # 4. 移动止盈: 峰值≥+8% �?Low回撤�?%
     if pp >= TRAIL_ACTIVATE and low <= pos.peak_price * (1 - TRAIL_DD):
         ep = pos.peak_price * (1 - TRAIL_DD)
         return (ep, f"移动止盈(峰{pp*100:.1f}%回采)", None)
 
     # 5. 保本: 曾盈利≥3%, Low触及成本
     if pp >= 0.03 and low <= pos.entry_price:
-        return (pos.entry_price, f"保本(曾+{pp*100:.1f}%)", None)
+        return (pos.entry_price, f"保本(�?{pp*100:.1f}%)", None)
 
     return None
 
 
 def check_eod_stop(pos: Position, close: float, d: date) -> Optional[Tuple]:
-    """收盘检查（时间止损），返回 (price, reason) 或 None"""
+    """收盘检查（时间止损），返回 (price, reason) �?None"""
     cp = close / pos.entry_price - 1
     hd = (d - pos.entry_date).days
     if hd > TIME_FORCE:
-        return (close, f"时间强制({hd}天)")
+        return (close, f"时间强制({hd}�?")
     if hd > TIME_EXIT and cp > 0.01:
-        return (close, f"时间条件({hd}天+{cp*100:.1f}%)")
+        return (close, f"时间条件({hd}�?{cp*100:.1f}%)")
     return None
 
 
-# ═══════════════════ 回测引擎 ═══════════════════
-
+# ══════════════════�?回测引擎 ══════════════════�?
 class BacktestEngine:
     def __init__(self, mode: str, trading_dates: list):
         self.mode = mode  # "hybrid" / "min5" / "daily_ohlc" / "daily_close"
@@ -329,22 +324,21 @@ class BacktestEngine:
         return None  # daily modes
 
 
-# ═══════════════════ 主回测逻辑 ═══════════════════
-
+# ══════════════════�?主回测逻辑 ══════════════════�?
 def run_backtest(mode: str, bars: pd.DataFrame, signals_df: pd.DataFrame,
                  daily_data: dict, trading_dates: list) -> Tuple[BacktestEngine, float]:
     """
     mode: "hybrid" | "min5" | "daily_ohlc" | "daily_close"
     """
     t0 = time.time()
-    label = {"hybrid": "混合精度", "min5": "5分钟线", "daily_ohlc": "日线OHLC", "daily_close": "日线收盘价"}
+    label = {"hybrid": "混合精度", "min5": "5分钟�?, "daily_ohlc": "日线OHLC", "daily_close": "日线收盘�?}
     print(f"\n{'='*60}")
-    print(f"  [{label.get(mode, mode)}] 回测中...")
+    print(f"  [{label.get(mode, mode)}] 回测�?..")
     print(f"{'='*60}")
 
     engine = BacktestEngine(mode, trading_dates)
 
-    # Build signal lookup: date → [(code, close_price), ...]
+    # Build signal lookup: date �?[(code, close_price), ...]
     sig_by_date: Dict[date, List[Tuple[str, float]]] = defaultdict(list)
     for _, r in signals_df.iterrows():
         sig_by_date[r['date']].append((r['code'], float(r['close'])))
@@ -359,7 +353,7 @@ def run_backtest(mode: str, bars: pd.DataFrame, signals_df: pd.DataFrame,
         held_codes = [p.code for p in engine.positions.values() if p.is_active]
         eod_prices = {}
 
-        # ── 处理持仓：检查是否需要卖出 ──
+        # ── 处理持仓：检查是否需要卖�?──
         for code, pos in list(engine.positions.items()):
             if not pos.is_active:
                 continue
@@ -443,7 +437,7 @@ def run_backtest(mode: str, bars: pd.DataFrame, signals_df: pd.DataFrame,
                 eod_prices[code] = stock_day['close'] if stock_day else pos.entry_price
                 continue
 
-            # ── 有日内数据：逐根K线检查 ──
+            # ── 有日内数据：逐根K线检�?──
             exited = False
             for _, bar in intraday.iterrows():
                 if exited:
@@ -482,10 +476,9 @@ def run_backtest(mode: str, bars: pd.DataFrame, signals_df: pd.DataFrame,
             elif prec == "5min":
                 used_5min += 1
 
-        # 清理已平仓
-        engine.positions = {k: v for k, v in engine.positions.items() if v.is_active}
+        # 清理已平�?        engine.positions = {k: v for k, v in engine.positions.items() if v.is_active}
 
-        # ── 买入新信号 ──
+        # ── 买入新信�?──
         if d in sig_by_date and (engine.pause_until is None or d > engine.pause_until):
             for code, price in sig_by_date[d][:50]:
                 if any(t.code == code and (d - t.entry_date).days <= SAME_STOCK_COOLDOWN
@@ -518,19 +511,18 @@ def run_backtest(mode: str, bars: pd.DataFrame, signals_df: pd.DataFrame,
         if (day_idx + 1) % 200 == 0:
             eq = engine.total_equity(eod_prices)
             int_ex = engine.intraday_exits
-            print(f"  {d} | {day_idx+1}/{len(trading_dates)} | 净值 {eq:,.0f} | "
-                  f"持仓 {engine.pos_count()} | 日内退出 {int_ex} | "
+            print(f"  {d} | {day_idx+1}/{len(trading_dates)} | 净�?{eq:,.0f} | "
+                  f"持仓 {engine.pos_count()} | 日内退�?{int_ex} | "
                   f"1min:{used_1min} 5min:{used_5min} ohlc:{used_daily_ohlc} close:{used_daily_close}")
 
     elapsed = time.time() - t0
-    print(f"  完成 ({elapsed:.0f}s) | 日内退出:{engine.intraday_exits} EOD退出:{engine.eod_exits} "
+    print(f"  完成 ({elapsed:.0f}s) | 日内退�?{engine.intraday_exits} EOD退�?{engine.eod_exits} "
           f"1min:{used_1min} 5min:{used_5min} ohlc:{used_daily_ohlc} close:{used_daily_close}")
 
     return engine, elapsed
 
 
-# ═══════════════════ 报告生成 ═══════════════════
-
+# ══════════════════�?报告生成 ══════════════════�?
 def compute_stats(engine: BacktestEngine, label: str, elapsed: float):
     eq_df = pd.DataFrame(engine.equity)
     if eq_df.empty or len(engine.trades) == 0:
@@ -598,9 +590,9 @@ def compute_stats(engine: BacktestEngine, label: str, elapsed: float):
 def print_report(stats_list: list):
     """Print detailed comparison report"""
     print("\n")
-    print("█" * 78)
-    print("█  MA5 角度策略 — 多精度回测报告 (2013-2026)")
-    print("█" * 78)
+    print("�? * 78)
+    print("�? MA5 角度策略 �?多精度回测报�?(2013-2026)")
+    print("�? * 78)
 
     # Summary table
     print(f"\n  {'指标':<20}", end="")
@@ -610,25 +602,25 @@ def print_report(stats_list: list):
     print("  " + "-" * 76)
 
     rows = [
-        ("总成交笔数", "trades", "d"),
+        ("总成交笔�?, "trades", "d"),
         ("盈利/亏损笔数", None, "wl"),
         ("胜率(%)", "win_rate", ".1f"),
         ("总收益率(%)", "total_return", ".2f"),
-        ("年化收益率(%)", "annual_return", ".2f"),
-        ("最大回撤(%)", "max_dd", ".2f"),
-        ("盈亏比(PF)", "profit_factor", ".2f"),
-        ("总盈亏额(元)", "total_profit", ",.0f"),
+        ("年化收益�?%)", "annual_return", ".2f"),
+        ("最大回�?%)", "max_dd", ".2f"),
+        ("盈亏�?PF)", "profit_factor", ".2f"),
+        ("总盈亏额(�?", "total_profit", ",.0f"),
         ("均盈(%)", "avg_win", ".2f"),
         ("均亏(%)", "avg_loss", ".2f"),
         ("均笔收益(%)", "avg_return", ".2f"),
         ("中位收益(%)", "median_return", ".2f"),
-        ("均持(天)", "avg_hold", ".1f"),
-        ("均持盈(天)", "avg_hold_win", ".1f"),
-        ("均持亏(天)", "avg_hold_lose", ".1f"),
-        ("日内退出", "intraday_exits", "d"),
-        ("EOD退出", "eod_exits", "d"),
-        ("最终净值(元)", "final_equity", ",.0f"),
-        ("耗时(秒)", "elapsed", ".0f"),
+        ("均持(�?", "avg_hold", ".1f"),
+        ("均持�?�?", "avg_hold_win", ".1f"),
+        ("均持�?�?", "avg_hold_lose", ".1f"),
+        ("日内退�?, "intraday_exits", "d"),
+        ("EOD退�?, "eod_exits", "d"),
+        ("最终净�?�?", "final_equity", ",.0f"),
+        ("耗时(�?", "elapsed", ".0f"),
     ]
 
     for label, key, fmt in rows:
@@ -654,7 +646,7 @@ def print_report(stats_list: list):
             print(f"  {s['label']:<16} {', '.join(parts)}")
 
     # Exit reasons (first mode only for brevity)
-    print(f"\n  ── 退出原因分布 (混合精度) ──")
+    print(f"\n  ── 退出原因分�?(混合精度) ──")
     s0 = stats_list[0]
     total = s0['trades']
     for reason, count in s0['exit_reasons'].most_common():
@@ -680,7 +672,7 @@ def print_report(stats_list: list):
         print()
 
     # Equity curve correlation
-    print(f"\n  ── 净值曲线相关性 ──")
+    print(f"\n  ── 净值曲线相关�?──")
     eqs = {}
     for s in stats_list:
         eq_df = s['equity_curve']
@@ -695,15 +687,14 @@ def print_report(stats_list: list):
                     corr = eqs[labels[i]].loc[common].corr(eqs[labels[j]].loc[common])
                     print(f"  {labels[i]} vs {labels[j]}: r = {corr:.4f}")
 
-    print("\n" + "█" * 78)
+    print("\n" + "�? * 78)
 
 
-# ═══════════════════ MAIN ═══════════════════
-
+# ══════════════════�?MAIN ══════════════════�?
 def main():
     t_total = time.time()
     print("=" * 78)
-    print("  MA5 角度策略 — 多精度回测系统")
+    print("  MA5 角度策略 �?多精度回测系�?)
     print(f"  回测区间: {BACKTEST_START} ~ {BACKTEST_END}")
     print(f"  初始资金: {INITIAL_CAPITAL:,}  单笔上限: {POSITION_CAP:,}")
     print("=" * 78)
@@ -727,12 +718,12 @@ def main():
 
     signals = generate_signals(strat_bars, **SIGNAL_PARAMS)
     if signals is None or signals.empty:
-        print("ERROR: 无信号!")
+        print("ERROR: 无信�?")
         return
     signals = signals[(signals["date"] >= BACKTEST_START) & (signals["date"] <= BACKTEST_END)].copy()
     signals["date"] = pd.to_datetime(signals["date"]).dt.date
     signals = signals.sort_values(["date", "code"])
-    print(f"{len(signals):,}个信号, {signals['code'].nunique()}只股票, {time.time()-t0:.0f}s")
+    print(f"{len(signals):,}个信�? {signals['code'].nunique()}只股�? {time.time()-t0:.0f}s")
 
     # ── 3. 构建快照 ──
     print("[准备] 构建日线快照...", end=" ", flush=True)
@@ -750,14 +741,14 @@ def main():
     trading_dates = sorted(daily_closes.keys())
     print(f"{len(trading_dates)}个交易日, {time.time()-t0:.0f}s")
 
-    # ── 4. 多模式回测 ──
+    # ── 4. 多模式回�?──
     all_stats = []
     modes = ["hybrid", "min5", "daily_ohlc", "daily_close"]
 
     for mode in modes:
         engine, elapsed = run_backtest(mode, bars, signals, daily_data, trading_dates)
         stats = compute_stats(engine,
-            {"hybrid": "混合精度", "min5": "5分钟线", "daily_ohlc": "日线OHLC", "daily_close": "日线收盘价"}[mode],
+            {"hybrid": "混合精度", "min5": "5分钟�?, "daily_ohlc": "日线OHLC", "daily_close": "日线收盘�?}[mode],
             elapsed)
         all_stats.append(stats)
 

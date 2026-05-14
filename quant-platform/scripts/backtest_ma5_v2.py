@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-MA5 角度策略 — 多精度回测 v2 (优化版)
-关键优化：按股票缓存日内数据，避免反复读取 parquet
+MA5 角度策略 �?多精度回�?v2 (优化�?
+关键优化：按股票缓存日内数据，避免反复读�?parquet
 """
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -15,8 +15,7 @@ from collections import Counter, defaultdict
 import time, warnings
 warnings.filterwarnings('ignore')
 
-# ═══════════════════ 配置 ═══════════════════
-INITIAL_CAPITAL = 1_000_000
+# ══════════════════�?配置 ══════════════════�?INITIAL_CAPITAL = 1_000_000
 POSITION_CAP    = 50_000
 HARD_STOP, TP1_PCT, TP1_RATIO, TP2_PCT = -0.055, 0.04, 0.20, 0.14
 TRAIL_ACTIVATE, TRAIL_DD = 0.08, 0.02
@@ -36,7 +35,6 @@ MIN5_DIR   = ROOT / "data" / "parquet" / "min5"
 
 SIGNAL_PARAMS = {
     "version": "improved", "filter_st": True, "filter_bj": True,
-    "sh_red_filter": False,
     "vol_threshold": 1.2, "close_position_threshold": 0.6,
     "disable_quality_sort": True,
     "filter_consecutive_up": False, "filter_gap_quality": False,
@@ -60,8 +58,7 @@ class Trade:
     return_pct: float; profit_amount: float; exit_reason: str; hold_days: int
     precision: str = ""
 
-# ═══════════════════ 数据加载 ═══════════════════
-
+# ══════════════════�?数据加载 ══════════════════�?
 def load_daily_bars():
     print("[加载] 日线...", end=" ", flush=True); t0 = time.time()
     files = [f for f in DAILY_DIR.glob("*.parquet")
@@ -79,7 +76,7 @@ def load_daily_bars():
     bars = bars.dropna(subset=['close'])
     bars['date'] = pd.to_datetime(bars['date']).dt.date
     bars = bars.sort_values(['code','date'])
-    print(f"{len(bars):,}行 {bars['code'].nunique()}只 {time.time()-t0:.0f}s")
+    print(f"{len(bars):,}�?{bars['code'].nunique()}�?{time.time()-t0:.0f}s")
     return bars
 
 
@@ -110,14 +107,12 @@ def load_intraday_cached(code: str, cache: dict, min_dir: Path) -> pd.DataFrame:
     return None
 
 
-# ═══════════════════ 风控 ═══════════════════
-
+# ══════════════════�?风控 ══════════════════�?
 def check_bar(pos: Pos, bar: dict) -> Optional[Tuple]:
     high, low, close = float(bar.get('high',bar.get('close',0))), float(bar.get('low',bar.get('close',0))), float(bar.get('close',0))
     if high > pos.peak_price: pos.peak_price = high
     pp, cp = pos.peak_price/pos.entry_price-1, close/pos.entry_price-1
-    # 1. 硬止损
-    if low <= pos.entry_price*(1+HARD_STOP): return (pos.entry_price*(1+HARD_STOP), f"硬止损")
+    # 1. 硬止�?    if low <= pos.entry_price*(1+HARD_STOP): return (pos.entry_price*(1+HARD_STOP), f"硬止�?)
     # 2. TP2
     if not pos.tp2_done and high >= pos.entry_price*(1+TP2_PCT): return (pos.entry_price*(1+TP2_PCT), f"TP2")
     # 3. TP1
@@ -132,12 +127,11 @@ def check_bar(pos: Pos, bar: dict) -> Optional[Tuple]:
 
 def check_eod(pos: Pos, close: float, d: date) -> Optional[Tuple]:
     cp, hd = close/pos.entry_price-1, (d-pos.entry_date).days
-    if hd > TIME_FORCE: return (close, f"时间强制({hd}天)")
-    if hd > TIME_EXIT and cp > 0.01: return (close, f"时间条件({hd}天)")
+    if hd > TIME_FORCE: return (close, f"时间强制({hd}�?")
+    if hd > TIME_EXIT and cp > 0.01: return (close, f"时间条件({hd}�?")
     return None
 
-# ═══════════════════ 引擎 ═══════════════════
-
+# ══════════════════�?引擎 ══════════════════�?
 class Engine:
     def __init__(self, mode, trading_dates):
         self.mode = mode; self.cash = INITIAL_CAPITAL
@@ -185,8 +179,7 @@ class Engine:
         self.equity.append({'date':d, 'equity':self.eq(px), 'cash':self.cash, 'positions':self.npos()})
 
 
-# ═══════════════════ 主逻辑 ═══════════════════
-
+# ══════════════════�?主逻辑 ══════════════════�?
 def run_one_mode(mode, bars, signals_df, daily_data, trading_dates, label):
     t0 = time.time()
     print(f"\n{'='*60}\n  [{label}] 回测...\n{'='*60}")
@@ -299,8 +292,8 @@ def run_one_mode(mode, bars, signals_df, daily_data, trading_dates, label):
         eng.record(d, eod_px)
 
         if (day_i+1) % 200 == 0:
-            print(f"  {d} | {day_i+1}/{len(trading_dates)} | 净值 {eng.eq(eod_px):,.0f} | "
-                  f"持仓 {eng.npos()} | 退出 {eng.intra_exits+eng.eod_exits} | "
+            print(f"  {d} | {day_i+1}/{len(trading_dates)} | 净�?{eng.eq(eod_px):,.0f} | "
+                  f"持仓 {eng.npos()} | 退�?{eng.intra_exits+eng.eod_exits} | "
                   f"1min:{eng.stats.get('1min',0)} 5min:{eng.stats.get('5min',0)} ohlc:{eng.stats.get('daily_ohlc',0)} close:{eng.stats.get('daily_close',0)}")
 
     elapsed = time.time()-t0
@@ -308,8 +301,7 @@ def run_one_mode(mode, bars, signals_df, daily_data, trading_dates, label):
     return eng, elapsed
 
 
-# ═══════════════════ 报告 ═══════════════════
-
+# ══════════════════�?报告 ══════════════════�?
 def compute_stats(eng, label, elapsed):
     eq_df = pd.DataFrame(eng.equity)
     if eq_df.empty or len(eng.trades) == 0:
@@ -356,21 +348,21 @@ def compute_stats(eng, label, elapsed):
 
 
 def print_report(stats_list):
-    print("\n"+"█"*78)
-    print("█  MA5 角度策略 — 多精度回测报告 (2018-2026)")
-    print("█"*78)
+    print("\n"+"�?*78)
+    print("�? MA5 角度策略 �?多精度回测报�?(2018-2026)")
+    print("�?*78)
     print(f"\n  {'指标':<20}", end="")
     for s in stats_list: print(f" {s['label']:>14}", end="")
     print("\n  "+"-"*76)
     rows = [
-        ("总成交笔数", "trades", "d"), ("胜率(%)", "win_rate", ".1f"),
-        ("总收益率(%)", "total_return", ".2f"), ("年化收益率(%)", "annual_return", ".2f"),
-        ("最大回撤(%)", "max_dd", ".2f"), ("盈亏比(PF)", "profit_factor", ".2f"),
-        ("总盈亏额(元)", "total_profit", ",.0f"), ("均盈(%)", "avg_win", ".2f"),
+        ("总成交笔�?, "trades", "d"), ("胜率(%)", "win_rate", ".1f"),
+        ("总收益率(%)", "total_return", ".2f"), ("年化收益�?%)", "annual_return", ".2f"),
+        ("最大回�?%)", "max_dd", ".2f"), ("盈亏�?PF)", "profit_factor", ".2f"),
+        ("总盈亏额(�?", "total_profit", ",.0f"), ("均盈(%)", "avg_win", ".2f"),
         ("均亏(%)", "avg_loss", ".2f"), ("均笔(%)", "avg_return", ".2f"),
-        ("均持(天)", "avg_hold", ".1f"), ("日内退出", "intraday_exits", "d"),
-        ("EOD退出", "eod_exits", "d"), ("最终净值(元)", "final_equity", ",.0f"),
-        ("耗时(秒)", "elapsed", ".0f"),
+        ("均持(�?", "avg_hold", ".1f"), ("日内退�?, "intraday_exits", "d"),
+        ("EOD退�?, "eod_exits", "d"), ("最终净�?�?", "final_equity", ",.0f"),
+        ("耗时(�?", "elapsed", ".0f"),
     ]
     for label, key, fmt in rows:
         print(f"  {label:<20}", end="")
@@ -388,7 +380,7 @@ def print_report(stats_list):
             print(f"  {s['label']:<16} {', '.join(parts)}")
 
     s0 = stats_list[0]
-    print(f"\n  ── 退出原因 (混合精度) ──")
+    print(f"\n  ── 退出原�?(混合精度) ──")
     for reason, count in s0['exit_reasons'].most_common():
         print(f"  {reason:<32} {count:>6} ({count/s0['trades']*100:5.1f}%)")
 
@@ -404,31 +396,30 @@ def print_report(stats_list):
             print(f" {y['return']:>+5.1f} {y['max_dd']:>5.1f}" if y else f" {'-':>6} {'-':>6}", end="")
         print()
 
-    print("\n"+"█"*78)
+    print("\n"+"�?*78)
 
 
-# ═══════════════════ MAIN ═══════════════════
-
+# ══════════════════�?MAIN ══════════════════�?
 def main():
     t_total = time.time()
     print("="*78)
-    print("  MA5 角度策略 — 多精度回测 v2 (缓存优化)")
+    print("  MA5 角度策略 �?多精度回�?v2 (缓存优化)")
     print(f"  区间: {BACKTEST_START} ~ {BACKTEST_END}  初始: {INITIAL_CAPITAL:,}  单笔上限: {POSITION_CAP:,}")
     print("="*78)
 
     # 1. 加载日线
     bars = load_daily_bars()
-    if bars.empty: print("ERROR: 无日线!"); return
+    if bars.empty: print("ERROR: 无日�?"); return
 
     # 2. 信号
-    print("[信号] 生成中...", end=" ", flush=True); t0 = time.time()
+    print("[信号] 生成�?..", end=" ", flush=True); t0 = time.time()
     from app.screener.strategies.ma5_angle import generate_signals
     strat_bars = bars[(bars["date"]>=LOAD_START)&(bars["date"]<=BACKTEST_END)].copy()
     sig = generate_signals(strat_bars, **SIGNAL_PARAMS)
     sig = sig[(sig["date"]>=BACKTEST_START)&(sig["date"]<=BACKTEST_END)].copy()
     sig["date"] = pd.to_datetime(sig["date"]).dt.date
     sig = sig.sort_values(["date","code"])
-    print(f"{len(sig):,}个信号 {sig['code'].nunique()}只 {time.time()-t0:.0f}s")
+    print(f"{len(sig):,}个信�?{sig['code'].nunique()}�?{time.time()-t0:.0f}s")
 
     # 3. 快照
     print("[准备] 日线快照...", end=" ", flush=True); t0 = time.time()
@@ -441,15 +432,14 @@ def main():
                                           'low':float(r['low']),'close':float(r['close'])}
             daily_closes[d_][r['code']] = float(r['close'])
     trading_dates = sorted(daily_closes.keys())
-    print(f"{len(trading_dates)}天 {time.time()-t0:.0f}s")
+    print(f"{len(trading_dates)}�?{time.time()-t0:.0f}s")
 
     # 释放原始 bars
     del bars, bt, strat_bars
 
-    # 4. 多模式回测
-    all_stats = []
-    for mode, label in [("hybrid","混合精度"), ("min5","5分钟线"),
-                         ("daily_ohlc","日线OHLC"), ("daily_close","日线收盘价")]:
+    # 4. 多模式回�?    all_stats = []
+    for mode, label in [("hybrid","混合精度"), ("min5","5分钟�?),
+                         ("daily_ohlc","日线OHLC"), ("daily_close","日线收盘�?)]:
         eng, elapsed = run_one_mode(mode, None, sig, daily_data, trading_dates, label)
         all_stats.append(compute_stats(eng, label, elapsed))
 

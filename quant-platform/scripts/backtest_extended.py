@@ -1,9 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-MA5 角度策略 — 全区间扩展回测（2023-01-01 ~ 2026-05-02）
-使用用户优化后的策略参数和退出机制
-"""
+MA5 角度策略 �?全区间扩展回测（2023-01-01 ~ 2026-05-02�?使用用户优化后的策略参数和退出机�?"""
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 if hasattr(sys.stdout, 'reconfigure'):
@@ -23,32 +21,24 @@ warnings.filterwarnings('ignore')
 from database.duckdb_manager import db
 from app.screener.strategies.ma5_angle import generate_signals
 
-# ═══════════════════════════════════════════════════════════════
-#  策略参数（用户最终精简版）
-# ═══════════════════════════════════════════════════════════════
-INITIAL_CAPITAL   = 1_000_000
+# ══════════════════════════════════════════════════════════════�?#  策略参数（用户最终精简版）
+# ══════════════════════════════════════════════════════════════�?INITIAL_CAPITAL   = 1_000_000
 POSITION_SIZE     = 50_000      # 单票仓位
 
-# 退出参数
-HARD_STOP_LOSS    = -0.055      # -5.5%
+# 退出参�?HARD_STOP_LOSS    = -0.055      # -5.5%
 TP1_PCT           = 0.04        # +4%
 TP1_SELL_RATIO    = 0.20        # 卖出20%
 TP2_PCT           = 0.14        # +14%
 TP2_SELL_RATIO    = 1.0         # 清仓剩余
-TRAIL_ACTIVATE    = 0.08        # +8%激活移动止盈
-TRAIL_DD          = 0.02        # 2%回撤触发
-TIME_EXIT_DAYS    = 7           # 7天条件退出
-TIME_FORCE_DAYS   = 10          # 10天强制退出
-BREAKEVEN_PCT     = 0.99        # 实质禁用
+TRAIL_ACTIVATE    = 0.08        # +8%激活移动止�?TRAIL_DD          = 0.02        # 2%回撤触发
+TIME_EXIT_DAYS    = 7           # 7天条件退�?TIME_FORCE_DAYS   = 10          # 10天强制退�?BREAKEVEN_PCT     = 0.99        # 实质禁用
 
 # 资金/仓位
 POSITION_CAP      = POSITION_SIZE
 MIN_BUY_AMT       = 5000
 
 # 风控
-LOSS_STREAK_1     = 3           # 连亏3笔仓位减半
-LOSS_STREAK_2     = 5           # 连亏5笔暂停3天
-PAUSE_DAYS        = 3
+LOSS_STREAK_1     = 3           # 连亏3笔仓位减�?LOSS_STREAK_2     = 5           # 连亏5笔暂�?�?PAUSE_DAYS        = 3
 
 # 质量排序权重
 W_ANGLE           = 0.4
@@ -61,23 +51,18 @@ BACKTEST_END   = date(2026, 5, 2)
 BUFFER_DAYS    = 365
 LOAD_START     = date(2022, 1, 1)
 
-# 信号参数（用户最终版）
-SIGNAL_PARAMS = {
+# 信号参数（用户最终版�?SIGNAL_PARAMS = {
     "version": "improved",
     "filter_st": True,
     "filter_bj": True,
-    "sh_red_filter": True,
     "vol_threshold": 1.5,
     "close_position_threshold": 0.8,
-    "disable_quality_sort": True,  # 回测引擎自己做质量排序
-    "filter_consecutive_up": False,
+    "disable_quality_sort": True,  # 回测引擎自己做质量排�?    "filter_consecutive_up": False,
     "filter_gap_quality": False,
 }
 
-# ═══════════════════════════════════════════════════════════════
-#  数据结构
-# ═══════════════════════════════════════════════════════════════
-
+# ══════════════════════════════════════════════════════════════�?#  数据结构
+# ══════════════════════════════════════════════════════════════�?
 @dataclass
 class Position:
     code: str
@@ -111,10 +96,8 @@ class Trade:
     hold_days: int
 
 
-# ═══════════════════════════════════════════════════════════════
-#  回测引擎
-# ═══════════════════════════════════════════════════════════════
-
+# ══════════════════════════════════════════════════════════════�?#  回测引擎
+# ══════════════════════════════════════════════════════════════�?
 class BacktestEngine:
     def __init__(self, trading_dates: List[date]):
         self.cash = INITIAL_CAPITAL
@@ -174,7 +157,7 @@ class BacktestEngine:
     def check_stops(self, d: date, closes: Dict[str, float],
                     highs: Dict[str, float]) -> List[Tuple]:
         """
-        优先级: 硬止损 > 时间强制 > TP2 > TP1 > 移动止盈 > 时间条件
+        优先�? 硬止�?> 时间强制 > TP2 > TP1 > 移动止盈 > 时间条件
         """
         sells = []
         for code, pos in list(self.positions.items()):
@@ -193,14 +176,13 @@ class BacktestEngine:
             hold_days = self._trading_days_between(pos.entry_date, d)
             rem = pos.remaining_shares
 
-            # 1. 硬止损 -5.5%
+            # 1. 硬止�?-5.5%
             if current_profit <= HARD_STOP_LOSS:
-                sells.append((pos, price, f"硬止损({current_profit*100:.1f}%)", None))
+                sells.append((pos, price, f"硬止�?{current_profit*100:.1f}%)", None))
                 continue
 
-            # 2. 时间强制退出 >10天
-            if hold_days > TIME_FORCE_DAYS:
-                sells.append((pos, price, f"时间强制({hold_days}天)", None))
+            # 2. 时间强制退�?>10�?            if hold_days > TIME_FORCE_DAYS:
+                sells.append((pos, price, f"时间强制({hold_days}�?", None))
                 continue
 
             # 3. TP2: +14% 清仓
@@ -208,14 +190,14 @@ class BacktestEngine:
                 sells.append((pos, price, f"TP2 +14%({current_profit*100:.1f}%)", None))
                 continue
 
-            # 4. TP1: +4% 卖20%
+            # 4. TP1: +4% �?0%
             if not pos.tp1_triggered and current_profit >= TP1_PCT:
                 sell_shares = int(rem * TP1_SELL_RATIO / 100) * 100
                 if sell_shares >= 100:
                     sells.append((pos, price, f"TP1 +4%({current_profit*100:.1f}%)", sell_shares))
                     continue
 
-            # 5. 移动止盈: 盈利>8%后回撤2%
+            # 5. 移动止盈: 盈利>8%后回�?%
             if pos.peak_profit_pct >= TRAIL_ACTIVATE:
                 dd_from_peak = price / pos.peak_price - 1
                 if dd_from_peak <= -TRAIL_DD:
@@ -224,9 +206,9 @@ class BacktestEngine:
                         f"移动止盈(峰{pos.peak_profit_pct*100:.1f}%回{dd_from_peak*100:.1f}%)", None))
                     continue
 
-            # 6. 时间条件: >7天且有利润(>1%)
+            # 6. 时间条件: >7天且有利�?>1%)
             if hold_days > TIME_EXIT_DAYS and current_profit > 0.01:
-                sells.append((pos, price, f"时间条件({hold_days}天+{current_profit*100:.1f}%)", None))
+                sells.append((pos, price, f"时间条件({hold_days}�?{current_profit*100:.1f}%)", None))
                 continue
 
         return sells
@@ -246,8 +228,7 @@ class BacktestEngine:
         profit = sell_shares * (exit_price - pos.entry_price)
         pos.remaining_shares -= sell_shares
 
-        # 根据实际退出原因标记
-        if "TP2" in reason:
+        # 根据实际退出原因标�?        if "TP2" in reason:
             pos.tp2_triggered = True
         if "TP1" in reason:
             pos.tp1_triggered = True
@@ -295,20 +276,17 @@ class BacktestEngine:
         })
 
 
-# ═══════════════════════════════════════════════════════════════
-#  主流程
-# ═══════════════════════════════════════════════════════════════
-
+# ══════════════════════════════════════════════════════════════�?#  主流�?# ══════════════════════════════════════════════════════════════�?
 from database.duckdb_manager import PARQUET_DAILY_DIR
 
 
 def run_backtest():
     t0 = time.time()
     print("=" * 72)
-    print("  MA5 角度策略 — 全区间扩展回测")
+    print("  MA5 角度策略 �?全区间扩展回�?)
     print(f"  区间: {BACKTEST_START} ~ {BACKTEST_END}")
     print(f"  初始资金: {INITIAL_CAPITAL:,}  单票仓位: {POSITION_SIZE:,}")
-    print(f"  退出: 硬止损{HARD_STOP_LOSS*100:+.1f}% TP1+{TP1_PCT*100:.0f}%/{int(TP1_SELL_RATIO*100)}% TP2+{TP2_PCT*100:.0f}%/清仓")
+    print(f"  退�? 硬止损{HARD_STOP_LOSS*100:+.1f}% TP1+{TP1_PCT*100:.0f}%/{int(TP1_SELL_RATIO*100)}% TP2+{TP2_PCT*100:.0f}%/清仓")
     print("=" * 72)
 
     # ── 1. 加载日线数据 ──────────────────────────────────
@@ -322,10 +300,10 @@ def run_backtest():
     bars["date"] = pd.to_datetime(bars["date"]).dt.date
     bars = bars.sort_values(["code", "date"])
     n_stocks = bars['code'].nunique()
-    print(f"  {n_stocks:,} 只股票, {len(bars):,} 行")
+    print(f"  {n_stocks:,} 只股�? {len(bars):,} �?)
 
     if n_stocks < 100:
-        print("  [错误] 数据不足，请先同步日线数据")
+        print("  [错误] 数据不足，请先同步日线数�?)
         return
 
     # ── 2. 生成信号 ─────────────────────────────────────
@@ -337,15 +315,15 @@ def run_backtest():
     total_signals = len(sig)
     signal_dates = sig['date'].nunique()
     signal_stocks = sig['code'].nunique()
-    print(f"  信号数: {total_signals:,} | 信号日: {signal_dates} | 标的: {signal_stocks}")
+    print(f"  信号�? {total_signals:,} | 信号�? {signal_dates} | 标的: {signal_stocks}")
 
     if total_signals == 0:
-        print("  [错误] 无信号生成")
+        print("  [错误] 无信号生�?)
         return
 
     # 查看信号质量分布
     if 'x1' in sig.columns:
-        print(f"  斜率均值: {sig['x1'].mean():.2f}%  中位: {sig['x1'].median():.2f}%")
+        print(f"  斜率均�? {sig['x1'].mean():.2f}%  中位: {sig['x1'].median():.2f}%")
         print(f"  斜率范围: {sig['x1'].min():.2f}% ~ {sig['x1'].max():.2f}%")
 
     # ── 3. 构建交易日和快照 ─────────────────────────────
@@ -358,7 +336,7 @@ def run_backtest():
             'high': dict(zip(g['code'], g['high'])),
         }
     trading_dates = sorted(snaps.keys())
-    print(f"  交易日: {len(trading_dates):,}")
+    print(f"  交易�? {len(trading_dates):,}")
 
     # 信号按日索引
     sig_by_date: Dict[date, List[Dict]] = {}
@@ -381,7 +359,7 @@ def run_backtest():
         closes = snaps[d]['close']
         highs = snaps[d]['high']
 
-        # Step 1: 检查止损/止盈
+        # Step 1: 检查止�?止盈
         for pos, exit_price, reason, partial in engine.check_stops(d, closes, highs):
             trade = engine.execute_sell(pos, exit_price, reason, partial, exit_date=d)
             if trade:
@@ -395,17 +373,14 @@ def run_backtest():
                 if engine.consecutive_losses >= LOSS_STREAK_2:
                     engine.pause_until = d + timedelta(days=PAUSE_DAYS)
 
-        # 清理已平仓
-        engine.positions = {k: v for k, v in engine.positions.items() if v.is_active}
+        # 清理已平�?        engine.positions = {k: v for k, v in engine.positions.items() if v.is_active}
 
-        # Step 2: 买入新信号
-        if d in sig_by_date:
+        # Step 2: 买入新信�?        if d in sig_by_date:
             paused = engine.pause_until is not None and d <= engine.pause_until
             bull = engine.is_bull_market(d)
             if not paused:
                 active_signals = sig_by_date[d]
-                # 按 quality 排序（如果有的话）
-                if active_signals and 'quality' in active_signals[0]:
+                # �?quality 排序（如果有的话�?                if active_signals and 'quality' in active_signals[0]:
                     active_signals.sort(key=lambda x: x['quality'], reverse=True)
                 # 计算当日可买信号数（根据现金和仓位上限）
                 max_positions = int(engine.cash / POSITION_CAP) + 1
@@ -414,28 +389,26 @@ def run_backtest():
                     entry_price = closes.get(code)
                     if entry_price is None or entry_price <= 0:
                         continue
-                    # 20天不重复同股票
-                    if any(t.code == code and d - t.entry_date <= timedelta(days=20)
+                    # 20天不重复同股�?                    if any(t.code == code and d - t.entry_date <= timedelta(days=20)
                            for t in engine.trades):
                         continue
                     result = engine.execute_buy(d, code, entry_price)
                     if result is None:
                         skipped_signal_count += 1
 
-        # Step 3: 记录净值
-        engine.record_equity(d, closes)
+        # Step 3: 记录净�?        engine.record_equity(d, closes)
 
         if (i + 1) % 100 == 0:
             eq = engine.total_equity(closes)
             print(f"  {d} | {i+1}/{len(trading_dates)} | "
-                  f"净值 {eq:,.0f} | 持仓 {engine.position_count()} | 现金 {engine.cash:,.0f}")
+                  f"净�?{eq:,.0f} | 持仓 {engine.position_count()} | 现金 {engine.cash:,.0f}")
 
     # ── 5. 统计报告 ─────────────────────────────────────
     print(f"\n[5/5] 生成报告 ...")
     elapsed = time.time() - t0
 
     if not engine.equity_curve:
-        print("  无交易记录!")
+        print("  无交易记�?")
         return
 
     eq_df = pd.DataFrame(engine.equity_curve)
@@ -513,39 +486,39 @@ def run_backtest():
 
     # ── 输出报告 ───────────────────────────────────────
     print("\n" + "=" * 72)
-    print("  全区间扩展回测报告")
+    print("  全区间扩展回测报�?)
     print("=" * 72)
 
-    print(f"\n  ┌─────────────────────────────────────────────────┐")
-    print(f"  │ 区间: {BACKTEST_START} ~ {BACKTEST_END}")
-    print(f"  │ 交易日: {len(trading_dates):,}  股票: {n_stocks:,}")
-    print(f"  │ 初始资金: {INITIAL_CAPITAL:>13,}                     │")
-    print(f"  │ 最终净值: {final_eq:>13,.0f}                     │")
-    print(f"  │ 总收益率: {total_ret:>+12.2f}%                    │")
-    print(f"  │ 年化收益: {((final_eq/INITIAL_CAPITAL)**(1/((BACKTEST_END-BACKTEST_START).days/365.25))-1)*100:>+10.2f}%                    │")
-    print(f"  │ 最大回撤: {max_dd:>12.2f}%                    │")
-    print(f"  │ Profit Factor: {pf:>10.2f}                      │")
-    print(f"  │ 总盈利额: {total_profit:>+13,.0f}                     │")
-    print(f"  │ 耗时: {elapsed:>10.0f}s                         │")
-    print(f"  └─────────────────────────────────────────────────┘")
+    print(f"\n  ┌─────────────────────────────────────────────────�?)
+    print(f"  �?区间: {BACKTEST_START} ~ {BACKTEST_END}")
+    print(f"  �?交易�? {len(trading_dates):,}  股票: {n_stocks:,}")
+    print(f"  �?初始资金: {INITIAL_CAPITAL:>13,}                     �?)
+    print(f"  �?最终净�? {final_eq:>13,.0f}                     �?)
+    print(f"  �?总收益率: {total_ret:>+12.2f}%                    �?)
+    print(f"  �?年化收益: {((final_eq/INITIAL_CAPITAL)**(1/((BACKTEST_END-BACKTEST_START).days/365.25))-1)*100:>+10.2f}%                    �?)
+    print(f"  �?最大回�? {max_dd:>12.2f}%                    �?)
+    print(f"  �?Profit Factor: {pf:>10.2f}                      �?)
+    print(f"  �?总盈利额: {total_profit:>+13,.0f}                     �?)
+    print(f"  �?耗时: {elapsed:>10.0f}s                         �?)
+    print(f"  └─────────────────────────────────────────────────�?)
 
-    print(f"\n  ┌─────────────────────────────────────────────────┐")
-    print(f"  │ 交易统计                                        │")
-    print(f"  │ 信号总数: {total_signals:>7}  实际买入: {len(set((t.code, t.entry_date) for t in trades)):>7}              │")
-    print(f"  │ 总成交: {n_total:>8}笔 (含部分止盈拆分)                 │")
-    print(f"  │ 盈利: {n_win:>6}笔 / 亏损: {n_loss:<6}笔                  │")
-    print(f"  │ 胜率: {wr:>9.1f}%                              │")
-    print(f"  │ 均盈: {avg_w:>+9.2f}%  均亏: {avg_l:>+9.2f}%             │")
-    print(f"  │ 均笔: {avg_t:>+9.2f}%  中位: {med_t:>+9.2f}%             │")
-    print(f"  │ 均持: {avg_hold:>9.1f}天                                    │")
-    print(f"  └─────────────────────────────────────────────────┘")
+    print(f"\n  ┌─────────────────────────────────────────────────�?)
+    print(f"  �?交易统计                                        �?)
+    print(f"  �?信号总数: {total_signals:>7}  实际买入: {len(set((t.code, t.entry_date) for t in trades)):>7}              �?)
+    print(f"  �?总成�? {n_total:>8}�?(含部分止盈拆�?                 �?)
+    print(f"  �?盈利: {n_win:>6}�?/ 亏损: {n_loss:<6}�?                 �?)
+    print(f"  �?胜率: {wr:>9.1f}%                              �?)
+    print(f"  �?均盈: {avg_w:>+9.2f}%  均亏: {avg_l:>+9.2f}%             �?)
+    print(f"  �?均笔: {avg_t:>+9.2f}%  中位: {med_t:>+9.2f}%             �?)
+    print(f"  �?均持: {avg_hold:>9.1f}�?                                   �?)
+    print(f"  └─────────────────────────────────────────────────�?)
 
-    print(f"\n  ┌─────────────────────────────────────────────────┐")
-    print(f"  │ 月度均衡                                        │")
-    print(f"  │ 月均交易: {avg_mt:>7.1f}  标准差: {std_mt:>7.1f}  CV: {cv:>7.2f}              │")
-    print(f"  └─────────────────────────────────────────────────┘")
+    print(f"\n  ┌─────────────────────────────────────────────────�?)
+    print(f"  �?月度均衡                                        �?)
+    print(f"  �?月均交易: {avg_mt:>7.1f}  标准�? {std_mt:>7.1f}  CV: {cv:>7.2f}              �?)
+    print(f"  └─────────────────────────────────────────────────�?)
 
-    print(f"\n  [退出分布] (共{n_total}笔)")
+    print(f"\n  [退出分布] (共{n_total}�?")
     print(f"  {'原因':<32} {'笔数':>6} {'占比':>8}")
     print(f"  {'-'*48}")
     for reason, count in exit_dist.most_common():

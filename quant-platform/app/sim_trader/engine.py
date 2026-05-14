@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 import pandas as pd
 from datetime import date, timedelta
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional, Dict, List, Tuple
 from collections import Counter
 
@@ -42,6 +42,15 @@ class Position:
     @property
     def profit_pct(self, current_price: float) -> float:
         return (current_price / self.entry_price - 1) * 100
+
+    def is_tier_triggered(self, idx: int) -> bool:
+        return self.tp1_triggered if idx == 0 else self.tp2_triggered
+
+    def mark_tier_triggered(self, idx: int):
+        if idx == 0:
+            self.tp1_triggered = True
+        else:
+            self.tp2_triggered = True
 
 
 @dataclass
@@ -223,30 +232,30 @@ class SimTraderEngine:
                 sells.append((pos, close_p, f"时间强制({hold_days}天)", None))
                 continue
 
-            # 3. TP2
-            if not pos.tp2_triggered and current_pct >= TP2_PCT:
-                sells.append((pos, close_p, f"TP2 +14%({current_pct*100:.1f}%)", None))
-                continue
+            # 3. 多档阶梯止盈
+            for idx, tier in enumerate(TAKE_PROFIT_TIERS):
+                if not pos.is_tier_triggered(idx) and current_pct >= tier['profit_pct']:
+                    ss = int(pos.remaining_shares * tier['sell_ratio'] / 100) * 100
+                    if ss >= 100:
+                        pos.mark_tier_triggered(idx)
+                        sells.append((pos, close_p,
+                            f"TP{idx+1} +{tier['profit_pct']*100:.0f}%({current_pct*100:.1f}%)", ss))
+                        break
 
-            # 4. TP1
-            if not pos.tp1_triggered and current_pct >= TP1_PCT:
-                ss = int(pos.remaining_shares * TP1_SELL_RATIO / 100) * 100
-                if ss >= 100:
-                    sells.append((pos, close_p,
-                        f"TP1 +4%({current_pct*100:.1f}%)", ss))
-                    continue
-
-            # 5. 移动止盈
+            # 4. 移动止盈（支持 ATR 动态回撤）
             if peak_pct >= TRAIL_ACTIVATE:
                 dd = close_p / pos.peak_price - 1
-                if dd <= -TRAIL_DD:
-                    trail_price = pos.peak_price * (1 - TRAIL_DD)
-                    sells.append((pos, trail_price,
+                eff_trail_dd = TRAIL_DD
+                if USE_ATR_TRAIL and bar.get('atr', 0) > 0:
+                    atr_pct = ATR_TRAIL_MULTIPLIER * bar['atr'] / pos.entry_price
+                    eff_trail_dd = max(TRAIL_DD, atr_pct)
+                if dd <= -eff_trail_dd:
+                    sells.append((pos, close_p,
                         f"移动止盈(峰{peak_pct*100:.1f}%回{dd*100:.1f}%)", None))
                     continue
 
-            # 6. 时间条件
-            if hold_days > TIME_EXIT_DAYS and current_pct > 0.01:
+            # 5. 时间条件
+            if hold_days > TIME_EXIT_DAYS and current_pct > TIME_EXIT_PROFIT:
                 sells.append((pos, close_p,
                     f"时间条件({hold_days}天+{current_pct*100:.1f}%)", None))
                 continue
@@ -265,12 +274,6 @@ class SimTraderEngine:
         rp = (exit_price / pos.entry_price - 1) * 100
         profit = ss * (exit_price - pos.entry_price)
         pos.remaining_shares -= ss
-
-        # 根据实际退出原因标记，避免 TP1 部分止盈时误设 tp2_triggered
-        if "TP2" in reason:
-            pos.tp2_triggered = True
-        if "TP1" in reason:
-            pos.tp1_triggered = True
 
         if pos.remaining_shares <= 0:
             pos.is_active = False

@@ -18,25 +18,22 @@
     ]
   },
   "risk": {
-    "trailing_stop_activate_pct": 8.0,
-    "trailing_stop_drawdown_pct": 2.0,
-    "hard_stop_loss_pct": -5.5,
-    "staged_take_profit": [
+    "trailing_stop_activate_pct": 3.0,
+    "trailing_stop_drawdown_pct": 1.0,
+    "hard_stop_loss_pct": -6.0,
+    "take_profit_tiers": [
       {
-        "profit_pct": 4.0,
-        "sell_ratio": 0.2,
-        "label": "TP1"
+        "profit_pct": 0.04,
+        "sell_ratio": 0.15
       },
       {
-        "profit_pct": 14.0,
-        "sell_ratio": 0.5,
-        "sell_all": true,
-        "label": "TP2"
+        "profit_pct": 0.07,
+        "sell_ratio": 0.25
       }
     ],
-    "time_exit_days": 7,
-    "time_exit_min_profit_pct": 1.0,
-    "time_exit_force_days": 10,
+    "time_exit_days": 3,
+    "time_exit_min_profit_pct": 3.0,
+    "time_exit_force_days": 9,
     "breakeven_threshold_pct": 99,
     "breakeven_stop_pnl_pct": -9,
     "use_atr_stop": false,
@@ -61,13 +58,13 @@
         "step": 0.5
       },
       "tp2_profit": {
-        "min": 8.0,
-        "max": 16.0,
+        "min": 10.0,
+        "max": 18.0,
         "step": 1.0
       },
       "tp1_ratio": {
-        "min": 0.15,
-        "max": 0.35,
+        "min": 0.1,
+        "max": 0.3,
         "step": 0.05
       },
       "tp2_ratio": {
@@ -81,13 +78,13 @@
         "step": 0.5
       },
       "trailing_activate_pct": {
-        "min": 6.0,
-        "max": 11.0,
+        "min": 1.0,
+        "max": 6.0,
         "step": 0.5
       },
       "trailing_drawdown_pct": {
-        "min": 1.5,
-        "max": 3.0,
+        "min": 0.5,
+        "max": 2.5,
         "step": 0.25
       },
       "breakeven_threshold_pct": {
@@ -101,8 +98,8 @@
         "step": 0.5
       },
       "time_exit_days": {
-        "min": 5,
-        "max": 12,
+        "min": 2,
+        "max": 8,
         "step": 1
       }
     }
@@ -139,9 +136,29 @@
   "backtest": {
     "initial_capital": 1000000,
     "position_size": 50000,
+    "min_buy_amt": 5000,
+    "hard_stop": -0.06,
+    "take_profit_tiers": [
+      {
+        "profit_pct": 0.04,
+        "sell_ratio": 0.15
+      },
+      {
+        "profit_pct": 0.07,
+        "sell_ratio": 0.25
+      }
+    ],
+    "trail_activate": 0.03,
+    "trail_dd": 0.01,
+    "time_exit_days": 3,
+    "time_exit_profit": 0.03,
+    "time_force_days": 9,
+    "loss_streak_halve": 3,
+    "loss_streak_pause": 5,
+    "pause_days": 3,
+    "same_stock_cooldown": 20,
     "use_portfolio": true,
     "streak_pause": 3,
-    "pause_days": 2,
     "intraday_freq": "min1",
     "apply_costs": true,
     "use_hot_concept": false,
@@ -156,26 +173,23 @@
     "redis_ttl_seconds": 600,
     "enable_ths_concepts": true,
     "enable_tushare_concepts": true,
-    "last_updated": "05/07 15:31"
+    "last_updated": "05/13 15:33"
   },
   "风险": {
-    "hard_stop_loss_pct": -5.5,
-    "trailing_stop_activate_pct": 8.0,
-    "trailing_stop_drawdown_pct": 2.0,
-    "time_exit_days": 7,
+    "hard_stop_loss_pct": -6.0,
+    "trailing_stop_activate_pct": 3.0,
+    "trailing_stop_drawdown_pct": 1.0,
+    "time_exit_days": 3,
     "breakeven_threshold_pct": 99,
     "breakeven_stop_pnl_pct": -9,
-    "staged_take_profit": [
+    "take_profit_tiers": [
       {
-        "profit_pct": 4.0,
-        "sell_ratio": 0.2,
-        "label": "TP1"
+        "profit_pct": 0.04,
+        "sell_ratio": 0.15
       },
       {
-        "profit_pct": 14.0,
-        "sell_ratio": 0.5,
-        "sell_all": true,
-        "label": "TP2"
+        "profit_pct": 0.07,
+        "sell_ratio": 0.25
       }
     ]
   }

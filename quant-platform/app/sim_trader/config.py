@@ -14,15 +14,24 @@ LOSS_STREAK_PAUSE = 5        # 连亏N笔 → 暂停买入
 PAUSE_DAYS        = 3        # 暂停天数（自然日）
 
 # ═══════════ 退出 ═══════════
-HARD_STOP      = -0.055       # 硬止损 -5.5%
-TP1_PCT        = 0.04         # +4%
-TP1_SELL_RATIO = 0.20         # 卖出20%
-TP2_PCT        = 0.14         # +14% 清仓剩余
-TRAIL_ACTIVATE = 0.08         # 移动止盈激活阈值
-TRAIL_DD       = 0.02         # 移动止盈回撤距离
-TIME_EXIT_DAYS = 7            # 时间条件退出
-TIME_FORCE_DAYS = 10          # 时间强制退出
+HARD_STOP      = -0.06        # 硬止损 -6.0%
+TRAIL_ACTIVATE = 0.03         # 移动止盈激活阈值
+TRAIL_DD       = 0.01         # 移动止盈回撤距离（固定%）
+TIME_EXIT_DAYS = 3            # 时间条件退出天数
+
+# ATR 动态移动止盈: 启用后 TRAIL_DD = max(TRAIL_DD, ATR_TRAIL_MUL * ATR(14) / entry_price)
+USE_ATR_TRAIL = True          # 是否用 ATR 动态调整移动止盈回撤
+ATR_TRAIL_MULTIPLIER = 1.0    # ATR 倍数（1.0 = ATR本身作为回撤距离）
+TIME_EXIT_PROFIT = 0.03       # 时间条件退出盈利阈值
+TIME_FORCE_DAYS = 9           # 时间强制退出天数
 SAME_STOCK_COOLDOWN = 20      # 同股票冷却天数
+
+# 多档阶梯止盈: 按顺序触发，每档卖出剩余仓位的 sell_ratio%
+# 触发过的不再重复，剩余仓位最终由 TR 移动止盈保护
+TAKE_PROFIT_TIERS = [
+    {"profit_pct": 0.04, "sell_ratio": 0.15},  # TP1: +4% 卖 15%
+    {"profit_pct": 0.07, "sell_ratio": 0.25},  # TP2: +7% 卖 25%（优化：7%卖25%→剩余TR）🏆
+]
 
 # ═══════════ 策略选择 ═══════════
 STRATEGY_NAME = "ma5_angle"
@@ -32,17 +41,16 @@ SIGNAL_PARAMS = {
     "version": "improved",
     "filter_st": True,
     "filter_bj": True,
-    "sh_red_filter": True,
     "vol_threshold": 1.5,
     "close_position_threshold": 0.8,
-    "disable_quality_sort": True,
+    "disable_quality_sort": False,
     "filter_consecutive_up": False,
     "filter_gap_quality": False,
 }
 
 # ═══════════ 模拟盘时间 ═══════════
-BUY_TIME  = "14:52"   # 选股买入时间
-SELL_TIME = "14:54"   # 止盈止损判断时间
+SELL_TIME = "14:53"   # 止盈止损卖出时间（先卖，回收现金）
+BUY_TIME  = "14:54"   # 选股买入时间（后买，用回收的现金）
 
 # ═══════════ 回测/模拟区间 ═══════════
 SIM_START = date(2022, 1, 4)
@@ -54,3 +62,7 @@ AUTO_SELL = False   # 是否执行卖出（止盈止损）
 AUTO_SCAN = True    # 是否执行选股（生成买入信号）
 AUTO_BUY  = False   # 是否执行买入
 SELL_MODE = "close"  # 卖出模式："intraday"(盘中Tick) | "close"(尾盘价)
+
+# ═══════════ 盘中监控 ═══════════
+MONITOR_ENABLED = False     # 启动时是否自动开启盘中监控
+MONITOR_MODE = "intraday"   # "intraday"(触发即卖) | "close"(仅告警,尾盘才卖)
