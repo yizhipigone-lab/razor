@@ -11,7 +11,17 @@ function connectWS() {
 }
 connectWS();
  
-// ─── Constants & UI State ─────────────────────────────────────
+// ─── Security Utilities ─────────────────────────────────────────
+function escHtml(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = String(str);
+  return div.innerHTML;
+}
+async function safeFetch(url, opts) {
+  try { return await fetch(url, opts); }
+  catch(e) { console.error('Fetch failed:', url, e); throw e; }
+}
 // ─── Constants & UI State ─────────────────────────────────────
 let scanExchanges = new Set(['SH', 'SZ']);
 let btExchanges = new Set(['SH', 'SZ']);
@@ -2270,7 +2280,7 @@ async function loadFundamentalsPreview() {
     } else {
       tbody.innerHTML = '<tr><td colspan="9" style="text-align:center">无数据</td></tr>';
     }
-  } catch(e) {}
+  } catch(e) { console.error('Async error:', e); }
 }
 
 async function loadStocks() {
@@ -2290,7 +2300,7 @@ async function loadStocks() {
         </tr>
       `).join('');
     }
-  } catch(e) {}
+  } catch(e) { console.error('Async error:', e); }
 }
 
 // ─── Settings ─────────────────────────────────────────────────
@@ -2348,7 +2358,7 @@ async function loadSettings() {
     setVal('set-bt-min-buy', bt.min_buy_amount || 5000);
     document.getElementById('set-bt-buy-time').value = bt.buy_time || '14:52';
     document.getElementById('set-bt-sell-time').value = bt.sell_time || '14:54';
-  } catch(e) {}
+  } catch(e) { console.error('Async error:', e); }
 
   // 加载 API Key（脱敏显示）
   try {
@@ -2358,7 +2368,7 @@ async function loadSettings() {
     const dk = document.getElementById('set-deepseek-key');
     if (tk && mk.tushare_key) tk.placeholder = mk.tushare_key;
     if (dk && mk.deepseek_key) dk.placeholder = mk.deepseek_key;
-  } catch(e) {}
+  } catch(e) { console.error('Async error:', e); }
 }
 
 function saveEnvKeys() {
@@ -2397,7 +2407,7 @@ async function loadBacktestCapitalDefaults() {
       const up = document.getElementById(prefix + '-use-portfolio');
       if (up) up.checked = bt.use_portfolio !== false;
     });
-  } catch(e) {}
+  } catch(e) { console.error('Async error:', e); }
 }
 
 function showSaveMsg(el, msg, ok) {
