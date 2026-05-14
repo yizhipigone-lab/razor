@@ -12,6 +12,10 @@ import time, gc, warnings
 warnings.filterwarnings('ignore')
 
 from app.sim_trader.config import *
+# 从 TAKE_PROFIT_TIERS 提取传统变量名（config 已废弃独立 TP1_PCT/TP2_PCT）
+TP1_PCT = TAKE_PROFIT_TIERS[0]["profit_pct"]
+TP1_SELL_RATIO = TAKE_PROFIT_TIERS[0]["sell_ratio"]
+TP2_PCT = TAKE_PROFIT_TIERS[1]["profit_pct"]
 from app.screener.strategies.ma5_angle import generate_signals
 
 START = date(2024, 1, 1)

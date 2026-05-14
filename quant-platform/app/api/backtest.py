@@ -754,7 +754,12 @@ async def list_simple_bt_history(limit: int = 20):
 @router.get("/api/backtest/simple/history/{result_id}")
 async def get_simple_bt_history(result_id: str):
     """加载指定回测结果的完整数据"""
+    import re
+    if not re.match(r'^bt_\d{8}_\d{6}_\d+$', result_id):
+        return {"status": "error", "message": "非法 result_id 格式"}
     fp = _BT_RESULTS_DIR / f"{result_id}.json"
+    if not fp.resolve().is_relative_to(_BT_RESULTS_DIR.resolve()):
+        return {"status": "error", "message": "非法路径"}
     if not fp.exists():
         return {"status": "error", "message": "结果不存在"}
     with open(fp, 'r', encoding='utf-8') as f:
@@ -765,7 +770,12 @@ async def get_simple_bt_history(result_id: str):
 @router.delete("/api/backtest/simple/history/{result_id}")
 async def delete_simple_bt_history(result_id: str):
     """删除回测结果"""
+    import re
+    if not re.match(r'^bt_\d{8}_\d{6}_\d+$', result_id):
+        return {"status": "error", "message": "非法 result_id 格式"}
     fp = _BT_RESULTS_DIR / f"{result_id}.json"
+    if not fp.resolve().is_relative_to(_BT_RESULTS_DIR.resolve()):
+        return {"status": "error", "message": "非法路径"}
     if fp.exists():
         fp.unlink()
         return {"status": "ok", "message": "已删除"}

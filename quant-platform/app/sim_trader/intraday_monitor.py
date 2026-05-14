@@ -96,7 +96,8 @@ class IntradayMonitor:
 
     # ── 风控优先级链（与回测 simple_runner 完全一致）──
 
-    def _check_position(self, pos, current_price: float, session_peak: float):
+    def _check_position(self, pos, current_price: float, session_peak: float,
+                        daily_atr: float = 0.0):
         """
         优先级：HS → TF → 多档止盈 → TR → TC
         返回 (reason, partial_qty) 或 None
@@ -105,6 +106,7 @@ class IntradayMonitor:
             HARD_STOP, TAKE_PROFIT_TIERS,
             TRAIL_ACTIVATE, TRAIL_DD,
             TIME_EXIT_DAYS, TIME_EXIT_PROFIT, TIME_FORCE_DAYS,
+            USE_ATR_TRAIL, ATR_TRAIL_MULTIPLIER,
         )
 
         entry = pos.entry_price
@@ -127,15 +129,19 @@ class IntradayMonitor:
                     pos.mark_tier_triggered(idx)
                     return (f"TP{idx+1}({current_pct*100:.1f}%)", ss)
 
-        # 4. 移动止盈 TR: 峰≥+3% 且 回撤≥1%
+        # 4. 移动止盈 TR: 峰≥+3% 且 回撤≥1%（支持 ATR 动态回撤）
         overall_peak = max(pos.peak_price, session_peak)
         peak_pct = overall_peak / entry - 1
         if peak_pct >= TRAIL_ACTIVATE:
             dd = current_price / overall_peak - 1
-            if dd <= -TRAIL_DD:
+            eff_trail_dd = TRAIL_DD
+            if USE_ATR_TRAIL and daily_atr > 0:
+                atr_pct = ATR_TRAIL_MULTIPLIER * daily_atr / entry
+                eff_trail_dd = max(TRAIL_DD, atr_pct)
+            if dd <= -eff_trail_dd:
                 return (f"TR(峰{peak_pct*100:.1f}%回{dd*100:.1f}%)", None)
 
-        # 6. 时间条件 TC: >3天 且 >3%
+        # 5. 时间条件 TC: >3天 且 >3%
         if hold_days > TIME_EXIT_DAYS and current_pct > TIME_EXIT_PROFIT:
             return (f"TC({hold_days}天+{current_pct*100:.1f}%)", None)
 

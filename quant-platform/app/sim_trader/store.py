@@ -67,7 +67,7 @@ class SimTraderStore:
                 f"CREATE SEQUENCE IF NOT EXISTS sim_trade_id START {max_id + 1}"
             )
         except Exception:
-            pass
+            log.warning("CREATE SEQUENCE sim_trade_id 失败，后续 save_trade 将出错")
 
         self.conn.execute("""
             CREATE TABLE IF NOT EXISTS sim_equity (
@@ -94,6 +94,9 @@ class SimTraderStore:
                 continue
             self.conn.execute("""
                 INSERT INTO sim_positions
+                    (code, entry_date, entry_price, shares, cost, peak_price,
+                     remaining_shares, tp1_triggered, tp2_triggered,
+                     is_active, strategy_name)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, [
                 pos.code, pos.entry_date, pos.entry_price, pos.shares,
@@ -126,6 +129,9 @@ class SimTraderStore:
     def save_trade(self, trade: "Trade"):
         self.conn.execute("""
             INSERT INTO sim_trades
+                (id, code, entry_date, exit_date, entry_price, exit_price,
+                 shares, return_pct, profit_amount, exit_reason,
+                 hold_days, entry_reason, exit_timing)
             VALUES (nextval('sim_trade_id'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, [
             trade.code, trade.entry_date, trade.exit_date,
@@ -203,4 +209,4 @@ class SimTraderStore:
         try:
             self.conn.execute("DROP SEQUENCE IF EXISTS sim_trade_id")
         except Exception:
-            pass
+            log.warning("DROP SEQUENCE sim_trade_id 失败")

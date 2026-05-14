@@ -100,7 +100,7 @@ def download_daily_bars(code: str, years: int = 1) -> pd.DataFrame:
         if api.connect(*TDX_SERVER, time_out=3):
             market = 1 if code.startswith('6') else 0
             # 获取最近 800 根 (~3 年)
-            data = api.get_security_bars(9, market, code, 0, 800)
+            data = api.get_security_bars(4, market, code, 0, 800)  # category=4 前复权日线
             api.disconnect()
             if data:
                 df = api.to_df(data)
@@ -126,7 +126,8 @@ def download_daily_bars(code: str, years: int = 1) -> pd.DataFrame:
                 df['date'] = pd.to_datetime(df['date'])
                 df['amount'] = df['close'].astype(float) * df['volume'].astype(float) * 100
                 return df[['date','open', 'high', 'low', 'close', 'volume', 'amount']]
-    except: pass
+    except Exception:
+        log.warning(f"腾讯 HTTP 日线下载失败 {code}")
     return None
 
 def download_min5_bars(code: str, count: int = 800) -> pd.DataFrame:
@@ -165,7 +166,8 @@ def download_min5_bars(code: str, count: int = 800) -> pd.DataFrame:
                 df['date'] = pd.to_datetime(df['date'])
                 df['amount'] = df['close'] * df['volume'] * 100
                 return df[['date','open','high','low','close','volume','amount']]
-    except: pass
+    except Exception:
+        log.warning(f"TDX 5分钟线下载失败 {code}")
     return None
 
 def download_bars(code: str, freq: str, count: int) -> pd.DataFrame:
@@ -273,8 +275,8 @@ def get_realtime_quote(code_list: list) -> pd.DataFrame:
                         })
             api.disconnect()
             return pd.DataFrame(results)
-    except:
-        pass
+    except Exception:
+        log.warning("TDX 实时行情获取失败，回退到腾讯 HTTP")
 
     # 腾讯 HTTP 极速通道 (终极防线)
     try:
@@ -398,7 +400,8 @@ def batch_download_all(freq: str = "daily", years: int = 1, mode: str = "increme
                 if mode == "incremental":
                     last_dt = db.get_last_date(c, freq)
                     if last_dt:
-                        df = download_bars(c, freq, count=5)
+                        # count=80 覆盖至少一个交易日（240分钟/5=48根，冗余防假期）
+                        df = download_bars(c, freq, count=max(80, (date.today() - last_dt).days * 50))
                         if df is not None and not df.empty:
                             df = df[df['date'] > last_dt]
                             if not df.empty:

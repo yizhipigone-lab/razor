@@ -96,6 +96,8 @@ class SimTraderEngine:
             self.pause_until: Optional[date] = None
             self._trade_count = 0
 
+        self._prev_snap: dict = {}  # 前一日快照，用于除权跳空保护
+
         # 盘中监控器（延迟初始化，避免循环导入）
         self._monitor = None
 
@@ -152,7 +154,7 @@ class SimTraderEngine:
         )
         return self.cash + pv
 
-    # ── 14:52 买入 ────────────────────────────
+    # ── 买入 ──────────────────────────────────
 
     def execute_buy(self, today: date, code: str, price: float,
                     strategy_name: str = "") -> Optional[Position]:
@@ -180,23 +182,11 @@ class SimTraderEngine:
                 self.pause_until, self._trade_count)
         return pos
 
-    def buy_phase(self, today: date, signals: List[Tuple[str, float]],
-                  cooldown_set: set):
-        """14:52 买入阶段"""
-        if self.pause_until and today <= self.pause_until:
-            return  # 暂停中
-
-        for code, price in signals:
-            if code in cooldown_set:
-                continue
-            result = self.execute_buy(today, code, price)
-            if result:
-                cooldown_set.add(code)
-
-    # ── 14:54 卖出 ────────────────────────────
+    # ── 卖出（止盈止损） ──────────────────────
 
     def check_stops(self, today: date, snapshot: dict,
-                    trading_dates: List[date]) -> List[Tuple]:
+                    trading_dates: List[date],
+                    prev_snap: dict = None) -> List[Tuple]:
         """
         按优先级检查所有持仓的止盈止损
         返回: [(pos, exit_price, reason, partial_shares_or_None), ...]
@@ -213,13 +203,26 @@ class SimTraderEngine:
             close_p = bar['close']
             high_p  = bar['high']
 
-            # 更新峰值
-            if high_p > pos.peak_price:
-                pos.peak_price = high_p
-            peak_pct = pos.peak_price / pos.entry_price - 1
-
             current_pct = close_p / pos.entry_price - 1
             hold_days = sum(1 for td in trading_dates if pos.entry_date <= td <= today)
+
+            # 0. 除权跳空保护：检测隔夜跳空下跌，调整入场价避免误触发硬止损
+            if prev_snap:
+                prev_bar = prev_snap.get(code)
+                if prev_bar and prev_bar.get('close', 0) > 0:
+                    overnight_gap = close_p / prev_bar['close'] - 1
+                    prefix = code[:3] if len(code) >= 3 else code
+                    if prefix in ('300', '301', '688'):
+                        gap_limit = -0.20
+                    elif prefix[0] == '8':
+                        gap_limit = -0.30
+                    else:
+                        gap_limit = -0.10
+                    if overnight_gap <= gap_limit:
+                        ratio = close_p / prev_bar['close']
+                        pos.entry_price *= ratio
+                        pos.peak_price *= ratio
+                        current_pct = close_p / pos.entry_price - 1
 
             # 1. 硬止损
             if current_pct <= HARD_STOP:
@@ -232,7 +235,7 @@ class SimTraderEngine:
                 sells.append((pos, close_p, f"时间强制({hold_days}天)", None))
                 continue
 
-            # 3. 多档阶梯止盈
+            # 3. 多档阶梯止盈（在 peak_price 更新前检查，避免 TP 拉宽 TR 回撤基准）
             for idx, tier in enumerate(TAKE_PROFIT_TIERS):
                 if not pos.is_tier_triggered(idx) and current_pct >= tier['profit_pct']:
                     ss = int(pos.remaining_shares * tier['sell_ratio'] / 100) * 100
@@ -241,6 +244,11 @@ class SimTraderEngine:
                         sells.append((pos, close_p,
                             f"TP{idx+1} +{tier['profit_pct']*100:.0f}%({current_pct*100:.1f}%)", ss))
                         break
+
+            # 更新峰值（在 TP 之后，避免 TP 当天的高点拉宽 TR 回撤）
+            if high_p > pos.peak_price:
+                pos.peak_price = high_p
+            peak_pct = pos.peak_price / pos.entry_price - 1
 
             # 4. 移动止盈（支持 ATR 动态回撤）
             if peak_pct >= TRAIL_ACTIVATE:
@@ -293,8 +301,9 @@ class SimTraderEngine:
 
     def sell_phase(self, today: date, snapshot: dict,
                    trading_dates: List[date]):
-        """14:54 卖出阶段"""
-        sells = self.check_stops(today, snapshot, trading_dates)
+        """卖出阶段（先卖后买，回收现金）"""
+        sells = self.check_stops(today, snapshot, trading_dates,
+                                 prev_snap=self._prev_snap)
 
         for pos, exit_price, reason, partial in sells:
             trade = self.execute_sell(pos, exit_price, reason, partial,
@@ -318,6 +327,8 @@ class SimTraderEngine:
 
         # 清理已平仓
         self.positions = {k: v for k, v in self.positions.items() if v.is_active}
+        # 保存当日快照供次日除权跳空保护
+        self._prev_snap = {k: dict(v) for k, v in snapshot.items()}
         if self._store:
             self._store.save_positions(self.positions)
             self._store.save_state(

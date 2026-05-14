@@ -26,8 +26,10 @@ _engine_lock = threading.Lock()
 def get_engine():
     global _engine
     if _engine is None:
-        from app.sim_trader.engine import SimTraderEngine
-        _engine = SimTraderEngine()
+        with _engine_lock:
+            if _engine is None:
+                from app.sim_trader.engine import SimTraderEngine
+                _engine = SimTraderEngine()
     return _engine
 
 
