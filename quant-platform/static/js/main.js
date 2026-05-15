@@ -3594,7 +3594,7 @@ async function loadSimTraderStatus() {
           <td>${p.entry_date}</td>
           <td>${p.entry_price.toFixed(2)}</td>
           <td>${(p.current_price || 0).toFixed(2)}</td>
-          <td style="color:${p.profit_pct >= 0 ? 'var(--green)' : 'var(--red)'}">${p.profit_pct >= 0 ? '+' : ''}${p.profit_pct.toFixed(2)}%</td>
+          <td style="color:${p.profit_pct >= 0 ? 'var(--up)' : 'var(--down)'}">${p.profit_pct >= 0 ? '+' : ''}${p.profit_pct.toFixed(2)}%</td>
           <td>${p.remaining}</td>
           <td>${(p.market_value || 0).toFixed(0)}</td>
         </tr>`).join('');
@@ -3614,7 +3614,7 @@ async function loadSimTraderStatus() {
           <td><b>${t.code}</b></td>
           <td>${t.entry}</td><td>${t.exit}</td>
           <td>${t.entry_px.toFixed(2)}</td><td>${t.exit_px.toFixed(2)}</td>
-          <td style="color:${t.ret_pct >= 0 ? 'var(--green)' : 'var(--red)'}">${t.ret_pct >= 0 ? '+' : ''}${t.ret_pct.toFixed(2)}%</td>
+          <td style="color:${t.ret_pct >= 0 ? 'var(--up)' : 'var(--down)'}">${t.ret_pct >= 0 ? '+' : ''}${t.ret_pct.toFixed(2)}%</td>
           <td>${t.profit.toFixed(0)}</td>
           <td>${t.hold_days}</td>
           <td style="font-size:11px">${t.entry_reason || '-'}</td>
@@ -4041,7 +4041,7 @@ function renderSimpleBtResults(summary, equity, trades, indices) {
   // 汇总卡片
   const cards = document.getElementById('simple-bt-cards');
   cards.innerHTML = `
-    <div class="stat-card"><div class="label">总收益</div><div class="value" style="color:${summary.total_return>=0?'#22c55e':'#ef4444'}">${summary.total_return >= 0 ? '+' : ''}${summary.total_return}%</div></div>
+    <div class="stat-card"><div class="label">总收益</div><div class="value" style="color:${summary.total_return>=0 ? 'var(--up)' : 'var(--down)'}">${summary.total_return >= 0 ? '+' : ''}${summary.total_return}%</div></div>
     <div class="stat-card"><div class="label">最大回撤 / 胜率</div><div class="value">${summary.max_drawdown}% / ${summary.win_rate}%</div></div>
     <div class="stat-card"><div class="label">交易笔数 / 期末净值</div><div class="value">${summary.trades} / ${(summary.final_equity/10000).toFixed(0)}万</div></div>
     <div class="stat-card"><div class="label">均盈 / 均亏</div><div class="value">+${summary.avg_win}% / ${summary.avg_loss}%</div></div>
@@ -4063,8 +4063,8 @@ function renderSimpleBtResults(summary, equity, trades, indices) {
     '<td>'+t.code+'</td><td>'+(t.name||'')+'</td><td>'+(t.shares||0)+'</td>'+
     '<td>'+t.entry_date+'</td><td>'+t.entry_px+'</td><td>'+(t.entry_total||0).toLocaleString()+'</td>'+
     '<td>'+t.exit_date+'</td><td>'+t.exit_px+'</td><td>'+(t.exit_total||0).toLocaleString()+'</td>'+
-    '<td style="color:'+(t.profit>=0?'#22c55e':'#ef4444')+'">'+(t.profit>=0?'+':'')+Math.abs(t.profit).toFixed(0)+'</td>'+
-    '<td style="color:'+(t.ret_pct>=0?'#22c55e':'#ef4444')+'">'+(t.ret_pct>=0?'+':'')+t.ret_pct+'%</td>'+
+    '<td style="color:'+(t.profit>=0 ? 'var(--up)' : 'var(--down)')+'">'+(t.profit>=0?'+':'')+Math.abs(t.profit).toFixed(0)+'</td>'+
+    '<td style="color:'+(t.ret_pct>=0 ? 'var(--up)' : 'var(--down)')+'">'+(t.ret_pct>=0?'+':'')+t.ret_pct+'%</td>'+
     '<td>已平仓</td>'+
     '<td style="font-size:10px;color:var(--text2)">'+t.reason+'</td>'+
     '<td>'+t.hold_days+'</td>'+
@@ -4125,7 +4125,7 @@ function renderSimpleBtChart(equity, indices, totalReturn) {
         params.forEach(p => {
           if (p.value !== null && p.value !== undefined) {
             const ret = ((p.value - 1) * 100).toFixed(1);
-            const color = ret >= 0 ? '#22c55e' : '#ef4444';
+            const color = ret >= 0 ? 'var(--up)' : 'var(--down)';
             html += `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${p.color};margin-right:6px"></span>`;
             html += `${p.seriesName}: <b style="color:${color}">${ret>=0?'+':''}${ret}%</b><br/>`;
           }
@@ -4171,7 +4171,7 @@ switchTab = function(name) {
 renderSimpleBtResults = function(summary, equity, trades, indices) {
   document.getElementById('simple-bt-result').style.display = 'block';
   const c2 = (v, unit) => (v !== undefined && v !== null) ? (typeof v === 'number' ? v.toFixed(v < 10 && v > -1 ? 2 : 0) : v) + (unit || '') : '--';
-  const retColor = summary.total_return >= 0 ? '#22c55e' : '#ef4444';
+  const retColor = summary.total_return >= 0 ? 'var(--up)' : 'var(--down)';
 
   const cards = document.getElementById('simple-bt-cards');
   cards.innerHTML = `
@@ -4205,8 +4205,8 @@ renderSimpleBtResults = function(summary, equity, trades, indices) {
   analysisDiv.className = 'grid-3';
   analysisDiv.style.marginBottom = 'var(--gap)';
   analysisDiv.innerHTML = `
-    <div class="stat-card"><div class="label">最佳交易 / 最差交易</div><div class="value"><span style="color:#22c55e">+${c2(summary.best_trade)}%</span> / <span style="color:#ef4444">${c2(summary.worst_trade)}%</span></div></div>
-    <div class="stat-card"><div class="label">均盈 / 均亏</div><div class="value"><span style="color:#22c55e">+${c2(summary.avg_win)}%</span> / <span style="color:#ef4444">${c2(summary.avg_loss)}%</span></div></div>
+    <div class="stat-card"><div class="label">最佳交易 / 最差交易</div><div class="value"><span style="color:var(--up)">+${c2(summary.best_trade)}%</span> / <span style="color:var(--down)">${c2(summary.worst_trade)}%</span></div></div>
+    <div class="stat-card"><div class="label">均盈 / 均亏</div><div class="value"><span style="color:var(--up)">+${c2(summary.avg_win)}%</span> / <span style="color:var(--down)">${c2(summary.avg_loss)}%</span></div></div>
     <div class="stat-card"><div class="label">均盈持仓 / 均亏持仓</div><div class="value">${c2(summary.avg_hold_win)}天 / ${c2(summary.avg_hold_loss)}天</div></div>
   `;
   riskDiv.parentNode.insertBefore(analysisDiv, riskDiv.nextSibling);
@@ -4278,7 +4278,7 @@ renderSimpleBtChart = function(equity, indices, totalReturn) {
         params.forEach(function(p) {
           if (p.value !== null && p.value !== undefined) {
             var ret = ((p.value - 1) * 100).toFixed(2);
-            var color = ret >= 0 ? '#22c55e' : '#ef4444';
+            var color = ret >= 0 ? 'var(--up)' : 'var(--down)';
             html += '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + p.color + ';margin-right:5px"></span>';
             html += p.seriesName.replace(/\(.*\)$/, '') + ': <b style="color:' + color + '">' + (ret>=0?'+':'') + ret + '%</b><br/>';
           }
@@ -4289,15 +4289,15 @@ renderSimpleBtChart = function(equity, indices, totalReturn) {
           html += '<hr style="margin:3px 0;border-color:#333"/>';
           html += '<div style="max-height:260px;overflow-y:auto;font-size:10px;line-height:1.55">';
           if (day.bought && day.bought.length > 0) {
-            html += '<div style="color:#22c55e;font-weight:600;margin-bottom:2px">买入 ' + day.bought.length + ' 笔</div>';
+            html += '<div style="color:var(--up);font-weight:600;margin-bottom:2px">买入 ' + day.bought.length + ' 笔</div>';
             day.bought.forEach(function(b) {
               html += '<div style="padding-left:2px;color:#aaa">' + b.code + (b.name ? ' <span style="color:#ccc">' + b.name + '</span>' : '') + ' <span style="color:#ddd">@' + b.price + '</span></div>';
             });
           }
           if (day.sold && day.sold.length > 0) {
-            html += '<div style="color:#ef4444;font-weight:600;margin-top:4px;margin-bottom:2px">卖出 ' + day.sold.length + ' 笔</div>';
+            html += '<div style="color:var(--down);font-weight:600;margin-top:4px;margin-bottom:2px">卖出 ' + day.sold.length + ' 笔</div>';
             day.sold.forEach(function(s) {
-              var sc = s.ret >= 0 ? '#22c55e' : '#ef4444';
+              var sc = s.ret >= 0 ? 'var(--up)' : 'var(--down)';
               html += '<div style="padding-left:2px">';
               html += '<span style="color:#aaa">' + s.code + '</span>';
               if (s.name) html += ' <span style="color:#ccc">' + s.name + '</span>';
@@ -4343,8 +4343,8 @@ function _renderBtTradePage(page) {
       '<td>'+t.code+'</td><td>'+(t.name||'')+'</td><td>'+(t.shares||0)+'</td>'+
       '<td>'+t.entry_date+'</td><td>'+t.entry_px+'</td><td>'+(t.entry_total||0).toLocaleString()+'</td>'+
       '<td>'+t.exit_date+'</td><td>'+t.exit_px+'</td><td>'+(t.exit_total||0).toLocaleString()+'</td>'+
-      '<td style="color:'+(t.profit>=0?'#22c55e':'#ef4444')+'">'+(t.profit>=0?'+':'')+Math.abs(t.profit).toFixed(0)+'</td>'+
-      '<td style="color:'+(t.ret_pct>=0?'#22c55e':'#ef4444')+'">'+(t.ret_pct>=0?'+':'')+t.ret_pct+'%</td>'+
+      '<td style="color:'+(t.profit>=0 ? 'var(--up)' : 'var(--down)')+'">'+(t.profit>=0?'+':'')+Math.abs(t.profit).toFixed(0)+'</td>'+
+      '<td style="color:'+(t.ret_pct>=0 ? 'var(--up)' : 'var(--down)')+'">'+(t.ret_pct>=0?'+':'')+t.ret_pct+'%</td>'+
       '<td>已平仓</td>'+
       '<td style="font-size:10px;color:var(--text2)">'+t.reason+'</td>'+
       '<td>'+t.hold_days+'</td>'+
@@ -4405,7 +4405,7 @@ async function loadSimpleBtHistory() {
       <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border);font-size:12px">
         <span style="color:var(--text)">${h.start_date || h.id}</span>
         <span style="color:var(--text2)">${h.start_date} ~ ${h.end_date}</span>
-        <span style="color:${h.total_return>=0?'#22c55e':'#ef4444'}">${h.total_return>=0?'+':''}${h.total_return}%</span>
+        <span style="color:${h.total_return>=0 ? 'var(--up)' : 'var(--down)'}">${h.total_return>=0?'+':''}${h.total_return}%</span>
         <span style="color:var(--text2)">DD ${h.max_drawdown}% | ${h.trades}笔</span>
         <div style="display:flex;gap:4px">
           <button class="btn btn-ghost btn-sm" onclick="loadSimpleBtHistoryDetail('${h.id}')" style="font-size:11px">加载</button>
