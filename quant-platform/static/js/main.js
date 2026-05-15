@@ -3881,7 +3881,7 @@ async function loadBtSimpleConfig() {
       });
     }
     if (cfg.start_date) document.getElementById('sbt-start').value = cfg.start_date;
-    if (cfg.end_date) document.getElementById('sbt-end').value = cfg.end_date;
+    document.getElementById('sbt-end').value = new Date().toISOString().slice(0, 10);
     const sp = cfg.signal_params || {};
     document.getElementById('sbt-qs').checked = !sp.disable_quality_sort;
     addLog('ok', '已加载回测配置');
