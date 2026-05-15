@@ -3580,8 +3580,9 @@ async function loadSimTraderStatus() {
       auto_sell: data.auto_sell || false,
       auto_scan: data.auto_scan !== undefined ? data.auto_scan : true,
       auto_buy: data.auto_buy || false,
+      broker_enabled: data.broker_enabled || false,
       monitor_enabled: data.monitor_enabled || false,
-      monitor_mode: data.monitor_mode || 'intraday',
+      monitor_mode: data.monitor_mode || 'close',
     });
 
     // 渲染持仓
@@ -3682,9 +3683,11 @@ function _getSwitches() {
 }
 
 function _setSwitchesUI(s) {
+  // s keys: auto_sell, auto_scan, auto_buy, broker_enabled
   ['sim-auto-sell','sim-auto-scan','sim-auto-buy'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.checked = !!s[id.replace('sim-auto-','')];
+    const key = 'auto_' + id.replace('sim-auto-','');
+    if (el) el.checked = !!s[key];
   });
   const brokerEl = document.getElementById('sim-broker-enabled');
   if (brokerEl && s.broker_enabled !== undefined) brokerEl.checked = !!s.broker_enabled;
