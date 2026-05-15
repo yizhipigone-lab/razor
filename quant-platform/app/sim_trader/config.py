@@ -61,9 +61,8 @@ LOAD_START = date(2022, 1, 1)
 AUTO_SELL = False   # 是否执行卖出（止盈止损）
 AUTO_SCAN = True    # 是否执行选股（生成买入信号）
 AUTO_BUY  = False   # 是否执行买入
-SELL_MODE = "close"  # 卖出模式："intraday"(盘中Tick) | "close"(尾盘价)
 
 # ═══════════ 盘中监控 ═══════════
-MONITOR_ENABLED = False     # 启动时是否自动开启盘中监控
-MONITOR_MODE = "intraday"   # "intraday"(触发即卖) | "close"(仅告警,尾盘才卖)
+MONITOR_ENABLED = True      # 启动时是否自动开启盘中监控
+MONITOR_MODE = "close"      # "intraday"(触发即卖) | "close"(仅告警)
 BROKER_ENABLED  = False     # 是否通过gateway执行真实券商委托（需 QMT/同花顺 已连接）

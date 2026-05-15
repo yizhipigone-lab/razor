@@ -3580,7 +3580,6 @@ async function loadSimTraderStatus() {
       auto_sell: data.auto_sell || false,
       auto_scan: data.auto_scan !== undefined ? data.auto_scan : true,
       auto_buy: data.auto_buy || false,
-      sell_mode: data.sell_mode || 'close',
       monitor_enabled: data.monitor_enabled || false,
       monitor_mode: data.monitor_mode || 'intraday',
     });
@@ -3678,7 +3677,6 @@ function _getSwitches() {
     auto_sell: document.getElementById('sim-auto-sell')?.checked || false,
     auto_scan: document.getElementById('sim-auto-scan')?.checked || false,
     auto_buy:  document.getElementById('sim-auto-buy')?.checked  || false,
-    sell_mode: document.getElementById('sim-sell-mode')?.value || 'close',
     broker_enabled: document.getElementById('sim-broker-enabled')?.checked || false,
   };
 }
@@ -3688,20 +3686,8 @@ function _setSwitchesUI(s) {
     const el = document.getElementById(id);
     if (el) el.checked = !!s[id.replace('sim-auto-','')];
   });
-  const modeEl = document.getElementById('sim-sell-mode');
-  if (modeEl && s.sell_mode) modeEl.value = s.sell_mode;
   const brokerEl = document.getElementById('sim-broker-enabled');
   if (brokerEl && s.broker_enabled !== undefined) brokerEl.checked = !!s.broker_enabled;
-}
-
-async function updateSimSellMode() {
-  const s = _getSwitches();
-  try {
-    await fetch('/api/sim-trader/monitor', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ sell_mode: s.sell_mode })
-    });
-  } catch (e) { console.error('updateSimSellMode:', e); }
 }
 
 async function updateSimSwitches() {
