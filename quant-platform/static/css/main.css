@@ -9,6 +9,8 @@
   --green: #3fb950;
   --red: #f85149;
   --yellow: #d29922;
+  --up: #f85149;
+  --down: #3fb950;
   --purple: #bc8cff;
   --orange: #ffa657;
   --radius: 8px;
@@ -94,8 +96,8 @@ tr:hover td { background: #1c2128; }
 .up { color: var(--red); }
 .down { color: var(--green); }
 .tag { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 10px; font-weight: 600; }
-.tag-buy { background: rgba(63,185,80,.15); color: var(--green); }
-.tag-sell { background: rgba(248,81,73,.15); color: var(--red); }
+.tag-buy { background: rgba(248,81,73,.15); color: var(--up); }
+.tag-sell { background: rgba(63,185,80,.15); color: var(--down); }
 .tag-manual { background: rgba(88,166,255,.15); color: var(--accent); }
 .tag-strategy { background: rgba(188,140,255,.15); color: var(--purple); }
 
