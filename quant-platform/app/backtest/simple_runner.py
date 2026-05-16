@@ -265,6 +265,9 @@ def load_index_data(start_date: date = None):
                 else:
                     base = float(df['close'].iloc[0])
                 df['norm'] = df['close'] / base
+                # 只保留回测起点之后的数据
+                if start_date:
+                    df = df[df['date'] >= start_date]
                 result[name] = [
                     {'date': str(d), 'close': float(c), 'norm': round(float(n), 4)}
                     for d, c, n in zip(df['date'], df['close'], df['norm'])
