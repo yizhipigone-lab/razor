@@ -38,7 +38,7 @@ STRATEGY_NAME = "ma5_angle"
 
 # ═══════════ 买入信号 ═══════════
 SIGNAL_PARAMS = {
-    "version": "improved",
+    "version": "original",
     "filter_st": True,
     "filter_bj": True,
     "vol_threshold": 1.5,
@@ -46,6 +46,7 @@ SIGNAL_PARAMS = {
     "disable_quality_sort": False,
     "filter_consecutive_up": False,
     "filter_gap_quality": False,
+    "skip_limit_up": True,
 }
 
 # ═══════════ 模拟盘时间 ═══════════
