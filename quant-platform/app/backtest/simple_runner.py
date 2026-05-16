@@ -230,6 +230,15 @@ def load_daily_bars(start_buffer=date(2021, 9, 1), end=date.today()):
     if not chunks:
         return pd.DataFrame(columns=['date', 'open', 'high', 'low', 'close', 'volume', 'code'])
     bars = pd.concat(chunks, ignore_index=True)
+    # 附加股票名称（用于 ST 过滤等）
+    try:
+        from database.duckdb_manager import db
+        stock_df = db.get_all_stocks()
+        if not stock_df.empty and 'name' in stock_df.columns:
+            name_map = dict(zip(stock_df['code'], stock_df['name']))
+            bars['name'] = bars['code'].map(name_map).fillna('')
+    except Exception:
+        bars['name'] = ''
     return bars.sort_values(['code', 'date']).reset_index(drop=True)
 
 
