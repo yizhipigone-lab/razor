@@ -15,6 +15,8 @@ def generate_signals(df: pd.DataFrame, version: str = "improved",
                      disable_quality_sort: bool = False,
                      filter_consecutive_up: bool = False,
                      filter_gap_quality: bool = False,
+                     max_price: float = 0,
+                     skip_limit_up: bool = False,
                      ) -> pd.DataFrame:
     """
     参数:
@@ -59,8 +61,9 @@ def generate_signals(df: pd.DataFrame, version: str = "improved",
             & (df['x1'] > df['x1'].shift(5))
         )
 
+        price_limit = 26 if max_price == 0 else (99999 if max_price < 0 else max_price)
         df['cond_price'] = (
-            (df['close'] < 26)
+            (df['close'] < price_limit)
             & (df['close'] / df['close'].shift(1) > 1.02)
             & (df['close'] > df['ma20'])
         )
@@ -121,8 +124,21 @@ def generate_signals(df: pd.DataFrame, version: str = "improved",
     )
     df['buy'] = df['za'] & (df['count_20'] == 1)
 
-    # 避免连续信号
-    df['buy_signal'] = df['buy'] & (~g['buy'].transform(lambda x: x.shift(1)).fillna(False))
+    # 涨停过滤：跳过当日涨停的股票
+    if skip_limit_up:
+        df['daily_ret'] = df['close'] / df['close'].shift(1) - 1
+        prefix = df['code'].astype(str).str[:3]
+        # 科创板/创业板 20%, 北交所 30%, 主板 10%
+        limit_map = {'688': 0.195, '300': 0.195, '301': 0.195,
+                     '8': 0.29, '4': 0.29}
+        df['limit_pct'] = 0.095  # 主板默认
+        for pfx, lp in limit_map.items():
+            mask = df['code'].astype(str).str.startswith(pfx)
+            df.loc[mask, 'limit_pct'] = lp
+        df['limit_up'] = df['daily_ret'] >= df['limit_pct']
+        df['buy_signal'] = df['buy'] & (~df['limit_up']) & (~g['buy'].transform(lambda x: x.shift(1)).fillna(False))
+    else:
+        df['buy_signal'] = df['buy'] & (~g['buy'].transform(lambda x: x.shift(1)).fillna(False))
 
     date_col = "date" if "date" in df.columns else "datetime"
     df[date_col] = pd.to_datetime(df[date_col]).dt.date
@@ -168,11 +184,12 @@ class MA5AngleOriginalStrategy(BaseStrategy):
         filter_keys = ('filter_st', 'filter_bj',
                        'vol_threshold', 'close_position_threshold',
                        'disable_quality_sort', 'filter_consecutive_up',
-                       'filter_gap_quality')
+                       'filter_gap_quality', 'max_price', 'skip_limit_up')
         kwargs = {k: v for k, v in self.params.items() if k in filter_keys}
         return generate_signals(bars, version="original", **kwargs)
 
 
 PARAMS = {
     "description": "MA5 角度突破 + 量价确认",
+    "skip_limit_up": True,
 }
