@@ -23,14 +23,14 @@ TIME_EXIT_DAYS = 3            # 时间条件退出天数
 USE_ATR_TRAIL = True          # 是否用 ATR 动态调整移动止盈回撤
 ATR_TRAIL_MULTIPLIER = 1.0    # ATR 倍数（1.0 = ATR本身作为回撤距离）
 TIME_EXIT_PROFIT = 0.03       # 时间条件退出盈利阈值
-TIME_FORCE_DAYS = 9           # 时间强制退出天数
+TIME_FORCE_DAYS = 12          # 时间强制退出天数（优化：9→12，赢率+2%）
 SAME_STOCK_COOLDOWN = 20      # 同股票冷却天数
 
 # 多档阶梯止盈: 按顺序触发，每档卖出剩余仓位的 sell_ratio%
 # 触发过的不再重复，剩余仓位最终由 TR 移动止盈保护
 TAKE_PROFIT_TIERS = [
-    {"profit_pct": 0.04, "sell_ratio": 0.15},  # TP1: +4% 卖 15%
-    {"profit_pct": 0.07, "sell_ratio": 0.25},  # TP2: +7% 卖 25%（优化：7%卖25%→剩余TR）🏆
+    {"profit_pct": 0.03, "sell_ratio": 0.10},  # TP1: +3% 卖 10%（优化：4→3%提前止盈提赢率）
+    {"profit_pct": 0.06, "sell_ratio": 0.20},  # TP2: +6% 卖 20%
 ]
 
 # ═══════════ 策略选择 ═══════════
