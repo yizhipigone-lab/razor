@@ -1,4 +1,4 @@
-"""通过端口号停止 P9 量化平台服务。"""
+"""通过端口号停止 Eurica Quant 服务。"""
 import psutil
 import sys
 
