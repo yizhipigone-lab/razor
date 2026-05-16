@@ -175,21 +175,26 @@ def generate_signals_improved(df, **kwargs):
 from app.screener.strategies.base import BaseStrategy
 
 
-class MA5AngleOriginalStrategy(BaseStrategy):
-    """MA5 角度突破策略"""
-    name = "MA5角度_原版"
-    description = "MA5 角度上穿 + 量价确认"
+class MA5AngleImprovedStrategy(BaseStrategy):
+    """MA5 角度突破策略（改进版）"""
+    name = "MA5角度_改进版"
+    description = "MA5斜率 + 放量确认 + 收盘位确认 + 涨停过滤"
 
     def generate_signals(self, bars):
-        filter_keys = ('filter_st', 'filter_bj',
+        filter_keys = ('filter_st', 'filter_bj', 'version',
                        'vol_threshold', 'close_position_threshold',
                        'disable_quality_sort', 'filter_consecutive_up',
                        'filter_gap_quality', 'max_price', 'skip_limit_up')
         kwargs = {k: v for k, v in self.params.items() if k in filter_keys}
-        return generate_signals(bars, version="original", **kwargs)
+        if 'version' not in kwargs:
+            kwargs['version'] = 'improved'
+        return generate_signals(bars, **kwargs)
 
 
 PARAMS = {
-    "description": "MA5 角度突破 + 量价确认",
+    "description": "MA5斜率 + 放量确认 + 收盘位确认 + 涨停过滤",
+    "version": "improved",
     "skip_limit_up": True,
+    "vol_threshold": 1.5,
+    "close_position_threshold": 0.8,
 }
