@@ -229,8 +229,8 @@ def load_daily_bars(start_buffer=date(2021, 9, 1), end=date.today()):
     return bars.sort_values(['code', 'date']).reset_index(drop=True)
 
 
-def load_index_data():
-    """加载八大指数日线"""
+def load_index_data(start_date: date = None):
+    """加载八大指数日线，归一化到 start_date（默认数据最早日）"""
     indices = {
         '上证指数': 'index_000001',
         '沪深300':  'index_000300',
@@ -254,9 +254,16 @@ def load_index_data():
                 continue
             df['close'] = pd.to_numeric(df['close'], errors='coerce')
             df = df.dropna(subset=['close']).sort_values('date')
-            # 归一化到起始日=1
             if not df.empty:
-                base = df['close'].iloc[0]
+                # 基准：优先用 start_date 最近交易日的收盘价
+                if start_date:
+                    base_rows = df[df['date'] >= start_date]
+                    if not base_rows.empty:
+                        base = float(base_rows['close'].iloc[0])
+                    else:
+                        base = float(df['close'].iloc[-1])
+                else:
+                    base = float(df['close'].iloc[0])
                 df['norm'] = df['close'] / base
                 result[name] = [
                     {'date': str(d), 'close': float(c), 'norm': round(float(n), 4)}
@@ -494,7 +501,7 @@ def run_backtest(params: dict, progress_cb: Optional[Callable] = None,
 
     # 指数数据
     if progress_cb: progress_cb(4, 4, "加载指数对比数据...")
-    indices = load_index_data()
+    indices = load_index_data(start_date=start)
 
     summary = {
         # 核心结果
