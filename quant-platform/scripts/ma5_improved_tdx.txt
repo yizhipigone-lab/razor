@@ -1,0 +1,52 @@
+{ Eurica Quant 睿奕量化 — MA5角度突破策略（改进版） }
+{ 通达信选股公式 }
+
+{══════════ 基础均线 ══════════}
+MA5  := MA(C,5);
+MA20 := MA(C,20);
+MA60 := MA(C,60);
+
+{══════════ 5日实际斜率 ══════════}
+{ x1: MA5过去5天的累计涨跌幅百分比 }
+X1 := (MA5 - REF(MA5,5)) / REF(MA5,5) * 100;
+X2 := MA(X1,5);
+
+{══════════ 角度确认 ══════════}
+{ 角度上穿 + 加速确认 }
+CROSS_UP  := CROSS(X1, X2);
+COND_ANGLE := CROSS_UP AND X1 > REF(X1,1);
+
+{══════════ 成交量确认 ══════════}
+{ 当日量 > 20日均量的1.5倍 }
+AVG_VOL_20 := REF(MA(V,20), 1);
+COND_VOL := V > AVG_VOL_20 * 1.5;
+
+{══════════ 收盘位置确认 ══════════}
+{ 收盘在日K线上80%位置（强势收盘）}
+CLOSE_POS := (C - L) / (H - L);
+COND_CLOSE := CLOSE_POS > 0.8 AND H > L;
+
+{══════════ 价格条件 ══════════}
+{ 站上20日线 + 价格在20日区间上半 + MA60趋势向上 }
+RANGE_HIGH := REF(HHV(H,20), 1);
+RANGE_LOW  := REF(LLV(L,20), 1);
+RANGE_MID  := (RANGE_HIGH + RANGE_LOW) / 2;
+COND_PRICE := C > MA20 AND C > RANGE_MID AND MA60 >= REF(MA60,10);
+
+{══════════ 涨停过滤 ══════════}
+LIMIT_PCT := IF(CODELIKE('688') OR CODELIKE('300') OR CODELIKE('301'), 0.195,
+            IF(CODELIKE('8') OR CODELIKE('4'), 0.29, 0.095));
+NOT_LIMIT := (C / REF(C,1) - 1) < LIMIT_PCT;
+
+{══════════ 综合信号 ══════════}
+ZA := COND_ANGLE AND COND_VOL AND COND_CLOSE AND COND_PRICE AND NOT_LIMIT;
+
+{ 20天内首次出现信号 }
+COUNT_20 := COUNT(ZA, 20);
+BY := ZA AND COUNT_20 = 1;
+
+{ 避免连续两天出信号 }
+ZP := BY AND REF(BY, 1) = 0;
+
+{══════════ 选股输出 ══════════}
+ZP;
