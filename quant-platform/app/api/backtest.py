@@ -546,10 +546,19 @@ def _save_bt_config(cfg: dict):
 
 @router.get("/api/backtest/simple-config")
 async def get_simple_bt_config():
-    """获取回测配置（首次从系统配置复制）"""
+    """获取回测配置 — 核心交易参数始终读取系统实时配置"""
     cfg = _load_bt_config()
-    # 同时返回系统配置，方便前端对比
     sys_cfg = _default_bt_config()
+    # 核心参数强制从系统配置刷新，不读缓存
+    LIVE_KEYS = ['hard_stop', 'take_profit_tiers', 'trail_activate', 'trail_dd',
+                 'time_exit_days', 'time_exit_profit', 'time_force_days',
+                 'loss_streak_halve', 'loss_streak_pause', 'pause_days',
+                 'same_stock_cooldown', 'use_atr_trail', 'atr_trail_multiplier',
+                 'signal_params', 'position_size', 'min_buy_amt']
+    for k in LIVE_KEYS:
+        if k in sys_cfg:
+            cfg[k] = copy.deepcopy(sys_cfg[k])
+    cfg['end_date'] = str(date.today())
     return {"status": "ok", "config": cfg, "system_config": sys_cfg}
 
 
