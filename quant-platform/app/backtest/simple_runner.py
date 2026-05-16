@@ -194,15 +194,16 @@ class FastEngine:
 
 
 def load_daily_bars(start_buffer=date(2021, 9, 1), end=date.today()):
-    """从 parquet 加载全市场日线"""
+    """从 parquet 加载全市场日线 — 逐文件过滤避免 concat 内存溢出"""
     files = [f for f in DAILY_DIR.glob("*.parquet")
              if not f.stem.startswith('index_') and len(f.stem) == 6 and f.stem.isdigit()]
-    dfs = []
+    chunks = []
     for f in files:
         try:
             df = pd.read_parquet(str(f))
         except Exception:
             continue
+        # 列名规范化
         cmap = {}
         for c in df.columns:
             cl = c.lower()
@@ -212,20 +213,23 @@ def load_daily_bars(start_buffer=date(2021, 9, 1), end=date.today()):
                 cmap[c] = 'date'
         if cmap:
             df.rename(columns=cmap, inplace=True)
-        df = df.loc[:, ~df.columns.duplicated()].copy()
-        keep = [c for c in ['date', 'open', 'high', 'low', 'close', 'volume'] if c in df.columns]
-        if 'date' not in keep or 'close' not in keep:
+        if 'date' not in df.columns or 'close' not in df.columns:
             continue
-        df = df[keep].copy()
-        df['code'] = f.stem
+        df = df[['date', 'open', 'high', 'low', 'close', 'volume']].copy()
         df['date'] = pd.to_datetime(df['date']).dt.date
-        dfs.append(df)
-    bars = pd.concat(dfs, ignore_index=True)
-    for c in ['open', 'high', 'low', 'close', 'volume']:
-        if c in bars.columns:
-            bars[c] = pd.to_numeric(bars[c], errors='coerce')
-    bars = bars.dropna(subset=['close'])
-    bars = bars[(bars['date'] >= start_buffer) & (bars['date'] <= end)]
+        # 先过滤日期再追加，大幅减少内存
+        df = df[(df['date'] >= start_buffer) & (df['date'] <= end)]
+        if len(df) == 0:
+            continue
+        df['code'] = f.stem
+        for c in ['open', 'high', 'low', 'close', 'volume']:
+            df[c] = pd.to_numeric(df[c], errors='coerce')
+        df = df.dropna(subset=['close'])
+        if len(df) > 0:
+            chunks.append(df)
+    if not chunks:
+        return pd.DataFrame(columns=['date', 'open', 'high', 'low', 'close', 'volume', 'code'])
+    bars = pd.concat(chunks, ignore_index=True)
     return bars.sort_values(['code', 'date']).reset_index(drop=True)
 
 
