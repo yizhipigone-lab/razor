@@ -38,7 +38,7 @@ STRATEGY_NAME = "ma5_angle"
 
 # ═══════════ 买入信号 ═══════════
 SIGNAL_PARAMS = {
-    "version": "original",
+    "version": "improved",
     "filter_st": True,
     "filter_bj": True,
     "vol_threshold": 1.5,
