@@ -53,9 +53,9 @@ SELL_TIME = "14:53"   # 止盈止损卖出时间（先卖，回收现金）
 BUY_TIME  = "14:54"   # 选股买入时间（后买，用回收的现金）
 
 # ═══════════ 回测/模拟区间 ═══════════
-SIM_START = date(2022, 1, 4)
+SIM_START = date(2015, 1, 5)
 SIM_END   = date.today() + date.resolution  # 动态：始终到最新一天
-LOAD_START = date(2022, 1, 1)
+LOAD_START = date(2015, 1, 1)
 
 # ═══════════ 自动执行开关 ═══════════
 AUTO_SELL = False   # 是否执行卖出（止盈止损）
