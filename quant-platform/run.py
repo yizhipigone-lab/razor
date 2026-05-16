@@ -1,5 +1,5 @@
 """
-主程序入口 - A股量化交易平台
+Eurica Quant (睿利量化) - 主程序入口
 启动流程：
 1. 加载全局配置
 2. 初始化 DuckDB 数据库连接
@@ -98,7 +98,7 @@ def cmd_buy(code: str, price: float):
 
 
 if __name__ == "__main__":
-    log.info("====== A股量化平台启动 ======")
+    log.info("====== Eurica Quant 睿利量化 启动 ======")
     log.info(f"金额上限: {settings.max_buy_amount} | 止损: {settings.hard_stop_loss_pct}% | 移动止盈激活: {settings.trailing_activate_pct}%")
 
     if len(sys.argv) < 2:
