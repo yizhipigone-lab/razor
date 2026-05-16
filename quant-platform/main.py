@@ -28,7 +28,7 @@ async def app_lifespan(app: FastAPI):
     main_loop = asyncio.get_running_loop()
     WebsocketGlobal.loop = main_loop
     
-    log.info("Eurica Quant - 睿利量化 后台任务启动...")
+    log.info("Eurica Quant - 睿奕量化 后台任务启动...")
     
     # 模拟启动一些必须的后台任务
     # if settings.get('gateway', 'active_gateway') == 'qmt':
@@ -51,9 +51,9 @@ async def app_lifespan(app: FastAPI):
     asyncio.create_task(_delayed_auto_sync())
             
     yield
-    log.info("Eurica Quant - 睿利量化 已停止")
+    log.info("Eurica Quant - 睿奕量化 已停止")
 
-app = FastAPI(title="Eurica Quant (睿利量化)", lifespan=app_lifespan)
+app = FastAPI(title="Eurica Quant (睿奕量化)", lifespan=app_lifespan)
 
 app.add_middleware(
     CORSMiddleware,

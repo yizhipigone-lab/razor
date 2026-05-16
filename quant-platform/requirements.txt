@@ -1,5 +1,5 @@
 # ============================================================
-# Eurica Quant (睿利量化) - Docker/服务端依赖
+# Eurica Quant (睿奕量化) - Docker/服务端依赖
 # 适用环境: Linux Docker 容器 (api-server / task-worker)
 # 注意: Windows GUI 专用包已移至 requirements-client.txt
 # 最后更新: 2026-04-09
