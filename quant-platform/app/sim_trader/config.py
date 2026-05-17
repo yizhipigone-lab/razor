@@ -17,7 +17,7 @@ PAUSE_DAYS        = 3        # 暂停天数（自然日）
 HARD_STOP      = -0.06        # 硬止损 -6.0%
 TRAIL_ACTIVATE = 0.03         # 移动止盈激活阈值
 TRAIL_DD       = 0.01         # 移动止盈回撤距离（固定%）
-TIME_EXIT_DAYS = 3            # 时间条件退出天数
+TIME_EXIT_DAYS = 5            # 时间条件退出天数（盘整突破优化: 3→5）
 
 # ATR 动态移动止盈: 启用后 TRAIL_DD = max(TRAIL_DD, ATR_TRAIL_MUL * ATR(14) / entry_price)
 USE_ATR_TRAIL = True          # 是否用 ATR 动态调整移动止盈回撤
@@ -34,18 +34,14 @@ TAKE_PROFIT_TIERS = [
 ]
 
 # ═══════════ 策略选择 ═══════════
-STRATEGY_NAME = "ma5_angle"
+STRATEGY_NAME = "盘整突破"
 
 # ═══════════ 买入信号 ═══════════
 SIGNAL_PARAMS = {
-    "version": "improved",
+    "N": 5,
+    "ZF": 8.0,
     "filter_st": True,
     "filter_bj": True,
-    "vol_threshold": 1.5,
-    "close_position_threshold": 0.8,
-    "disable_quality_sort": False,
-    "filter_consecutive_up": False,
-    "filter_gap_quality": False,
     "skip_limit_up": True,
 }
 
