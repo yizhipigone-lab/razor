@@ -118,10 +118,10 @@ def generate_signals(df: pd.DataFrame,
     result = pd.DataFrame(sig_list)
 
     # ══════════ 涨停过滤 ══════════
+    # 只排除真正封板的（无法买入），不排除大阳线突破
     if skip_limit_up and 'ret' in result.columns:
-        # 主板 10%, 双创 20%, 北交所 30%
-        limits = {'688': 0.195, '300': 0.195, '301': 0.195, '8': 0.29, '4': 0.29}
-        result['limit_pct'] = 0.095
+        limits = {'688': 0.199, '300': 0.199, '301': 0.199, '8': 0.295, '4': 0.295}
+        result['limit_pct'] = 0.099  # 主板 9.9%以上才视为涨停
         for prefix, lp in limits.items():
             mask = result['code'].astype(str).str.startswith(prefix)
             result.loc[mask, 'limit_pct'] = lp
