@@ -60,8 +60,8 @@ function switchTab(name) {
   if (name === 'trades') loadTrades();
   if (name === 'positions') loadPositions();
   if (name === 'backtest' || name === 'scan') loadSectorHierarchy();
-  if (name === 'backtest' || name === 'ai-backtest') loadBacktestCapitalDefaults();
-  if (name === 'ai-backtest') initAIBacktest();
+  if (name === 'backtest') { loadBacktestCapitalDefaults(); loadBtSimpleConfig(); }
+  if (name === 'ai-backtest') { loadBacktestCapitalDefaults(); initAIBacktest(); }
   if (name === 'radar') loadHotSectorData();
   if (name === 'sim-trader') { loadSimTraderStatus(); initLogDates(); loadSimLogs(); }
 }
