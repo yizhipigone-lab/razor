@@ -279,23 +279,27 @@ async def sim_trader_config():
     """获取模拟盘配置（当前策略、可用策略列表）"""
     from app.sim_trader.config import STRATEGY_NAME as _cur
     from pathlib import Path
-    import os
+    import inspect
 
     strat_dir = Path(__file__).resolve().parent.parent / "screener" / "strategies"
     available = []
     for f in sorted(strat_dir.glob("*.py")):
-        name = f.stem
-        if name in ("base", "__init__"):
+        fname = f.stem
+        if fname in ("base", "__init__"):
             continue
-        # 读取首行注释作为描述
-        desc = ""
+        # 尝试从策略类获取 name 属性
         try:
-            first = f.read_text(encoding="utf-8").strip().split("\n")[0]
-            if first.startswith("#"):
-                desc = first.lstrip("# ").strip()
-        except:
-            pass
-        available.append({"name": name, "desc": desc})
+            module_path = f"app.screener.strategies.{fname}"
+            mod = __import__(module_path, fromlist=[""])
+            for attr_name in dir(mod):
+                attr = getattr(mod, attr_name)
+                if inspect.isclass(attr) and hasattr(attr, 'name') and getattr(attr, 'name', '') not in ('BaseStrategy', ''):
+                    available.append({"name": attr.name, "desc": getattr(attr, 'description', ''), "file": fname})
+                    break
+            else:
+                available.append({"name": fname, "desc": "", "file": fname})
+        except Exception:
+            available.append({"name": fname, "desc": "", "file": fname})
 
     return {
         "status": "ok",
