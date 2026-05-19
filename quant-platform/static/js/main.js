@@ -2448,6 +2448,24 @@ var _btPageSize = 100;
 
 async function loadBtSimpleConfig() {
   try {
+    // 加载策略列表
+    const stratResp = await fetch('/api/sim-trader/config');
+    const stratData = await stratResp.json();
+    if (stratData.status === 'ok') {
+      const sel = document.getElementById('sbt-strategy');
+      if (sel) {
+        sel.innerHTML = '';
+        (stratData.strategies || []).forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s.name; opt.textContent = s.desc || s.name;
+          sel.appendChild(opt);
+        });
+        if (stratData.current_strategy) sel.value = stratData.current_strategy;
+      }
+    }
+  } catch(e) {}
+
+  try {
     const resp = await fetch('/api/backtest/simple-config');
     const data = await resp.json();
     if (data.status !== 'ok') return;
