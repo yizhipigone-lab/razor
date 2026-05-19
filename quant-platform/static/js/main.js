@@ -2407,6 +2407,13 @@ function showSaveMsg(el, msg, ok) {
 // ── 交易设置卡独立保存 ──
 
 
+let _simpleBtChart = null;
+let _simpleBtDailyTrades = {};
+let _lastSimpleBtResult = null;
+var _btAllTrades = [];
+var _btTradePage = 0;
+var _btPageSize = 100;
+
 async function loadBtSimpleConfig() {
   try {
     const resp = await fetch('/api/backtest/simple-config');
