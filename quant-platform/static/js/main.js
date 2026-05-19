@@ -2497,6 +2497,8 @@ async function loadBtSimpleConfig() {
     }
     if (cfg.start_date) document.getElementById('sbt-start').value = cfg.start_date;
     document.getElementById('sbt-end').value = new Date().toISOString().slice(0, 10);
+    const stratSel = document.getElementById('sbt-strategy');
+    if (stratSel && cfg.strategy_name) stratSel.value = cfg.strategy_name;
     const sp = cfg.signal_params || {};
     document.getElementById('sbt-qs').checked = !sp.disable_quality_sort;
     addLog('ok', '已加载回测配置');
@@ -2544,12 +2546,12 @@ function _collectBtConfig() {
   cfg.atr_trail_multiplier = parseFloat(document.getElementById('sbt-atr-mul')?.value) || 1.0;
   cfg.start_date = document.getElementById('sbt-start').value || '2023-01-01';
   cfg.end_date = document.getElementById('sbt-end').value || new Date().toISOString().slice(0, 10);
-  cfg.signal_params = {
-    version: 'improved', filter_st: true, filter_bj: true,
-    vol_threshold: 1.5, close_position_threshold: 0.8,
-    disable_quality_sort: !document.getElementById('sbt-qs').checked,
-    filter_consecutive_up: false, filter_gap_quality: false,
-  };
+  cfg.strategy_name = document.getElementById('sbt-strategy')?.value || '盘整突破';
+  if (cfg.strategy_name === '盘整突破') {
+    cfg.signal_params = { N: 5, ZF: 8.0, filter_st: true, filter_bj: true, skip_limit_up: true };
+  } else {
+    cfg.signal_params = { version: 'original', filter_st: true, filter_bj: true, skip_limit_up: true };
+  }
   return cfg;
 }
 
