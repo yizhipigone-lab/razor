@@ -500,10 +500,11 @@ def _default_bt_config() -> dict:
         TRAIL_ACTIVATE, TRAIL_DD,
         TIME_EXIT_DAYS, TIME_EXIT_PROFIT, TIME_FORCE_DAYS,
         LOSS_STREAK_HALVE, LOSS_STREAK_PAUSE, PAUSE_DAYS,
-        SAME_STOCK_COOLDOWN, SIGNAL_PARAMS,
+        SAME_STOCK_COOLDOWN, SIGNAL_PARAMS, STRATEGY_NAME,
         USE_ATR_TRAIL, ATR_TRAIL_MULTIPLIER,
     )
     return {
+        "strategy_name": STRATEGY_NAME,
         "initial_capital": INITIAL_CAPITAL,
         "position_size": POSITION_SIZE,
         "min_buy_amt": MIN_BUY_AMT,
