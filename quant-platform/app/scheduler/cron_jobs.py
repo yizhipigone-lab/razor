@@ -169,7 +169,14 @@ class DataPipelineScheduler:
             log.warning(f"CronScheduler | [监控扫描] 异常: {e}")
 
     async def sync_index_daily(self):
-        """盘后自动更新指数日线数据"""
+        """盘后自动更新指数日线数据（QMT优先，Tushare兜底）"""
+        try:
+            from app.data_manager.qmt_index_sync import sync_index_daily_qmt
+            if sync_index_daily_qmt():
+                log.info("CronScheduler | [指数更新] QMT dispatch 成功")
+                return
+        except Exception as e:
+            log.warning(f"CronScheduler | [指数更新] QMT失败: {e}，回退Tushare")
         try:
             from app.data_manager.index_updater import update_all_indices
             result = update_all_indices()
