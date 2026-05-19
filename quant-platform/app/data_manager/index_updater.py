@@ -9,11 +9,14 @@ DAILY_DIR = ROOT / "data" / "parquet" / "daily"
 
 INDICES = {
     'index_000001': 'sh000001',
+    'index_399001': 'sz399001',
     'index_000300': 'sh000300',
     'index_000905': 'sh000905',
     'index_000852': 'sh000852',
     'index_000510': 'sh000510',
     'index_399006': 'sz399006',
+    'index_399005': 'sz399005',
+    'index_000688': 'sh000688',
 }
 
 
