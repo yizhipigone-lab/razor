@@ -313,7 +313,14 @@ def run_backtest(params: dict, progress_cb: Optional[Callable] = None,
     if progress_cb: progress_cb(1, 4, "生成交易信号...")
 
     # 信号
-    from app.screener.strategies.ma5_angle import generate_signals
+    # 根据配置加载策略
+    strategy_name = params.get('strategy_name', STRATEGY_NAME)
+    if strategy_name == '盘整突破':
+        from app.screener.strategies.panzheng_tupo import generate_signals
+    elif strategy_name == 'ma5_angle':
+        from app.screener.strategies.ma5_angle import generate_signals
+    else:
+        from app.screener.strategies.ma5_angle import generate_signals
     signal_params = params.get('signal_params', {})
     sig = generate_signals(bars, **signal_params)
     sig = sig[(sig['date'] >= start) & (sig['date'] <= end)].copy()
