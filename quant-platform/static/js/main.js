@@ -10,7 +10,39 @@ function connectWS() {
   ws.onmessage = (e) => handleWS(JSON.parse(e.data));
 }
 connectWS();
- 
+
+// 指数 HTTP 兜底加载（WebSocket 无数据时）
+function setIndex(id, data) {
+  if (!data || typeof data !== 'object') return;
+  const price = document.getElementById(id + '-price');
+  const pct = document.getElementById(id + '-pct');
+  const currentPrice = data.lastPrice || data.price;
+  const changePercent = data.priceChangeRatio || data.change_pct || 0;
+  if (price) price.textContent = currentPrice ? Number(currentPrice).toFixed(2) : '--';
+  if (pct) {
+    const p = Number(changePercent);
+    pct.textContent = (p > 0 ? '+' : '') + p.toFixed(2) + '%';
+    pct.className = p >= 0 ? 'up' : 'down';
+  }
+}
+
+async function refreshMarketBar() {
+  try {
+    const r = await fetch('/api/market/quotes');
+    const d = await r.json();
+    if (d.indices) {
+      const idx = d.indices;
+      if (idx['000001.SH']) setIndex('sh', idx['000001.SH']);
+      if (idx['399001.SZ']) setIndex('sz', idx['399001.SZ']);
+      if (idx['399006.SZ']) setIndex('cy', idx['399006.SZ']);
+      if (idx['000905.SH']) setIndex('zz500', idx['000905.SH']);
+      if (idx['000510.SH']) setIndex('a500', idx['000510.SH']);
+    }
+  } catch(e) {}
+}
+setTimeout(refreshMarketBar, 1000);
+setInterval(refreshMarketBar, 30000);
+
 // ─── Security Utilities ─────────────────────────────────────────
 function escHtml(str) {
   if (!str) return '';
