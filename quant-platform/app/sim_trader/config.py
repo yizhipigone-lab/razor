@@ -17,7 +17,7 @@ PAUSE_DAYS        = 3        # 暂停天数（自然日）
 HARD_STOP      = -0.06        # 硬止损 -6.0%
 TRAIL_ACTIVATE = 0.03         # 移动止盈激活阈值
 TRAIL_DD       = 0.01         # 移动止盈回撤距离（固定%）
-TIME_EXIT_DAYS = 5            # 时间条件退出天数（盘整突破优化: 3→5）
+TIME_EXIT_DAYS = 7            # 时间条件退出天数（盘整突破优化: 3→5→7）
 
 # ATR 动态移动止盈: 启用后 TRAIL_DD = max(TRAIL_DD, ATR_TRAIL_MUL * ATR(14) / entry_price)
 USE_ATR_TRAIL = True          # 是否用 ATR 动态调整移动止盈回撤

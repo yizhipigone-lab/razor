@@ -313,16 +313,24 @@ def run_backtest(params: dict, progress_cb: Optional[Callable] = None,
     if progress_cb: progress_cb(1, 4, "生成交易信号...")
 
     # 信号
-    # 根据配置加载策略
+    # 根据配置动态加载策略
     strategy_name = params.get('strategy_name', STRATEGY_NAME)
-    if strategy_name == '盘整突破':
-        from app.screener.strategies.panzheng_tupo import generate_signals
-    elif strategy_name == 'ma5_angle':
-        from app.screener.strategies.ma5_angle import generate_signals
-    else:
-        from app.screener.strategies.ma5_angle import generate_signals
     signal_params = params.get('signal_params', {})
-    sig = generate_signals(bars, **signal_params)
+    # 策略名→文件映射
+    strategy_files = {
+        '盘整突破': 'panzheng_tupo',
+        'MA5角度_改进版': 'ma5_angle',
+        'MA5角度_原版': 'ma5_angle',
+        'MA5角度_TDXv2': 'ma5_angle_tdx_v2',
+    }
+    fname = strategy_files.get(strategy_name, strategy_name)
+    try:
+        mod = __import__(f'app.screener.strategies.{fname}', fromlist=['generate_signals'])
+        sig = mod.generate_signals(bars, **signal_params)
+    except Exception:
+        # 终极兜底
+        from app.screener.strategies.ma5_angle import generate_signals
+        sig = generate_signals(bars, **signal_params)
     sig = sig[(sig['date'] >= start) & (sig['date'] <= end)].copy()
     sig['date'] = pd.to_datetime(sig['date']).dt.date
 

@@ -1,0 +1,303 @@
+2026-05-11 10:55:00.003 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 10:55:00.048 | INFO     | IntradayMonitor | 盘中监控器已就绪
+2026-05-11 10:55:14.252 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 10:55:29.854 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 10:56:52.750 | ERROR    | RedisManager | Redis 连接失败 (localhost:6379): Error 10061 connecting to localhost:6379. 由于目标计算机积极拒绝，无法连接。.
+2026-05-11 10:57:37.159 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 11:00:00.006 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 11:00:19.877 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 11:00:35.423 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 11:01:26.776 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 11:05:00.000 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 11:05:20.702 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 11:05:37.083 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 11:06:19.425 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 11:10:00.000 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 11:10:20.926 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 11:10:39.361 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 11:11:26.822 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 11:15:00.002 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 11:15:20.636 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 11:15:39.728 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 11:16:22.857 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 11:20:00.011 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 11:20:11.922 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 11:20:30.759 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 11:21:14.173 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 11:25:00.000 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 11:25:14.500 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 11:25:37.891 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 11:26:21.621 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 11:30:06.404 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成 (含热点板块)
+2026-05-11 11:30:06.404 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-05-11 11:30:08.464 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-05-11 11:30:08.467 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 08:30 执行。
+2026-05-11 11:30:08.467 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 17:30 执行。
+2026-05-11 11:30:08.468 | INFO     | CronScheduler | CronScheduler | Redis→DuckDB 收割机已安排在每个工作日 15:30 执行。
+2026-05-11 11:30:08.468 | INFO     | CronScheduler | CronScheduler | 模拟盘尾盘交易已安排在 14:52 执行。
+2026-05-11 11:30:08.469 | INFO     | CronScheduler | CronScheduler | 盘中监控全量扫描已安排（每分钟，兜底）。
+2026-05-11 11:30:08.469 | INFO     | CronScheduler | CronScheduler | 概念数据同步已安排在每日 09:00 执行。
+2026-05-11 11:30:08.469 | INFO     | CronScheduler | CronScheduler | 板块热度重算已安排在每个交易日 5 分钟/次。
+2026-05-11 11:30:08.470 | INFO     | CronScheduler | CronScheduler | 收盘热度终版快照已安排在 15:30 执行。
+2026-05-11 11:30:08.476 | INFO     | CronScheduler | CronScheduler | 盘中监控未自动启动（MONITOR_ENABLED=False）
+2026-05-11 11:30:08.476 | INFO     | CronScheduler | CronScheduler | 自动调度服务(APScheduler) 已启动。
+2026-05-11 11:30:13.482 | INFO     | ParquetPipeline | ParquetPipeline | Fetching daily k-lines from 20260501 to 20260511...
+2026-05-11 11:30:13.625 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260511...
+2026-05-11 11:30:13.746 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260508...
+2026-05-11 11:30:14.517 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260507...
+2026-05-11 11:30:15.308 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260506...
+2026-05-11 11:30:16.112 | INFO     | ParquetPipeline | ParquetPipeline | Writing 5494 stocks to Parquet...
+2026-05-11 11:30:23.286 | INFO     | IntradayMonitor | 盘中监控器已创建（待启动）
+2026-05-11 11:30:23.310 | INFO     | IntradayMonitor | 盘中监控已启动，模式=intraday
+2026-05-11 11:30:23.311 | INFO     | API-SimTrader | 开关: 卖出=告警(close) 选股=开 买入=不买 监控=开
+2026-05-11 11:30:23.323 | INFO     | IntradayMonitor | 盘中监控已停止
+2026-05-11 11:30:23.323 | INFO     | API-SimTrader | 开关: 卖出=告警(close) 选股=开 买入=不买 监控=关
+2026-05-11 11:31:15.567 | INFO     | DuckDB     | DuckDB | 创建虚拟视图成功: kline_daily_view -> E:/1target/p9_project/quant-platform/data/parquet/daily/*.parquet
+2026-05-11 11:31:15.568 | INFO     | ParquetPipeline | ParquetPipeline | Daily K-lines fully synced.
+2026-05-11 11:35:00.004 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 11:35:11.665 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 11:35:22.256 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 11:35:47.152 | ERROR    | RedisManager | Redis 连接失败 (localhost:6379): Error 10061 connecting to localhost:6379. 由于目标计算机积极拒绝，无法连接。.
+2026-05-11 11:36:38.747 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 11:40:00.012 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 11:40:17.732 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 11:40:35.298 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 11:41:27.257 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 11:45:00.016 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 11:45:16.657 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 11:45:36.769 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 11:46:25.295 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 11:50:00.008 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 11:50:15.181 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 11:50:36.638 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 11:51:26.755 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成 (含热点板块)
+2026-05-11 11:51:26.755 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-05-11 11:51:27.280 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-05-11 11:51:27.283 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 08:30 执行。
+2026-05-11 11:51:27.283 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 17:30 执行。
+2026-05-11 11:51:27.284 | INFO     | CronScheduler | CronScheduler | Redis→DuckDB 收割机已安排在每个工作日 15:30 执行。
+2026-05-11 11:51:27.284 | INFO     | CronScheduler | CronScheduler | 模拟盘尾盘交易已安排在 14:52 执行。
+2026-05-11 11:51:27.284 | INFO     | CronScheduler | CronScheduler | 盘中监控全量扫描已安排（每分钟，兜底）。
+2026-05-11 11:51:27.285 | INFO     | CronScheduler | CronScheduler | 概念数据同步已安排在每日 09:00 执行。
+2026-05-11 11:51:27.285 | INFO     | CronScheduler | CronScheduler | 板块热度重算已安排在每个交易日 5 分钟/次。
+2026-05-11 11:51:27.285 | INFO     | CronScheduler | CronScheduler | 收盘热度终版快照已安排在 15:30 执行。
+2026-05-11 11:51:27.290 | INFO     | CronScheduler | CronScheduler | 盘中监控未自动启动（MONITOR_ENABLED=False）
+2026-05-11 11:51:27.291 | INFO     | CronScheduler | CronScheduler | 自动调度服务(APScheduler) 已启动。
+2026-05-11 11:51:32.299 | INFO     | ParquetPipeline | ParquetPipeline | Fetching daily k-lines from 20260501 to 20260511...
+2026-05-11 11:51:32.449 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260511...
+2026-05-11 11:51:32.574 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260508...
+2026-05-11 11:51:33.305 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260507...
+2026-05-11 11:51:34.061 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260506...
+2026-05-11 11:51:34.820 | INFO     | ParquetPipeline | ParquetPipeline | Writing 5494 stocks to Parquet...
+2026-05-11 11:52:00.005 | INFO     | IntradayMonitor | 盘中监控器已创建（待启动）
+2026-05-11 11:52:52.978 | INFO     | DuckDB     | DuckDB | 创建虚拟视图成功: kline_daily_view -> E:/1target/p9_project/quant-platform/data/parquet/daily/*.parquet
+2026-05-11 11:52:52.979 | INFO     | ParquetPipeline | ParquetPipeline | Daily K-lines fully synced.
+2026-05-11 11:55:00.009 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 11:55:12.362 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 11:55:22.824 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 11:55:47.237 | ERROR    | RedisManager | Redis 连接失败 (localhost:6379): Error 10061 connecting to localhost:6379. 由于目标计算机积极拒绝，无法连接。.
+2026-05-11 11:56:39.208 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 12:00:00.011 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 12:00:18.088 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 12:00:33.862 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 12:01:18.074 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 12:05:00.007 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 12:05:15.512 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 12:05:36.890 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 12:06:32.246 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 12:10:00.008 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 12:10:15.325 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 12:10:38.385 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 12:11:31.901 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 12:15:00.007 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 12:15:15.548 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 12:15:38.440 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 12:16:23.965 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 12:20:00.009 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 12:20:16.056 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 12:20:40.594 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 12:21:27.769 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 12:25:00.001 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 12:25:16.210 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 12:25:41.875 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 12:26:30.067 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 12:30:00.010 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 12:30:16.326 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 12:30:42.884 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 12:31:28.137 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 12:35:00.008 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 12:35:17.065 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 12:35:44.817 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 12:36:30.859 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 12:40:00.001 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 12:40:16.548 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 12:40:46.135 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 12:41:31.660 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 12:45:00.013 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 12:45:16.818 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 12:45:47.164 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 12:46:28.191 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 12:50:00.015 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 12:50:22.139 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 12:50:36.646 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 12:51:28.703 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 12:55:00.012 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 12:55:15.778 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 12:55:34.402 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 12:56:27.106 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 13:00:00.001 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 13:00:14.606 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 13:00:33.066 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 13:01:19.020 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 13:05:00.011 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 13:05:14.632 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 13:05:33.051 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 13:06:17.147 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 13:10:00.005 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 13:10:14.664 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 13:10:35.129 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 13:11:27.448 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 13:15:00.011 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 13:15:15.060 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 13:15:36.348 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 13:16:24.746 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 13:20:00.002 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 13:20:17.713 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 13:20:40.292 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 13:21:30.294 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 13:25:00.012 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 13:25:15.682 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 13:25:39.506 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 13:26:23.865 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 13:30:00.005 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 13:30:16.470 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 13:30:41.030 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 13:31:24.619 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 13:35:00.012 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 13:35:16.446 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 13:35:42.060 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 13:36:25.126 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 13:40:00.012 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 13:40:16.514 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 13:40:42.451 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 13:41:28.495 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 13:45:00.011 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 13:45:16.273 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 13:45:42.724 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 13:46:32.289 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 13:50:00.008 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 13:50:16.967 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 13:50:44.216 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 13:51:35.642 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 13:55:00.015 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 13:55:17.185 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 13:55:44.773 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 13:56:26.574 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 14:00:00.015 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 14:00:16.583 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 14:00:44.502 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 14:01:27.767 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 14:05:00.007 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 14:05:16.879 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 14:05:45.983 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 14:06:32.442 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 14:10:00.006 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 14:10:17.449 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 14:10:46.662 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 14:11:36.975 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 14:15:00.012 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 14:15:16.909 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 14:15:46.739 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 14:16:30.302 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 14:20:00.007 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 14:20:17.053 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 14:20:47.096 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 14:21:35.951 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 14:25:00.001 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 14:25:17.186 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 14:25:48.549 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 14:26:36.856 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 14:30:00.000 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 14:30:17.993 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 14:30:50.774 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 14:31:32.442 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 14:35:00.010 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 14:35:17.831 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 14:35:49.986 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 14:36:29.899 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 14:40:00.007 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 14:40:17.582 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 14:40:49.903 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 14:41:31.653 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 14:45:00.015 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 14:45:18.045 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 14:45:51.132 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 14:46:36.869 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 14:50:00.000 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 14:50:18.028 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 14:50:51.860 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 14:51:36.231 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 14:52:00.013 | INFO     | CronScheduler | CronScheduler | [模拟盘] 14:52 开始执行尾盘交易: 2026-05-11
+2026-05-11 14:53:00.113 | INFO     | SimLoader  | QMT 实时行情已注入: 5201 只股票
+2026-05-11 14:53:02.445 | INFO     | Screener   | 🧬 [Loader] 识别到类继承策略: MA5AngleOriginalStrategy
+2026-05-11 14:53:10.926 | INFO     | CronScheduler | CronScheduler | [模拟盘] 全部告警（应卖0笔 应买5笔）
+2026-05-11 14:55:00.004 | INFO     | CronScheduler | CronScheduler | [热度计算] 开始刷新板块热度...
+2026-05-11 14:55:17.934 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 14:55:52.653 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 14:56:38.648 | INFO     | CronScheduler | CronScheduler | [热度计算] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 15:30:00.016 | INFO     | CronScheduler | CronScheduler | [热度终版] 开始执行收盘快照...
+2026-05-11 15:30:00.016 | INFO     | CronScheduler | CronScheduler | [Redis收割] 开始将盘中最高价缓存同步回 DuckDB...
+2026-05-11 15:30:20.820 | INFO     | HeatCalc   | 加载了 5525 只股票的最近日线数据
+2026-05-11 15:30:21.234 | ERROR    | CronScheduler | CronScheduler | [Redis收割] 严重异常: Error 10061 connecting to localhost:6379. 由于目标计算机积极拒绝，无法连接。.
+2026-05-11 15:30:56.521 | INFO     | HeatCalc   | 热度计算完成: 873 概念, 110 板块
+2026-05-11 15:31:47.442 | INFO     | CronScheduler | CronScheduler | [热度终版] 完成: {'concepts_processed': 873, 'sectors_processed': 110, 'trade_date': '2026-05-11'}
+2026-05-11 17:30:00.004 | INFO     | CronScheduler | CronScheduler ========= [全自动日线/面料收取管道] 起步 =========
+2026-05-11 17:30:00.072 | INFO     | QMT-StockSync | QMT 返回 5204 只股票代码
+2026-05-11 17:30:00.110 | WARNING  | QMT-StockSync | 检测到 312 只退市/摘牌股票，正在标记...
+2026-05-11 17:30:00.221 | INFO     | DuckDB     | 标记退市: ['920508', '920445', '920180', '920871', '920266', '920403', '920394', '920873', '920249', '920806', '920541', '920017', '920455', '920124', '920689', '920422', '920419', '920425', '920227', '920199', '920476', '920195', '920427', '920370', '920593', '920781', '920112', '920077', '920076', '920807', '920267', '920706', '920273', '920139', '920128', '920171', '920768', '920810', '920184', '920185', '920576', '920433', '920665', '920130', '920720', '920719', '920729', '920299', '920061', '920090', '920181', '920790', '920833', '920123', '920175', '920033', '920030', '920964', '920066', '920351', '920225', '920158', '920200', '920374', '920564', '920429', '920082', '920027', '920058', '920770', '920163', '920116', '920167', '920019', '920856', '920926', '920896', '920145', '920957', '920056', '920925', '920108', '920876', '920640', '920035', '920346', '920703', '920091', '920953', '920663', '920001', '920300', '920207', '920075', '920414', '920418', '920375', '920191', '920735', '920069', '920146', '920478', '920402', '920870', '920247', '920578', '920809', '920088', '920914', '920971', '920177', '920751', '920237', '920832', '920045', '920110', '920405', '920160', '920454', '920068', '920834', '920992', '920526', '920717', '920571', '920493', '920275', '920701', '920786', '920021', '920608', '920378', '920087', '920099', '920982', '920579', '920016', '920950', '920726', '920826', '920580', '920118', '920190', '920837', '920407', '920946', '920981', '920119', '920304', '920556', '920504', '920026', '920547', '920029', '920906', '920168', '920396', '920748', '920036', '920125', '920985', '920003', '920152', '920496', '920510', '920159', '920662', '920009', '920392', '920014', '920519', '920765', '920471', '920961', '920245', '920592', '920156', '920415', '920371', '920002', '920022', '920278', '920566', '920570', '920121', '920639', '920339', '920037', '920187', '920006', '920018', '920149', '920855', '920522', '920599', '920062', '920230', '920261', '920675', '920693', '920395', '920792', '920656', '920274', '920469', '920078', '920509', '920010', '920015', '920943', '920028', '920685', '920879', '920974', '920694', '920857', '920438', '920892', '920533', '920718', '920344', '920080', '920106', '920020', '920039', '920057', '920931', '920086', '920046', '920101', '920047', '920023', '920527', '920092', '920976', '920642', '920924', '920262', '920169', '920186', '920682', '920368', '920012', '920651', '920005', '920223', '920188', '920000', '920932', '920208', '920055', '920011', '920060', '920802', '920821', '920111', '920690', '920007', '920505', '920174', '920679', '920885', '920475', '920050', '920284', '920263', '920866', '920978', '920204', '920553', '920166', '920260', '920008', '920100', '920670', '920753', '920808', '920895', '920641', '920239', '920198', '920725', '920634', '920779', '920183', '920699', '920212', '920523', '920491', '920489', '920363', '920089', '920970', '920252', '920271', '920367', '920436', '920221', '920242', '920122', '920270', '920179', '920942', '920305', '920799', '920098', '920819', '920627', '920357', '920132', '920839', '920575']
+2026-05-11 17:30:00.223 | INFO     | QMT-StockSync | 股票同步完成: QMT 5204 只, DB活跃 5516 只, 新增 0, 退市 312
+2026-05-11 17:30:00.229 | INFO     | CronScheduler | 股票列表同步: 新增 0, 退市 312
+2026-05-11 17:30:00.230 | INFO     | TushareSync | Fetching stock basics from Tushare...
+2026-05-11 17:30:01.193 | INFO     | DuckDB     | 更新股票元数据: 5515 条
+2026-05-11 17:30:01.194 | INFO     | TushareSync | Successfully synced 5515 stock basics.
+2026-05-11 17:30:01.198 | INFO     | TushareSync | Fetching daily basics snapshot from Tushare (Date: Latest)...
+2026-05-11 17:30:01.984 | INFO     | TushareSync | Pulling more financial indicators (ROE, Margin) in chunks of 100...
+2026-05-11 17:32:44.664 | INFO     | DuckDB     | 更新股票基本面数据: 5491 条
+2026-05-11 17:32:44.665 | INFO     | TushareSync | Successfully synced 5491 fundamentals records with enhanced indicators.
+2026-05-11 17:32:44.673 | INFO     | ParquetPipeline | ParquetPipeline | Fetching daily k-lines from 20260504 to 20260511...
+2026-05-11 17:32:44.843 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260511...
+2026-05-11 17:32:45.700 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260508...
+2026-05-11 17:32:46.588 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260507...
+2026-05-11 17:32:47.455 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260506...
+2026-05-11 17:32:48.282 | INFO     | ParquetPipeline | ParquetPipeline | Writing 5496 stocks to Parquet...
+2026-05-11 17:36:31.892 | INFO     | DuckDB     | DuckDB | 创建虚拟视图成功: kline_daily_view -> E:/1target/p9_project/quant-platform/data/parquet/daily/*.parquet
+2026-05-11 17:36:31.893 | INFO     | ParquetPipeline | ParquetPipeline | Daily K-lines fully synced.
+2026-05-11 17:36:32.049 | INFO     | CronScheduler | CronScheduler ========= [收取管道] 完美结束 =========
+2026-05-11 23:00:29.655 | INFO     | API-Backtest | 回测配置已保存
+2026-05-11 23:01:13.979 | WARNING  | API-Backtest | 回测结果保存失败: name 'datetime' is not defined
+2026-05-11 23:31:11.429 | INFO     | API-Backtest | 回测配置已保存
+2026-05-11 23:32:22.825 | WARNING  | API-Backtest | 回测结果保存失败: name 'datetime' is not defined
+2026-05-11 23:43:55.997 | INFO     | DuckDB     | DuckDB | 所有核心表结构初始化完成 (含热点板块)
+2026-05-11 23:43:55.998 | INFO     | DuckDB     | DuckDB 核心就绪: E:\1target\p9_project\quant-platform\data\meta\meta.db
+2026-05-11 23:43:56.848 | INFO     | API-Server | P9 Quant Platform Background Tasks Startup...
+2026-05-11 23:43:56.852 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 08:30 执行。
+2026-05-11 23:43:56.853 | INFO     | CronScheduler | CronScheduler | 每日数据收割机被安排在每个工作日的 17:30 执行。
+2026-05-11 23:43:56.853 | INFO     | CronScheduler | CronScheduler | Redis→DuckDB 收割机已安排在每个工作日 15:30 执行。
+2026-05-11 23:43:56.854 | INFO     | CronScheduler | CronScheduler | 模拟盘尾盘交易已安排在 14:52 执行。
+2026-05-11 23:43:56.854 | INFO     | CronScheduler | CronScheduler | 盘中监控全量扫描已安排（每分钟，兜底）。
+2026-05-11 23:43:56.855 | INFO     | CronScheduler | CronScheduler | 概念数据同步已安排在每日 09:00 执行。
+2026-05-11 23:43:56.855 | INFO     | CronScheduler | CronScheduler | 板块热度重算已安排在每个交易日 5 分钟/次。
+2026-05-11 23:43:56.856 | INFO     | CronScheduler | CronScheduler | 收盘热度终版快照已安排在 15:30 执行。
+2026-05-11 23:43:56.863 | INFO     | CronScheduler | CronScheduler | 盘中监控未自动启动（MONITOR_ENABLED=False）
+2026-05-11 23:43:56.864 | INFO     | CronScheduler | CronScheduler | 自动调度服务(APScheduler) 已启动。
+2026-05-11 23:44:01.876 | INFO     | ParquetPipeline | ParquetPipeline | Fetching daily k-lines from 20260501 to 20260511...
+2026-05-11 23:44:02.020 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260511...
+2026-05-11 23:44:02.764 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260508...
+2026-05-11 23:44:03.521 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260507...
+2026-05-11 23:44:04.311 | INFO     | ParquetPipeline | ParquetPipeline | Pulling market for 20260506...
+2026-05-11 23:44:05.044 | INFO     | ParquetPipeline | ParquetPipeline | Writing 5496 stocks to Parquet...
+2026-05-11 23:44:44.767 | INFO     | API-Backtest | 回测配置已保存
+2026-05-11 23:45:30.602 | INFO     | DuckDB     | DuckDB | 创建虚拟视图成功: kline_daily_view -> E:/1target/p9_project/quant-platform/data/parquet/daily/*.parquet
+2026-05-11 23:45:30.604 | INFO     | ParquetPipeline | ParquetPipeline | Daily K-lines fully synced.
+2026-05-11 23:45:54.825 | WARNING  | API-Backtest | 回测结果保存失败: name 'datetime' is not defined
+2026-05-11 23:59:47.380 | INFO     | API-Backtest | 回测配置已保存

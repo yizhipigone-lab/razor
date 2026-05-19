@@ -24,11 +24,11 @@
     "take_profit_tiers": [
       {
         "profit_pct": 0.03,
-        "sell_ratio": 0.10
+        "sell_ratio": 0.1
       },
       {
         "profit_pct": 0.06,
-        "sell_ratio": 0.20
+        "sell_ratio": 0.2
       }
     ],
     "time_exit_days": 7,
@@ -141,11 +141,11 @@
     "take_profit_tiers": [
       {
         "profit_pct": 0.03,
-        "sell_ratio": 0.10
+        "sell_ratio": 0.1
       },
       {
         "profit_pct": 0.06,
-        "sell_ratio": 0.20
+        "sell_ratio": 0.2
       }
     ],
     "trail_activate": 0.03,
@@ -173,7 +173,7 @@
     "redis_ttl_seconds": 600,
     "enable_ths_concepts": true,
     "enable_tushare_concepts": true,
-    "last_updated": "05/15 15:33"
+    "last_updated": "05/19 15:31"
   },
   "风险": {
     "hard_stop_loss_pct": -6.0,

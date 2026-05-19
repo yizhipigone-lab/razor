@@ -1,0 +1,41 @@
+{ Eurica Quant 睿奕量化 — MA5角度突破策略（原版） }
+{ 通达信选股公式 }
+
+{══════════ 基础均线 ══════════}
+MA5  := MA(C,5);
+MA20 := MA(C,20);
+
+{══════════ ATAN角度 ══════════}
+{ x1: MA5单日涨跌幅的反正切角度 }
+{ DEGREES(ATAN(x)) = ATAN(x) * 180 / PI }
+X1 := ATAN((MA5 / REF(MA5,1) - 1) * 100) * 180 / 3.14159;
+X2 := MA(X1,5);
+
+{══════════ 角度确认 ══════════}
+{ 角度上穿其5日均线 + V型反转确认 }
+CROSS_UP  := X1 > X2 AND REF(X1,1) <= REF(X2,1);
+COND_ANGLE := CROSS_UP AND X2 < REF(X2,5) AND X1 > REF(X1,5);
+
+{══════════ 价格条件 ══════════}
+{ 股价<26元 + 日涨幅>2% + 站上20日均线 }
+COND_PRICE := C < 26 AND C / REF(C,1) > 1.02 AND C > MA20;
+
+{══════════ 涨停过滤 ══════════}
+{ 跳过当日涨停的股票 }
+{ 主板(60/00)≈10%  科创板(688)≈20%  创业板(300/301)≈20%  北交所(8/4)≈30% }
+LIMIT_PCT := IF(CODELIKE('688') OR CODELIKE('300') OR CODELIKE('301'), 0.195,
+            IF(CODELIKE('8') OR CODELIKE('4'), 0.29, 0.095));
+NOT_LIMIT := (C / REF(C,1) - 1) < LIMIT_PCT;
+
+{══════════ 综合信号 ══════════}
+ZA := COND_ANGLE AND COND_PRICE AND NOT_LIMIT;
+
+{ 20天内首次出现信号（信号新鲜度） }
+COUNT_20 := COUNT(ZA, 20);
+BUY := ZA AND COUNT_20 = 1;
+
+{ 避免连续两天出信号 }
+BUY_SIGNAL := BUY AND REF(BUY, 1) = 0;
+
+{══════════ 选股输出 ══════════}
+BUY_SIGNAL;
