@@ -1,42 +1,63 @@
-"""通过端口号停止 Eurica Quant 服务。"""
+"""停止 Eurica Quant 本项目所有相关进程（端口 + 工作目录）"""
 import psutil
 import sys
+from pathlib import Path
 
-TARGET_PORTS = {8888: "P9-API (main.py)", 8081: "P9-Proxy (qmt_proxy_server.py)"}
+ROOT = Path(__file__).resolve().parent
+TARGET_PORTS = {8888: "API服务", 8081: "QMT代理", 5173: "前端Vite"}
 
-
-def find_and_kill(port: int, name: str) -> bool:
-    for conn in psutil.net_connections(kind="inet"):
-        if conn.laddr.port == port and conn.status == "LISTEN":
-            pid = conn.pid
-            try:
-                proc = psutil.Process(pid)
-                proc_str = f"{proc.name()}(PID={pid})"
-                proc.kill()
-                proc.wait(timeout=3)
-                print(f"  [OK] {name} ({proc_str}) 已停止")
-                return True
-            except psutil.NoSuchProcess:
-                print(f"  [INFO] {name} 端口 {port} 的进程已退出")
-                return True
-            except Exception as e:
-                print(f"  [ERROR] 无法停止 {name} 端口 {port}: {e}")
-                return False
-    print(f"  [INFO] {name} 端口 {port} 未在运行")
-    return True
+def kill_proc(proc, source):
+    try:
+        proc.kill()
+        proc.wait(timeout=3)
+        print(f"  [OK] {proc.name()}(PID={proc.pid}) {source}")
+        return True
+    except psutil.NoSuchProcess:
+        return True
+    except Exception as e:
+        print(f"  [ERR] PID={proc.pid}: {e}")
+        return False
 
 
 def main():
-    print("正在停止 P9 服务...")
+    print("=" * 50)
+    print("  Eurica Quant - 停止所有服务")
+    print("=" * 50)
+
+    killed = set()
     ok = True
+
+    # 1. 按端口杀
     for port, name in TARGET_PORTS.items():
-        if not find_and_kill(port, name):
-            ok = False
-    if ok:
-        print("\n所有服务已停止。")
-    else:
-        print("\n部分服务停止失败，请手动检查。")
-        sys.exit(1)
+        for conn in psutil.net_connections(kind="inet"):
+            if conn.laddr.port == port and conn.status == "LISTEN":
+                pid = conn.pid
+                if pid and pid not in killed:
+                    try:
+                        proc = psutil.Process(pid)
+                        kill_proc(proc, f"端口{port}({name})")
+                        killed.add(pid)
+                    except psutil.NoSuchProcess:
+                        pass
+        if not any(c.laddr.port == port and c.status == "LISTEN"
+                   for c in psutil.net_connections(kind="inet")):
+            print(f"  [--] 端口{port}({name}) 未运行")
+
+    # 2. 按工作目录杀（本项目下的 Python/Node 进程）
+    for proc in psutil.process_iter(['pid', 'name', 'cwd']):
+        try:
+            cwd = proc.info.get('cwd')
+            if cwd and Path(cwd).resolve().is_relative_to(ROOT):
+                pid = proc.info['pid']
+                if pid and pid not in killed:
+                    kill_proc(proc, f"工作目录({cwd})")
+                    killed.add(pid)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+    print(f"\n已停止 {len(killed)} 个进程。")
+    if len(killed) == 0:
+        print("没有发现运行中的项目服务。")
 
 
 if __name__ == "__main__":
