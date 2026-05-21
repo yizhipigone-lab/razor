@@ -23,17 +23,7 @@ class TdxBridge:
 
     def execute_screen(self, end_time: str, stock_list_override: list = None,
                        lookback_days: int = 30):
-        """
-        执行 QUANTXX 公式选股
-
-        Args:
-            end_time: 截止日期 YYYYMMDD
-            stock_list_override: 指定股票列表，None=全A股
-            lookback_days: 回看天数
-
-        Returns:
-            dict: {status: 'ok', matched: [...], total: int} 或 {status: 'error', message: str}
-        """
+        """单日选股：返回当天 ZP=1 的股票列表"""
         task = {
             "formula_name": FORMULA_NAME,
             "formula_arg": FORMULA_ARG,
@@ -42,13 +32,43 @@ class TdxBridge:
             "end_time": end_time,
             "stock_list_override": stock_list_override,
             "lookback_days": lookback_days,
+            "return_date": False,
         }
+        return self._run_worker(task)
 
+    def execute_screen_range(self, end_time: str, kline_count: int,
+                              return_count: int = None,
+                              stock_list_override: list = None):
+        """
+        区间选股：返回信号 + 价格
+
+        Returns:
+            {status: 'ok', signals: {code: {ZP: [...], Date: [...]}},
+                          prices: {code: {Close: [...], Date: [...]}}}
+        """
+        if return_count is None:
+            return_count = kline_count
+        task = {
+            "task_type": "range",
+            "formula_name": FORMULA_NAME,
+            "formula_arg": FORMULA_ARG,
+            "output_var_name": OUTPUT_VAR,
+            "end_time": end_time,
+            "stock_list_override": stock_list_override,
+            "kline_count": kline_count,
+            "return_count": return_count,
+        }
+        return self._run_worker(task, timeout_multiplier=max(2, kline_count // 50))
+
+    def _run_worker(self, task: dict, timeout_multiplier: int = 1):
+        """执行 worker 脚本并解析结果"""
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".json", delete=False, encoding="utf-8"
         ) as f:
             json.dump(task, f)
             args_path = f.name
+
+        timeout = TIMEOUT * timeout_multiplier
 
         try:
             env = os.environ.copy()
@@ -60,7 +80,7 @@ class TdxBridge:
                 env=env,
                 capture_output=True,
                 text=True,
-                timeout=TIMEOUT,
+                timeout=timeout,
             )
 
             for line in result.stdout.strip().split("\n"):
@@ -76,7 +96,7 @@ class TdxBridge:
                 "message": result.stderr or result.stdout or "No output from TDX worker",
             }
         except subprocess.TimeoutExpired:
-            return {"status": "error", "message": "选股超时（10分钟）"}
+            return {"status": "error", "message": f"选股超时（{timeout}秒）"}
         except Exception as e:
             return {"status": "error", "message": str(e)}
         finally:

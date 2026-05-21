@@ -88,7 +88,7 @@ function switchTab(name) {
   if (name === 'factory') initMonaco();
   if (name === 'reports') loadReportsList();
   if (name === 'settings') loadSettings();
-  if (name === 'watchlist') loadWatchlist();
+  if (name === 'watchlist') { try { if (typeof loadWatchlist === 'function') loadWatchlist(); } catch(e) {} }
   if (name === 'trades') loadTrades();
   if (name === 'positions') loadPositions();
   if (name === 'backtest' || name === 'scan') loadSectorHierarchy();
@@ -2473,11 +2473,24 @@ async function loadBtSimpleConfig() {
       const sel = document.getElementById('sbt-strategy');
       if (sel) {
         sel.innerHTML = '';
+        // Python 策略分组
+        const pyGroup = document.createElement('optgroup');
+        pyGroup.label = 'Python 策略';
         (stratData.strategies || []).forEach(s => {
           const opt = document.createElement('option');
           opt.value = s.name; opt.textContent = s.label || (s.file ? s.file + '.py' : s.name);
-          sel.appendChild(opt);
+          opt.dataset.strategyType = 'python';
+          pyGroup.appendChild(opt);
         });
+        sel.appendChild(pyGroup);
+        // TDX 策略分组
+        const tdxGroup = document.createElement('optgroup');
+        tdxGroup.label = 'TDX 策略';
+        const tdxOpt = document.createElement('option');
+        tdxOpt.value = 'QUANTQQ'; tdxOpt.textContent = 'QUANTQQ';
+        tdxOpt.dataset.strategyType = 'tdx';
+        tdxGroup.appendChild(tdxOpt);
+        sel.appendChild(tdxGroup);
         if (stratData.current_strategy) sel.value = stratData.current_strategy;
       }
     }
@@ -2583,6 +2596,8 @@ function _collectBtConfig() {
   cfg.start_date = document.getElementById('sbt-start').value || '2023-01-01';
   cfg.end_date = document.getElementById('sbt-end').value || new Date().toISOString().slice(0, 10);
   cfg.strategy_name = document.getElementById('sbt-strategy')?.value || '盘整突破';
+  var stratOpt = document.getElementById('sbt-strategy')?.selectedOptions?.[0];
+  cfg.strategy_type = (stratOpt && stratOpt.dataset.strategyType) || 'python';
   // signal_params 由后端从策略文件 PARAMS 自动读取，前端只传策略名
   cfg.signal_params = {};
   return cfg;
@@ -3290,41 +3305,18 @@ function oneClickBacktestHistory(id) {
 function _oneClickBacktestWithCodes(codes) {
   if (!codes || codes.length === 0) { alert('股票列表为空'); return; }
 
-  // 切换到回测 tab
+  // 切换到回测 tab，自动选中 QUANTQQ
   switchTab('backtest');
 
-  // 等待 tab 加载完成后填充参数
-  setTimeout(async function() {
-    // 获取当前回测策略
-    var stratEl = document.getElementById('sbt-strategy');
-    var strategy = stratEl && stratEl.value ? stratEl.value : '盘整突破';
+  setTimeout(function() {
+    var stratSel = document.getElementById('sbt-strategy');
+    if (stratSel) stratSel.value = 'QUANTQQ';
 
     var startEl = document.getElementById('tqsdk-start');
     var endEl = document.getElementById('tqsdk-end');
-    var startDate = (startEl && startEl.value) ? startEl.value : '2023-01-01';
-    var endDate = (endEl && endEl.value) ? endEl.value : '';
+    if (startEl) document.getElementById('sbt-start').value = startEl.value || '2023-01-01';
+    if (endEl) document.getElementById('sbt-end').value = endEl.value || '';
 
-    try {
-      var resp = await fetch('/api/tqsdk/backtest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          history_id: _tqsdkCurrentResultId || 0,
-          strategy_name: strategy,
-          start_date: startDate,
-          end_date: endDate,
-          stock_codes: codes,
-        }),
-      });
-      var data = await resp.json();
-      if (data.status === 'started') {
-        addLog('ok', '一键回测已启动 (' + codes.length + '只股票)');
-        showProgress('simple-bt', '准备中...');
-      } else {
-        addLog('error', '回测启动失败: ' + (data.message || ''));
-      }
-    } catch (e) {
-      addLog('error', '回测请求失败: ' + e.message);
-    }
-  }, 500);
+    addLog('ok', '已切换到回测 tab，策略=QUANTQQ (' + codes.length + '只候选)');
+  }, 300);
 }
