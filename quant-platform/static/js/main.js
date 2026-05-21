@@ -96,6 +96,7 @@ function switchTab(name) {
   if (name === 'ai-backtest') { loadBacktestCapitalDefaults(); initAIBacktest(); }
   if (name === 'radar') loadHotSectorData();
   if (name === 'sim-trader') { loadSimTraderStatus(); initLogDates(); loadSimLogs(); }
+  if (name === 'tqsdk') { initTqsdkTab(); }
 }
 
 // ─── AI 回测 JS ────────────────────────────────────────────
@@ -846,6 +847,23 @@ function handleWS(msg) {
     } else {
       addLog('error', `通达信公式转译失败: ${msg.message}`);
     }
+  } else if (msg.type === 'tqsdk_progress') {
+    showProgress('tqsdk', msg.msg);
+    updateProgressFill('tqsdk', msg.step, msg.total);
+  } else if (msg.type === 'tqsdk_screen_done') {
+    hideProgress('tqsdk');
+    toggleTqsdkButtons(false);
+    if (msg.status === 'ok') {
+      _tqsdkCurrentResults = msg.results || [];
+      _tqsdkCurrentResultId = msg.result_id;
+      renderTqsdkResults(msg.results);
+      addLog('ok', 'QUANTQQ选股完成: ' + (msg.count || 0) + '只');
+    } else if (msg.status === 'stopped') {
+      addLog('warn', '选股已停止');
+    } else {
+      addLog('error', '选股失败: ' + (msg.message || '未知错误'));
+    }
+    loadTqsdkHistory();
   } else if (msg.type === 'market_quotes') {
     const data = msg.data;
     // 1. 更新顶部指数栏 (如果有数据)
@@ -2457,7 +2475,7 @@ async function loadBtSimpleConfig() {
         sel.innerHTML = '';
         (stratData.strategies || []).forEach(s => {
           const opt = document.createElement('option');
-          opt.value = s.name; opt.textContent = s.desc || s.name;
+          opt.value = s.name; opt.textContent = s.label || (s.file ? s.file + '.py' : s.name);
           sel.appendChild(opt);
         });
         if (stratData.current_strategy) sel.value = stratData.current_strategy;
@@ -2565,11 +2583,8 @@ function _collectBtConfig() {
   cfg.start_date = document.getElementById('sbt-start').value || '2023-01-01';
   cfg.end_date = document.getElementById('sbt-end').value || new Date().toISOString().slice(0, 10);
   cfg.strategy_name = document.getElementById('sbt-strategy')?.value || '盘整突破';
-  if (cfg.strategy_name === '盘整突破') {
-    cfg.signal_params = { N: 5, ZF: 8.0, filter_st: true, filter_bj: true, skip_limit_up: true };
-  } else {
-    cfg.signal_params = { version: 'original', filter_st: true, filter_bj: true, skip_limit_up: true };
-  }
+  // signal_params 由后端从策略文件 PARAMS 自动读取，前端只传策略名
+  cfg.signal_params = {};
   return cfg;
 }
 
@@ -3080,4 +3095,236 @@ async function deleteSimpleBtHistory(id) {
   } catch (e) {
     addLog('error', '删除失败: ' + e.message);
   }
+}
+
+// ═══════════════ 通达信选股 (TQSDK) ═══════════════
+
+let _tqsdkCurrentResults = [];
+let _tqsdkCurrentResultId = null;
+
+function initTqsdkTab() {
+  const today = new Date();
+  const y = today.getFullYear();
+  const m = String(today.getMonth() + 1).padStart(2, '0');
+  const d = String(today.getDate()).padStart(2, '0');
+  const todayStr = y + '-' + m + '-' + d;
+  const endEl = document.getElementById('tqsdk-end');
+  if (endEl && !endEl.value) endEl.value = todayStr;
+  const startEl = document.getElementById('tqsdk-start');
+  if (startEl && !startEl.value) {
+    const prev = new Date(today);
+    prev.setDate(prev.getDate() - 30);
+    startEl.value = prev.getFullYear() + '-' +
+      String(prev.getMonth() + 1).padStart(2, '0') + '-' +
+      String(prev.getDate()).padStart(2, '0');
+  }
+  loadTqsdkHistory();
+}
+
+function showProgress(id, msg) {
+  const wrap = document.getElementById(id + '-progress');
+  if (wrap) wrap.style.display = 'block';
+  const msgEl = document.getElementById(id + '-progress-msg');
+  if (msgEl) msgEl.textContent = msg || '';
+}
+
+function hideProgress(id) {
+  const wrap = document.getElementById(id + '-progress');
+  if (wrap) wrap.style.display = 'none';
+}
+
+function updateProgressFill(id, step, total) {
+  const fill = document.getElementById(id + '-progress-fill');
+  if (fill) fill.style.width = total > 0 ? Math.round(step / total * 100) + '%' : '0%';
+}
+
+function toggleTqsdkButtons(running) {
+  const runBtn = document.getElementById('tqsdk-run-btn');
+  const stopBtn = document.getElementById('tqsdk-stop-btn');
+  if (runBtn) runBtn.style.display = running ? 'none' : '';
+  if (stopBtn) stopBtn.style.display = running ? '' : 'none';
+}
+
+async function runTqsdkScreen() {
+  const endEl = document.getElementById('tqsdk-end');
+  const startEl = document.getElementById('tqsdk-start');
+  if (!endEl || !endEl.value) { alert('请选择结束日期'); return; }
+
+  toggleTqsdkButtons(true);
+  document.getElementById('tqsdk-results-body').innerHTML =
+    '<tr><td colspan="4" style="color:var(--accent);text-align:center;">正在选股中...</td></tr>';
+
+  try {
+    const resp = await fetch('/api/tqsdk/screen', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        start_date: (startEl && startEl.value) ? startEl.value.replace(/-/g, '') : '',
+        end_date: endEl.value.replace(/-/g, ''),
+      }),
+    });
+    const data = await resp.json();
+    if (data.status !== 'started') {
+      addLog('error', '选股启动失败: ' + (data.message || ''));
+      toggleTqsdkButtons(false);
+    }
+  } catch (e) {
+    addLog('error', '请求失败: ' + e.message);
+    toggleTqsdkButtons(false);
+  }
+}
+
+async function stopTqsdkScreen() {
+  try {
+    await fetch('/api/tqsdk/screen/stop', { method: 'POST' });
+  } catch (e) {}
+}
+
+function renderTqsdkResults(results) {
+  const tbody = document.getElementById('tqsdk-results-body');
+  const countEl = document.getElementById('tqsdk-result-count');
+  const btAllBtn = document.getElementById('tqsdk-bt-all');
+
+  if (!results || results.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="color:var(--text2);text-align:center;">无符合条件的股票</td></tr>';
+    if (countEl) countEl.textContent = '(0)';
+    if (btAllBtn) btAllBtn.style.display = 'none';
+    return;
+  }
+  if (countEl) countEl.textContent = '(' + results.length + '只)';
+  if (btAllBtn) btAllBtn.style.display = '';
+
+  let html = '';
+  results.forEach(function(r) {
+    html += '<tr>' +
+      '<td>' + (r.code || '') + '</td>' +
+      '<td>' + (r.name || '') + '</td>' +
+      '<td>' + (r.sector || '') + '</td>' +
+      '<td><button class="btn btn-success btn-sm" onclick="oneClickBacktestSingle(\'' + (r.code || '') + '\')">一键回测</button></td>' +
+      '</tr>';
+  });
+  tbody.innerHTML = html;
+}
+
+async function loadTqsdkHistory() {
+  const tbody = document.getElementById('tqsdk-history-body');
+  try {
+    const resp = await fetch('/api/tqsdk/screen/history?limit=30');
+    const data = await resp.json();
+    if (data.status !== 'ok' || !data.data || data.data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="color:var(--text2);text-align:center;">暂无记录</td></tr>';
+      return;
+    }
+    let html = '';
+    data.data.forEach(function(r) {
+      var ts = r.executed_at || '';
+      if (ts && ts.length > 16) ts = ts.substring(0, 16);
+      html += '<tr>' +
+        '<td>' + ts + '</td>' +
+        '<td>' + (r.end_date || r.start_date || '') + '</td>' +
+        '<td>' + r.stock_count + '只</td>' +
+        '<td>' +
+          '<button class="btn btn-ghost btn-sm" onclick="viewTqsdkHistory(' + r.id + ')">查看</button> ' +
+          '<button class="btn btn-success btn-sm" onclick="oneClickBacktestHistory(' + r.id + ')">回测</button> ' +
+          '<button class="btn btn-danger btn-sm" onclick="deleteTqsdkHistory(' + r.id + ')">删除</button>' +
+        '</td>' +
+        '</tr>';
+    });
+    tbody.innerHTML = html;
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="4" style="color:var(--red);">加载失败</td></tr>';
+  }
+}
+
+async function viewTqsdkHistory(id) {
+  try {
+    const resp = await fetch('/api/tqsdk/screen/history/' + id);
+    const data = await resp.json();
+    if (data.status === 'ok' && data.data) {
+      _tqsdkCurrentResults = data.data.stock_details || [];
+      _tqsdkCurrentResultId = id;
+      renderTqsdkResults(_tqsdkCurrentResults);
+    }
+  } catch (e) {
+    addLog('error', '加载详情失败: ' + e.message);
+  }
+}
+
+async function deleteTqsdkHistory(id) {
+  if (!confirm('确认删除该选股记录？')) return;
+  try {
+    const resp = await fetch('/api/tqsdk/screen/history/' + id, { method: 'DELETE' });
+    const data = await resp.json();
+    if (data.status === 'ok') {
+      addLog('ok', '已删除');
+      loadTqsdkHistory();
+    }
+  } catch (e) {
+    addLog('error', '删除失败: ' + e.message);
+  }
+}
+
+function oneClickBacktestSingle(code) {
+  _oneClickBacktestWithCodes([code]);
+}
+
+function oneClickBacktestAll() {
+  if (_tqsdkCurrentResults.length === 0) { alert('没有可回测的股票'); return; }
+  var codes = _tqsdkCurrentResults.map(function(r) { return r.code; });
+  _oneClickBacktestWithCodes(codes);
+}
+
+function oneClickBacktestHistory(id) {
+  fetch('/api/tqsdk/screen/history/' + id)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.status === 'ok' && data.data) {
+        var codes = data.data.stock_codes || [];
+        if (codes.length === 0) { alert('该记录无股票，无法回测'); return; }
+        _oneClickBacktestWithCodes(codes);
+      }
+    })
+    .catch(function(e) { addLog('error', '加载详情失败: ' + e.message); });
+}
+
+function _oneClickBacktestWithCodes(codes) {
+  if (!codes || codes.length === 0) { alert('股票列表为空'); return; }
+
+  // 切换到回测 tab
+  switchTab('backtest');
+
+  // 等待 tab 加载完成后填充参数
+  setTimeout(async function() {
+    // 获取当前回测策略
+    var stratEl = document.getElementById('sbt-strategy');
+    var strategy = stratEl && stratEl.value ? stratEl.value : '盘整突破';
+
+    var startEl = document.getElementById('tqsdk-start');
+    var endEl = document.getElementById('tqsdk-end');
+    var startDate = (startEl && startEl.value) ? startEl.value : '2023-01-01';
+    var endDate = (endEl && endEl.value) ? endEl.value : '';
+
+    try {
+      var resp = await fetch('/api/tqsdk/backtest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          history_id: _tqsdkCurrentResultId || 0,
+          strategy_name: strategy,
+          start_date: startDate,
+          end_date: endDate,
+          stock_codes: codes,
+        }),
+      });
+      var data = await resp.json();
+      if (data.status === 'started') {
+        addLog('ok', '一键回测已启动 (' + codes.length + '只股票)');
+        showProgress('simple-bt', '准备中...');
+      } else {
+        addLog('error', '回测启动失败: ' + (data.message || ''));
+      }
+    } catch (e) {
+      addLog('error', '回测请求失败: ' + e.message);
+    }
+  }, 500);
 }

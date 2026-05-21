@@ -9,7 +9,9 @@ from collections import defaultdict, Counter
 from pathlib import Path
 from typing import Callable, Optional
 import json
+from core.logger import get_logger
 
+log = get_logger("SimpleBT")
 ROOT = Path(__file__).resolve().parent.parent.parent
 DAILY_DIR = ROOT / "data" / "parquet" / "daily"
 STRATEGY_NAME = "ma5_angle"
@@ -133,9 +135,12 @@ class FastEngine:
                 sells.append((p, cp, "TF", None)); continue
 
             # 多档阶梯止盈：按顺序检查，每档只触发一次
+            # 每档卖出数量 = 原始买入股数 × sell_ratio，直观可预测
             for idx, tier in enumerate(tp_tiers):
                 if idx not in p.tp_triggered and cur >= tier['profit_pct']:
-                    ss = int(p.remaining * tier['sell_ratio'] / 100) * 100
+                    ss = int(p.shares * tier['sell_ratio'] / 100) * 100
+                    if ss > p.remaining:
+                        ss = int(p.remaining // 100 * 100)
                     if ss >= 100:
                         p.tp_triggered.add(idx)
                         label = f"TP{idx+1}"
@@ -158,8 +163,12 @@ class FastEngine:
 
     def sell(self, p, px, reason, partial=None, xd=None):
         ss = partial if partial else p.remaining
+        # 取整到100股（1手），不足1手至少卖100，零股全清
         ss = int(ss // 100 * 100)
+        if ss < 100:
+            ss = min(100, int(p.remaining))
         if ss <= 0: return None
+        ss = min(ss, int(p.remaining))  # 不能超卖
         ret = (px / p.entry_price - 1) * 100
         profit = ss * (px - p.entry_price)
         p.remaining -= ss
@@ -171,6 +180,10 @@ class FastEngine:
     def sell_phase(self, d, snap, prev_snap=None):
         streak_pause = self.p.get('loss_streak_pause', 5)
         pause_days = self.p.get('pause_days', 3)
+        # 暂停期结束：重置连亏计数，恢复正常
+        if self.pause and d > self.pause:
+            self.pause = None
+            self.cl = 0
         for p, px, reason, partial in self.check_stops(d, snap, prev_snap):
             t = self.sell(p, px, reason, partial, d)
             if t:
@@ -291,11 +304,13 @@ def load_index_data(start_date: date = None):
 
 
 def run_backtest(params: dict, progress_cb: Optional[Callable] = None,
-                 stop_event=None, stock_names: Optional[dict] = None) -> dict:
+                 stop_event=None, stock_names: Optional[dict] = None,
+                 stock_pool: Optional[list] = None) -> dict:
     """
     执行回测，返回完整结果字典
     params 包含所有回测参数
     stock_names: {code: name} 可选的股票名称映射
+    stock_pool: 可选，限定回测的股票代码列表，不传则全市场
     """
     start = params.get('start_date', date(2023, 1, 1))
     end = params.get('end_date', date.today())
@@ -310,27 +325,39 @@ def run_backtest(params: dict, progress_cb: Optional[Callable] = None,
     bars = load_daily_bars(buffer_start, end)
     if stop_event and stop_event.is_set(): return {'status': 'stopped'}
 
+    # 如果指定了股票池，限制 bars 和 signals 的股票范围
+    if stock_pool:
+        bars = bars[bars['code'].isin(stock_pool)].copy()
+
     if progress_cb: progress_cb(1, 4, "生成交易信号...")
 
     # 信号
     # 根据配置动态加载策略
     strategy_name = params.get('strategy_name', STRATEGY_NAME)
-    signal_params = params.get('signal_params', {})
+    user_signal_params = params.get('signal_params', {})
     # 策略名→文件映射
     strategy_files = {
         '盘整突破': 'panzheng_tupo',
-        'MA5角度_改进版': 'ma5_angle',
         'MA5角度_原版': 'ma5_angle',
         'MA5角度_TDXv2': 'ma5_angle_tdx_v2',
     }
     fname = strategy_files.get(strategy_name, strategy_name)
-    try:
-        mod = __import__(f'app.screener.strategies.{fname}', fromlist=['generate_signals'])
-        sig = mod.generate_signals(bars, **signal_params)
-    except Exception:
-        # 终极兜底
-        from app.screener.strategies.ma5_angle import generate_signals
-        sig = generate_signals(bars, **signal_params)
+    mod = __import__(f'app.screener.strategies.{fname}', fromlist=['generate_signals', 'PARAMS'])
+    fn = getattr(mod, 'generate_signals', None)
+    if fn is None:
+        raise ImportError(f'策略 {strategy_name} ({fname}) 缺少 generate_signals 函数')
+    # 策略自带的 PARAMS 作为默认值，STRATEGY_VARIANTS 按策略名覆盖
+    import inspect as _inspect
+    sig_param_names = set(_inspect.signature(fn).parameters.keys()) - {'df', 'bars'}
+    default_params = getattr(mod, 'PARAMS', {})
+    merged = {k: v for k, v in default_params.items() if k in sig_param_names}
+    # 策略变体覆盖（如同一文件支持"原版"/"改进版"）
+    variants = getattr(mod, 'STRATEGY_VARIANTS', {})
+    if strategy_name in variants:
+        merged.update({k: v for k, v in variants[strategy_name].items() if k in sig_param_names})
+    # 用户传的 signal_params 最高优先级
+    merged.update({k: v for k, v in user_signal_params.items() if k in sig_param_names})
+    sig = fn(bars, **merged)
     sig = sig[(sig['date'] >= start) & (sig['date'] <= end)].copy()
     sig['date'] = pd.to_datetime(sig['date']).dt.date
 
