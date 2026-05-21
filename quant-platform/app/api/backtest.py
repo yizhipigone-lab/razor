@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from datetime import date
+from datetime import date, datetime
 from typing import Optional, List
 from pathlib import Path
 from pydantic import BaseModel
@@ -645,14 +645,16 @@ async def run_simple_backtest(body: dict):
     import threading as _th
 
     params = body.get("params", body)
+    strategy_type = params.get("strategy_type", "python")
     # 确保日期正确
     if 'start_date' not in params:
         params['start_date'] = date(2023, 1, 1)
     if 'end_date' not in params:
         params['end_date'] = date.today()
 
-    # 保存配置
-    _save_bt_config(params)
+    # 保存配置（仅 Python 策略）
+    if strategy_type != "tdx":
+        _save_bt_config(params)
 
     stop_evt = _th.Event()
     with _stop_events_lock:
@@ -675,8 +677,13 @@ async def run_simple_backtest(body: dict):
             except Exception:
                 pass
 
-            result = run_backtest(params, progress_cb=_prog, stop_event=stop_evt,
-                                  stock_names=stock_names)
+            if strategy_type == "tdx":
+                from app.backtest.tdx_runner import run_tdx_backtest
+                result = run_tdx_backtest(params, progress_cb=_prog,
+                                          stop_event=stop_evt, stock_names=stock_names)
+            else:
+                result = run_backtest(params, progress_cb=_prog, stop_event=stop_evt,
+                                      stock_names=stock_names)
 
             if result.get('status') == 'stopped':
                 sync_broadcast({"type": "log", "level": "warn", "msg": "回测已停止"})
