@@ -298,8 +298,25 @@ async def sim_trader_config():
                     break
             else:
                 available.append({"name": fname, "desc": "", "file": fname})
+            # 策略变体（如同一文件通过 version 参数支持原版/改进版）
+            variants = getattr(mod, 'STRATEGY_VARIANTS', {})
+            for vname in variants:
+                if vname not in {a['name'] for a in available}:
+                    available.append({"name": vname, "desc": "", "file": fname})
         except Exception:
             available.append({"name": fname, "desc": "", "file": fname})
+    # 下拉菜单显示文件名，同文件多策略时加 [名称] 区分
+    for a in available:
+        fname = a.get('file', '')
+        a['label'] = f'{fname}.py'
+    # 同一文件有多个条目时，追加策略名以区分
+    file_counts = {}
+    for a in available:
+        f = a.get('file', '')
+        file_counts[f] = file_counts.get(f, 0) + 1
+    for a in available:
+        if file_counts.get(a.get('file', ''), 0) > 1:
+            a['label'] = f'{a["file"]}.py [{a["name"]}]'
 
     return {
         "status": "ok",

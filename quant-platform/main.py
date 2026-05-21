@@ -104,6 +104,7 @@ from app.api import (
     agents,
     hot_sector,
     sim_trader,
+    tqsdk,
 )
 
 app.include_router(system.router)
@@ -118,6 +119,7 @@ app.include_router(trade.router)
 app.include_router(agents.router)
 app.include_router(hot_sector.router)
 app.include_router(sim_trader.router)
+app.include_router(tqsdk.router)
 
 if __name__ == "__main__":
     import uvicorn

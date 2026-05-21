@@ -310,6 +310,24 @@ class DatabaseManager:
                 )
             """)
 
+            # 11. 通达信选股历史
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS tqsdk_screen_history (
+                    id            INTEGER PRIMARY KEY,
+                    formula_name  VARCHAR,
+                    formula_arg   VARCHAR,
+                    start_date    DATE,
+                    end_date      DATE,
+                    stock_count   INTEGER,
+                    stock_codes   JSON,
+                    stock_details JSON,
+                    executed_at   TIMESTAMP DEFAULT NOW()
+                )
+            """)
+            max_id = c.execute("SELECT COALESCE(MAX(id), 0) FROM tqsdk_screen_history").fetchone()[0]
+            c.execute("DROP SEQUENCE IF EXISTS seq_tqsdk_screen")
+            c.execute(f"CREATE SEQUENCE seq_tqsdk_screen START {max_id + 1}")
+
             c.commit()
             log.info("DuckDB | 所有核心表结构初始化完成 (含热点板块)")
         except Exception as e:
@@ -1135,6 +1153,50 @@ class DatabaseManager:
         except Exception as e:
             log.error(f"get_watchlist 异常: {e}")
             return pd.DataFrame()
+
+    # ========== 通达信选股历史 ==========
+
+    def save_tqsdk_screen_history(self, formula_name: str, formula_arg: str,
+                                   start_date: str, end_date: str,
+                                   stock_count: int, stock_codes: list,
+                                   stock_details: list) -> int:
+        import json
+        result = self.conn.execute("""
+            INSERT INTO tqsdk_screen_history (id, formula_name, formula_arg, start_date, end_date,
+                                             stock_count, stock_codes, stock_details)
+            VALUES (nextval('seq_tqsdk_screen'), ?, ?, ?, ?, ?, ?, ?) RETURNING id
+        """, [formula_name, formula_arg, start_date, end_date,
+              stock_count, json.dumps(stock_codes), json.dumps(stock_details)])
+        self.conn.commit()
+        return result.fetchone()[0]
+
+    def list_tqsdk_screen_history(self, limit: int = 50, offset: int = 0) -> pd.DataFrame:
+        return self.conn.execute("""
+            SELECT id, formula_name, formula_arg, start_date, end_date,
+                   stock_count, executed_at
+            FROM tqsdk_screen_history
+            ORDER BY executed_at DESC
+            LIMIT ? OFFSET ?
+        """, [limit, offset]).df()
+
+    def get_tqsdk_screen_history_detail(self, hist_id: int) -> dict:
+        row = self.conn.execute("""
+            SELECT * FROM tqsdk_screen_history WHERE id = ?
+        """, [hist_id]).fetchone()
+        if not row:
+            return None
+        import json
+        col_names = [desc[0] for desc in self.conn.description]
+        d = dict(zip(col_names, row))
+        for k in ('stock_codes', 'stock_details'):
+            val = d.get(k)
+            if isinstance(val, str):
+                d[k] = json.loads(val)
+        return d
+
+    def delete_tqsdk_screen_history(self, hist_id: int):
+        self.conn.execute("DELETE FROM tqsdk_screen_history WHERE id = ?", [hist_id])
+        self.conn.commit()
 
     def close_all(self):
         """关闭所有线程的数据库连接"""
