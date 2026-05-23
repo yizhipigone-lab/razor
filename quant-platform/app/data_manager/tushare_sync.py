@@ -157,20 +157,20 @@ class TushareSyncManager:
             traceback.print_exc()
             return False
 
-    def sync_index_daily(self, progress_cb=None) -> bool:
+    def sync_index_daily(self, progress_cb=None, start_date: str = None,
+                         end_date: str = None, mode: str = "incremental") -> bool:
         """
         同步主要市场指数的日线数据到本地 Parquet。
         文件命名：index_000001.parquet（上证综指）等，
         避免与股票 000001.parquet（平安银行）冲突。
 
-        指数列表：
-          000001.SH  上证综指
-          399001.SZ  深证成指
-          000300.SH  沪深300
+        mode: "incremental" (默认) 仅拉取最近日期范围并合并；
+              "full" 拉取 2018 年至今全部覆盖写入。
         """
         import os
         import tushare as ts
         from pathlib import Path
+        from datetime import datetime, timedelta
 
         ts_key = os.getenv("TUSHARE_KEY", "")
         if not ts_key:
@@ -190,26 +190,43 @@ class TushareSyncManager:
             ("399006.SZ", "index_399006"),   # 创业板指
             ("000688.SH", "index_000688"),   # 科创50
             # 宽基指数（Regime 基准首选）
-            ("000510.SH", "index_000510"),   # 中证A500 ★ 优先基准
+            ("000510.SH", "index_000510"),   # 中证A500
             ("000300.SH", "index_000300"),   # 沪深300
             ("000905.SH", "index_000905"),   # 中证500
             ("000852.SH", "index_000852"),   # 中证1000
             ("000985.SH", "index_000985"),   # 中证全指
             # 风格指数
             ("000016.SH", "index_000016"),   # 上证50
+            # 补充 qmt_sync_index_job.py 中配置的指数
+            ("000009.SH", "index_000009"),   # 上证380
+            ("399004.SZ", "index_399004"),   # 深证100
+            ("399005.SZ", "index_399005"),   # 中小板指
         ]
+
+        if end_date:
+            _end = end_date.replace("-", "")
+        else:
+            _end = datetime.now().strftime("%Y%m%d")
+
+        if start_date:
+            _start = start_date.replace("-", "")
+        elif mode == "incremental":
+            _start = (datetime.now() - timedelta(days=10)).strftime("%Y%m%d")
+        else:
+            _start = "20180101"
 
         success_count = 0
         total = len(INDICES)
 
         for i, (ts_code, file_stem) in enumerate(INDICES):
             if progress_cb:
-                progress_cb(i + 1, total, f"正在同步 {ts_code}...")
+                progress_cb(i + 1, total, f"正在同步指数 {ts_code}...")
             try:
-                log.info(f"sync_index_daily | 拉取 {ts_code} ...")
+                log.info(f"sync_index_daily | 拉取 {ts_code} ({_start}~{_end})...")
                 df = pro.index_daily(
                     ts_code=ts_code,
-                    start_date="20180101",  # 拉取2018年至今，约6年
+                    start_date=_start,
+                    end_date=_end,
                     fields="trade_date,open,high,low,close,vol,amount,pct_chg"
                 )
                 if df is None or df.empty:
@@ -227,20 +244,32 @@ class TushareSyncManager:
                 df["is_index"] = True
 
                 out_path = PARQUET_DIR / f"{file_stem}.parquet"
+
+                # 增量模式：与已有数据合并去重
+                if mode == "incremental" and out_path.exists():
+                    try:
+                        old_df = pd.read_parquet(out_path)
+                        old_df["date"] = pd.to_datetime(old_df["date"])
+                        df = pd.concat([old_df, df], ignore_index=True)
+                        df = df.drop_duplicates(subset=["date"], keep="last")
+                        df = df.sort_values("date").reset_index(drop=True)
+                    except Exception as merge_err:
+                        log.warning(f"sync_index_daily | {file_stem} 合并失败，覆写: {merge_err}")
+
                 df.to_parquet(out_path, index=False)
+                date_range = f"{df['date'].min().date()} ~ {df['date'].max().date()}" if not df.empty else "无数据"
                 log.info(
-                    f"sync_index_daily | {ts_code} 保存成功：{len(df)} 条"
-                    f"（{df['date'].min().date()} ~ {df['date'].max().date()}）"
+                    f"sync_index_daily | {ts_code} 保存成功：{len(df)} 条（{date_range}）"
                     f" → {out_path.name}"
                 )
                 success_count += 1
-                time.sleep(0.5)  # Tushare 限流保护
+                time.sleep(0.3)
 
             except Exception as e:
                 log.error(f"sync_index_daily | {ts_code} 同步失败: {e}")
 
         if progress_cb:
-            progress_cb(total, total, f"指数同步完成：{success_count}/{total} 成功")
+            progress_cb(total, total, f"指数日线同步完成：{success_count}/{total} 成功")
         return success_count > 0
 
     def sync_index_members(self, progress_cb=None) -> bool:

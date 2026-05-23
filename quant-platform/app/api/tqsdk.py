@@ -70,6 +70,7 @@ async def start_screen(body: dict):
             result = bridge.execute_screen(
                 end_time=end_time or datetime.now().strftime("%Y%m%d"),
                 stock_list_override=stock_list_override,
+                lookback_days=500,
             )
 
             stop = _stop_events.get("tqsdk")

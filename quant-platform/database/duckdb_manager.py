@@ -826,20 +826,33 @@ class DatabaseManager:
             date_col = "date" if "date" in new_df.columns else "datetime"
 
             if path.exists():
-                old_df = pd.read_parquet(path)
+                try:
+                    old_df = pd.read_parquet(path)
+                except Exception:
+                    log.warning(f"DuckDB | {code}.parquet 损坏，将重新下载")
+                    path.unlink(missing_ok=True)
+                    old_df = pd.DataFrame()
                 # 统一日期类型，避免 Timestamp vs date 比较出错
-                if date_col in old_df.columns:
-                    old_df[date_col] = pd.to_datetime(old_df[date_col])
-                if date_col in new_df.columns:
-                    new_df[date_col] = pd.to_datetime(new_df[date_col])
-                merged = pd.concat([old_df, new_df])
-                merged = merged.drop_duplicates(subset=[date_col], keep='last').sort_values(date_col)
+                if not old_df.empty:
+                    if date_col in old_df.columns:
+                        old_df[date_col] = pd.to_datetime(old_df[date_col])
+                    if date_col in new_df.columns:
+                        new_df[date_col] = pd.to_datetime(new_df[date_col])
+                    merged = pd.concat([old_df, new_df])
+                    merged = merged.drop_duplicates(subset=[date_col], keep='last').sort_values(date_col)
+                else:
+                    merged = new_df
                 merged = enrich_with_indicators(merged)
-                merged.to_parquet(path, index=False)
+                # 原子写入：先写临时文件，成功后再改名
+                tmp_path = path.with_suffix(".tmp")
+                merged.to_parquet(tmp_path, index=False)
+                tmp_path.replace(path)
             else:
                 new_df = new_df.drop_duplicates(subset=[date_col], keep='last').sort_values(date_col)
                 new_df = enrich_with_indicators(new_df)
-                new_df.to_parquet(path, index=False)
+                tmp_path = path.with_suffix(".tmp")
+                new_df.to_parquet(tmp_path, index=False)
+                tmp_path.replace(path)
 
     def load_bars(
         self,

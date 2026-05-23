@@ -9,6 +9,9 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from core.logger import get_logger
+log = get_logger("TdxBridge")
+
 TDX_USER_DIR = Path(r"E:\NEW_TDX\PYPlugins\user")
 WORKER_SCRIPT = TDX_USER_DIR / "tqsdk_bridge_worker.py"
 FORMULA_NAME = "QUANTQQ"
@@ -60,6 +63,93 @@ class TdxBridge:
         }
         return self._run_worker(task, timeout_multiplier=max(2, kline_count // 50))
 
+    def execute_screen_range_5m(self, end_time: str, kline_count: int,
+                                 start_date: str = None,
+                                 return_count: int = None,
+                                 stock_list_override: list = None):
+        """
+        区间选股 5分钟增强版：两步调用 worker
+        Step 1: range → 信号 + 日线收盘价 (快)
+        Step 2: fetch_5m → 仅对信号股获取 5 分钟 OHLC (限 300 只)
+        失败自动降级，bars_5m 为 None 时走日线回退
+        """
+        MAX_5M_BARS = 5_000_000  # 最多500万根5分钟K线
+
+        if return_count is None:
+            return_count = kline_count
+
+        # ── Step 1: 获取信号 + 日线收盘价 ──────────────────
+        task1 = {
+            "task_type": "range",
+            "formula_name": FORMULA_NAME,
+            "formula_arg": FORMULA_ARG,
+            "output_var_name": OUTPUT_VAR,
+            "end_time": end_time,
+            "stock_list_override": stock_list_override,
+            "kline_count": kline_count,
+            "return_count": return_count,
+        }
+        result = self._run_worker(task1, timeout_multiplier=min(10, max(2, kline_count // 50)))
+        result["bars_5m"] = None
+
+        if result.get("status") != "ok":
+            return result
+
+        # ── Step 2: 获取 5 分钟 OHLC（仅对信号股） ────────
+        signals = result.get("signals", {})
+        signal_codes = []
+        for code, d in signals.items():
+            zps = d.get("ZP", d.get(OUTPUT_VAR, []))
+            if "1" in [str(v) for v in zps]:
+                signal_codes.append(code)
+
+        if not signal_codes:
+            return result
+
+        # 估算数据量
+        from datetime import datetime
+        try:
+            end_dt = datetime.strptime(end_time, "%Y%m%d")
+            if start_date:
+                start_dt = datetime.strptime(start_date, "%Y%m%d")
+            else:
+                start_dt = end_dt.replace(day=1)
+            est_days = max(1, (end_dt - start_dt).days * 0.7)
+        except Exception:
+            est_days = 60
+        est_bars = len(signal_codes) * est_days * 48
+        log.info(f"5m fetch: {len(signal_codes)} stocks x {est_days:.0f} days = {est_bars/1e3:.0f}K bars (limit {MAX_5M_BARS/1e6:.1f}M)")
+        if est_bars > MAX_5M_BARS:
+            log.warning(f"5m data estimate {est_bars/1e6:.1f}M > limit {MAX_5M_BARS/1e6:.1f}M, fallback daily")
+            return result
+
+        try:
+            task2 = {
+                "task_type": "fetch_5m",
+                "stock_list_override": signal_codes,
+                "start_date": start_date,
+                "end_time": end_time,
+            }
+            log.info(f"5m fetch worker starting for {len(signal_codes)} stocks...")
+            result_5m = self._run_worker(task2, timeout_multiplier=min(5, max(2, len(signal_codes) // 50)))
+
+            bars_5m_path = result_5m.get("bars_5m_path")
+            if bars_5m_path and os.path.exists(bars_5m_path):
+                try:
+                    import pandas as pd
+                    df = pd.read_parquet(bars_5m_path)
+                    result["bars_5m"] = df.to_dict(orient="records")
+                    result["bars_5m_count"] = len(df)
+                    log.info(f"5m data loaded: {len(df)} bars, {df['code'].nunique()} stocks, {df['datetime'].str[:10].nunique()} days")
+                except Exception as e:
+                    log.warning(f"5m parquet read failed: {e}")
+                finally:
+                    Path(bars_5m_path).unlink(missing_ok=True)
+        except Exception as e:
+            log.warning(f"5分钟数据获取失败，降级日线: {e}")
+
+        return result
+
     def _run_worker(self, task: dict, timeout_multiplier: int = 1):
         """执行 worker 脚本并解析结果"""
         with tempfile.NamedTemporaryFile(
@@ -73,6 +163,7 @@ class TdxBridge:
         try:
             env = os.environ.copy()
             env["PYTHONPATH"] = str(TDX_USER_DIR)
+            env["PYTHONUNBUFFERED"] = "1"
 
             result = subprocess.run(
                 ["python", str(WORKER_SCRIPT), "--args-file", args_path],
@@ -86,10 +177,13 @@ class TdxBridge:
             for line in result.stdout.strip().split("\n"):
                 try:
                     data = json.loads(line)
-                    if data.get("status") == "ok":
-                        return data
                 except json.JSONDecodeError:
                     continue
+                if data.get("diag") == "worker_signals":
+                    log.info(f"Worker diag: count={data['count']} first10={data['first10']}")
+                    continue
+                if data.get("status") == "ok":
+                    return data
 
             return {
                 "status": "error",

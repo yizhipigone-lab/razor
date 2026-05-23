@@ -35,11 +35,25 @@ def _run_async():
                 start_date=five_days_ago, end_date=today, progress_cb=_p0_progress
             )
             if success:
-                ok("[P0/3] 日线数据补齐完成")
+                ok("[P0/3] 个股日线数据补齐完成")
             else:
-                warn("[P0/3] 日线同步未完成（可能 Tushare 不可用）")
+                warn("[P0/3] 个股日线同步未完成（可能 Tushare 不可用）")
         except Exception as e:
-            error(f"[P0/3] 日线同步异常: {e}")
+            error(f"[P0/3] 个股日线同步异常: {e}")
+
+        # ── P0 附加：指数日线同步 ─────────────────────────
+        info("[P0 附加] 开始同步指数日线数据...")
+        try:
+            from app.data_manager.tushare_sync import tushare_sync_manager
+            idx_ok = tushare_sync_manager.sync_index_daily(
+                start_date=five_days_ago, end_date=today, mode="incremental"
+            )
+            if idx_ok:
+                ok("[P0 附加] 指数日线数据补齐完成")
+            else:
+                warn("[P0 附加] 指数日线同步未完成（可能 Tushare 不可用）")
+        except Exception as e:
+            error(f"[P0 附加] 指数日线同步异常: {e}")
 
         # 如果设置级别为 daily，P1/P2 跳过
         if level == "daily":

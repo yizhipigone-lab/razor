@@ -15,8 +15,8 @@ PAUSE_DAYS        = 3        # 暂停天数（自然日）
 
 # ═══════════ 退出 ═══════════
 HARD_STOP      = -0.06        # 硬止损 -6.0%
-TRAIL_ACTIVATE = 0.03         # 移动止盈激活阈值
-TRAIL_DD       = 0.01         # 移动止盈回撤距离（固定%）
+TRAIL_ACTIVATE = 0.05         # 移动止盈激活阈值（5轮回测最优）
+TRAIL_DD       = 0.02         # 移动止盈回撤距离（5轮回测最优）
 TIME_EXIT_DAYS = 7            # 时间条件退出天数（盘整突破优化: 3→5→7）
 
 # ATR 动态移动止盈: 启用后 TRAIL_DD = max(TRAIL_DD, ATR_TRAIL_MUL * ATR(14) / entry_price)
@@ -29,8 +29,7 @@ SAME_STOCK_COOLDOWN = 20      # 同股票冷却天数
 # 多档阶梯止盈: 按顺序触发，每档卖出剩余仓位的 sell_ratio%
 # 触发过的不再重复，剩余仓位最终由 TR 移动止盈保护
 TAKE_PROFIT_TIERS = [
-    {"profit_pct": 0.03, "sell_ratio": 0.10},  # TP1: +3% 卖 10%（优化：4→3%提前止盈提赢率）
-    {"profit_pct": 0.06, "sell_ratio": 0.20},  # TP2: +6% 卖 20%
+    {"profit_pct": 0.03, "sell_ratio": 0.30},  # TP1: +3% 卖30%，剩余走移动止盈（部分止盈+Trail最优）
 ]
 
 # ═══════════ 策略选择 ═══════════
@@ -55,9 +54,9 @@ SIM_END   = date.today() + date.resolution  # 动态：始终到最新一天
 LOAD_START = date(2015, 1, 1)
 
 # ═══════════ 自动执行开关 ═══════════
-AUTO_SELL = False   # 是否执行卖出（止盈止损）
+AUTO_SELL = True    # 是否执行卖出（止盈止损）
 AUTO_SCAN = True    # 是否执行选股（生成买入信号）
-AUTO_BUY  = False   # 是否执行买入
+AUTO_BUY  = True    # 是否执行买入
 
 # ═══════════ 盘中监控 ═══════════
 MONITOR_ENABLED = True      # 启动时是否自动开启盘中监控

@@ -84,13 +84,9 @@ class Trade:
 class SimTraderEngine:
     """尾盘模拟交易引擎（含盘中实时监控）"""
 
-    def __init__(self, persist: bool = True):
-        self._persist = persist
-        self._store = None
-
-        if persist:
-            from app.sim_trader.store import SimTraderStore
-            self._store = SimTraderStore()
+    def __init__(self, store=None):
+        if store is not None:
+            self._store = store
             state = self._store.load_state()
             self.cash = state['cash']
             self.consecutive_losses = state['consecutive_losses']

@@ -29,7 +29,19 @@ def get_engine():
         with _engine_lock:
             if _engine is None:
                 from app.sim_trader.engine import SimTraderEngine
-                _engine = SimTraderEngine()
+                from app.sim_trader.store import JsonSimStore
+                # 从 app_setting.json 恢复持久化的开关设置
+                from core.settings import settings as _settings
+                import app.sim_trader.config as _sc
+                sim = _settings._data.get('sim_trader', {})
+                if sim:
+                    _sc.AUTO_SELL = sim.get('auto_sell', _sc.AUTO_SELL)
+                    _sc.AUTO_SCAN = sim.get('auto_scan', _sc.AUTO_SCAN)
+                    _sc.AUTO_BUY = sim.get('auto_buy', _sc.AUTO_BUY)
+                    _sc.MONITOR_ENABLED = sim.get('monitor_enabled', _sc.MONITOR_ENABLED)
+                    _sc.MONITOR_MODE = sim.get('monitor_mode', _sc.MONITOR_MODE)
+                    _sc.STRATEGY_NAME = sim.get('strategy_name', _sc.STRATEGY_NAME)
+                _engine = SimTraderEngine(store=JsonSimStore())
     return _engine
 
 
@@ -109,10 +121,70 @@ def get_trading_dates():
     return []
 
 
+@router.post("/api/settings/sim-switches")
+async def save_sim_switches(body: dict):
+    """保存执行开关到 config.py"""
+    import app.sim_trader.config as sc
+    try:
+        if 'auto_sell' in body:
+            sc.AUTO_SELL = bool(body['auto_sell'])
+        if 'auto_scan' in body:
+            sc.AUTO_SCAN = bool(body['auto_scan'])
+        if 'auto_buy' in body:
+            sc.AUTO_BUY = bool(body['auto_buy'])
+        if 'monitor_enabled' in body:
+            sc.MONITOR_ENABLED = bool(body['monitor_enabled'])
+        if 'monitor_mode' in body:
+            sc.MONITOR_MODE = str(body['monitor_mode'])
+        if 'strategy_name' in body:
+            sc.STRATEGY_NAME = str(body['strategy_name'])
+        # 同步更新已创建的引擎和监控器实例
+        if _engine is not None:
+            from app.sim_trader.engine import SimTraderEngine
+            _engine._mode = sc.MONITOR_MODE
+            if _engine._monitor is not None:
+                _engine._monitor.mode = sc.MONITOR_MODE
+                _engine._monitor.enabled = sc.MONITOR_ENABLED
+        # 持久化到 app_setting.json，重启不丢
+        from core.settings import settings
+        sim = settings._data.setdefault('sim_trader', {})
+        sim['auto_sell'] = sc.AUTO_SELL
+        sim['auto_scan'] = sc.AUTO_SCAN
+        sim['auto_buy'] = sc.AUTO_BUY
+        sim['monitor_enabled'] = sc.MONITOR_ENABLED
+        sim['monitor_mode'] = sc.MONITOR_MODE
+        sim['strategy_name'] = sc.STRATEGY_NAME
+        settings._data['sim_trader'] = sim
+        settings.save()
+
+        log.info(f"执行开关已更新并持久化: SELL={sc.AUTO_SELL} SCAN={sc.AUTO_SCAN} BUY={sc.AUTO_BUY} MON={sc.MONITOR_ENABLED}/{sc.MONITOR_MODE} STRAT={sc.STRATEGY_NAME}")
+        return {"status": "ok", "message": "已保存"}
+    except Exception as e:
+        log.error(f"保存执行开关失败: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+_stock_names_cache = None
+
+def _load_stock_names():
+    global _stock_names_cache
+    if _stock_names_cache is not None:
+        return _stock_names_cache
+    _stock_names_cache = {}
+    try:
+        from database.duckdb_manager import db
+        df = db.conn.execute("SELECT code, name FROM stocks").fetchdf()
+        _stock_names_cache = dict(zip(df['code'].astype(str), df['name'].astype(str)))
+    except Exception:
+        pass
+    return _stock_names_cache
+
+
 @router.get("/api/sim-trader/status")
 async def sim_trader_status():
     engine = get_engine()
     today = date.today()
+    names = _load_stock_names()
 
     # 直接从 Parquet 读取今日收盘价（避免 DuckDB 锁）
     snapshot = {}
@@ -134,6 +206,7 @@ async def sim_trader_status():
         cur_price = snapshot.get(p.code, {}).get('close', p.entry_price)
         positions.append({
             'code': p.code,
+            'name': names.get(p.code, ''),
             'entry_date': str(p.entry_date),
             'entry_price': p.entry_price,
             'shares': p.shares,
@@ -165,100 +238,119 @@ async def sim_trader_status():
 
 @router.post("/api/sim-trader/execute")
 async def sim_trader_execute():
-    """手动触发一次买卖（用于测试）"""
     today = date.today()
-
     if not is_trading_day(today):
-        return {'status': 'error', 'message': f'{today} 不是交易日'}
-
+        trade_dates = get_trading_dates()
+        past_dates = [d for d in trade_dates if d < today]
+        if not past_dates:
+            return {'status': 'error', 'message': f'{today} 不是交易日，且无历史交易日数据'}
+        today = max(past_dates)
+        log.info(f"手动触发: {date.today()} 非交易日，回退到最近交易日 {today}")
     log.info(f"手动触发模拟盘交易: {today}")
+    sync_broadcast({'type': 'log', 'level': 'info', 'msg': f'手动触发: {today}，后台执行中...'})
 
-    # 加载数据
-    from app.sim_trader.data_loader import (
-        load_all_bars, get_daily_snapshot, load_sh_index,
-        generate_today_signals, augment_bars_with_realtime
-    )
-    from app.sim_trader.config import SAME_STOCK_COOLDOWN, STRATEGY_NAME
+    def _run():
+        try:
+            from app.backtest.simple_runner import load_daily_bars
+            from app.sim_trader.data_loader import get_daily_snapshot
+            engine = get_engine()
+            bars = load_daily_bars(end=today)
+            snapshot = get_daily_snapshot(bars, today)
+            trading_dates = get_trading_dates()
+            sell_count = 0
+            if engine.auto_sell:
+                engine.sell_phase(today, snapshot, trading_dates)
+                sell_count = len([t for t in engine.trades if t.exit_date == today])
 
-    engine = get_engine()
-    bars = load_all_bars()
-    bars, snapshot = augment_bars_with_realtime(bars, today)
-    sh_idx = load_sh_index()
+            # 买入：通过 TDX 桥接获取 QUANTQQ 信号
+            buy_count = 0
+            log.info(f"买入检查: auto_buy={engine.auto_buy} auto_scan={engine.auto_scan}")
+            if engine.auto_buy and engine.auto_scan:
+                try:
+                    from app.tqsdk.bridge import TdxBridge
+                    bridge = TdxBridge()
+                    sig_result = bridge.execute_screen(
+                        end_time=today.strftime('%Y%m%d'),
+                        lookback_days=500,
+                    )
+                    if sig_result.get('status') == 'ok':
+                        matched = sig_result.get('matched', [])
+                        log.info(f'QUANTQQ选股: {len(matched)}只')
+                        from app.sim_trader.config import SAME_STOCK_COOLDOWN
+                        paused = engine.pause_until is not None and today <= engine.pause_until
+                        if not paused and matched:
+                            for code in matched:
+                                code_num = code.split('.')[0] if '.' in code else code
+                                px = snapshot.get(code_num, {}).get('close', 0)
+                                if px <= 0:
+                                    continue
+                                if any(t.code == code_num and (today - t.entry_date).days <= SAME_STOCK_COOLDOWN
+                                       for t in engine.trades):
+                                    continue
+                                if engine.execute_buy(today, code_num, px, strategy_name=f'手动-{STRATEGY_NAME}'):
+                                    buy_count += 1
+                except Exception as e:
+                    log.warning(f'QUANTQQ选股失败: {e}')
 
-    # 生成当日信号
-    signals = generate_today_signals(bars, today) if engine.auto_scan else []
-    trading_dates = get_trading_dates()
+            engine.record(today, snapshot)
+            sync_broadcast({'type': 'sim_trader_update', 'today': str(today), 'buy_count': buy_count, 'sell_count': sell_count,
+                'equity': round(engine.total_equity(snapshot), 2), 'cash': round(engine.cash, 2), 'positions': engine.position_count})
+            sync_broadcast({'type': 'done', 'msg': f'手动触发完成: 持仓{engine.position_count}笔 本次买入{buy_count}笔 卖出{sell_count}笔'})
+        except Exception as e:
+            log.error(f"手动触发异常: {e}")
+            sync_broadcast({'type': 'error', 'msg': f'手动触发失败: {e}'})
 
-    # 卖出（尊重开关）
-    if engine.auto_sell:
-        engine.sell_phase(today, snapshot, trading_dates)
-        sell_count = len([t for t in engine.trades if t.exit_date == today])
-    else:
-        sell_list = engine.check_stops(today, snapshot, trading_dates, readonly=True)
-        sell_count = len(sell_list)
-        log.info(f"手动执行: AUTO_SELL=False，应卖出{sell_count}笔（未执行）")
-
-    # 买入（尊重开关）
-    buy_count = 0
-    if engine.auto_buy:
-        paused = engine.pause_until is not None and today <= engine.pause_until
-        if not paused and signals:
-            max_new = int(engine.cash / engine.max_buy_amount()) + 1
-            for code, price in signals[:max_new]:
-                if any(t.code == code and (today - t.entry_date).days <= SAME_STOCK_COOLDOWN
-                       for t in engine.trades):
-                    continue
-                if engine.execute_buy(today, code, price, strategy_name=STRATEGY_NAME):
-                    buy_count += 1
-    elif signals:
-        log.info(f"手动执行: AUTO_BUY=False，应买入{len(signals)}笔（未执行）")
-
-    # 记录
-    engine.record(today, snapshot)
-
-    sync_broadcast({
-        'type': 'sim_trader_update',
-        'today': str(today),
-        'buy_count': buy_count,
-        'sell_count': sell_count,
-        'equity': round(engine.total_equity(snapshot), 2),
-        'cash': round(engine.cash, 2),
-        'positions': engine.position_count,
-    })
-
-    return {
-        'status': 'ok',
-        'today': str(today),
-        'signals_today': len(signals),
-        'bought': buy_count,
-        'sold': sell_count,
-        'equity': round(engine.total_equity(snapshot), 2),
-        'cash': round(engine.cash, 2),
-        'positions': engine.position_count,
-    }
+    threading.Thread(target=_run, daemon=True).start()
+    return {'status': 'started', 'message': '手动触发已启动，结果将通过WebSocket推送'}
 
 
 @router.get("/api/sim-trader/trades")
 async def sim_trader_trades(limit: int = 50):
     engine = get_engine()
+    names = _load_stock_names()
+    today = date.today()
+
+    # 已完成交易
     trades = engine.trades[-limit:]
-    return {
-        'status': 'ok',
-        'trades': [{
-            'code': t.code,
-            'entry': str(t.entry_date),
-            'exit': str(t.exit_date),
-            'entry_px': t.entry_price,
-            'exit_px': t.exit_price,
-            'shares': t.shares,
-            'ret_pct': round(t.return_pct, 2),
-            'profit': round(t.profit_amount, 0),
-            'reason': t.exit_reason,
-            'hold_days': t.hold_days,
-            'entry_reason': t.entry_reason,
-            'exit_timing': t.exit_timing,
-        } for t in reversed(trades)]
-    }
+    result = []
+    for t in reversed(trades):
+        result.append({
+            'code': t.code, 'name': names.get(t.code, ''),
+            'entry': str(t.entry_date), 'exit': str(t.exit_date),
+            'entry_px': t.entry_price, 'exit_px': t.exit_price,
+            'shares': t.shares, 'ret_pct': round(t.return_pct, 2),
+            'profit': round(t.profit_amount, 0), 'reason': t.exit_reason,
+            'hold_days': t.hold_days, 'entry_reason': t.entry_reason,
+            'exit_timing': t.exit_timing, 'status': '已平仓',
+        })
+
+    # 当前持仓（买入记录，尚未卖出）
+    try:
+        daily_dir = ROOT_DIR / "data" / "parquet" / "daily"
+        for p in engine.active_positions():
+            cur_px = p.entry_price
+            f = daily_dir / f"{p.code}.parquet"
+            if f.exists():
+                df_snap = pd.read_parquet(str(f), columns=['date', 'close'])
+                df_snap['date'] = pd.to_datetime(df_snap['date']).dt.date
+                row = df_snap[df_snap['date'] == today]
+                if not row.empty:
+                    cur_px = float(row.iloc[0]['close'])
+            ret = (cur_px / p.entry_price - 1) * 100
+            result.append({
+                'code': p.code, 'name': names.get(p.code, ''),
+                'entry': str(p.entry_date), 'exit': '持仓中',
+                'entry_px': p.entry_price, 'exit_px': cur_px,
+                'shares': p.shares, 'ret_pct': round(ret, 2),
+                'profit': round(p.shares * (cur_px - p.entry_price), 0),
+                'reason': '', 'hold_days': (today - p.entry_date).days,
+                'entry_reason': p.strategy_name, 'exit_timing': '',
+                'status': '持仓中',
+            })
+    except Exception:
+        pass
+
+    return {'status': 'ok', 'trades': result}
 
 
 @router.post("/api/sim-trader/reset")
@@ -267,9 +359,11 @@ async def sim_trader_reset():
     global _engine
     with _engine_lock:
         from app.sim_trader.engine import SimTraderEngine
-        from app.sim_trader.store import SimTraderStore
-        SimTraderStore().clear_all()
-        _engine = SimTraderEngine(persist=True)
+        from app.sim_trader.store import JsonSimStore
+        store = JsonSimStore()
+        store._data = {}  # 清空
+        store._save()
+        _engine = SimTraderEngine(store=store)
     log.info("模拟盘已重置")
     return {'status': 'ok', 'message': '模拟盘已重置为初始状态'}
 
