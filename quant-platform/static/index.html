@@ -286,7 +286,6 @@
               <button class="btn btn-sm" onclick="loadBtSimpleConfig()" style="font-size:12px">系统配置</button>
               <button class="btn btn-sm" style="border-color:var(--orange);color:var(--orange);font-size:12px" onclick="resetBtSimpleConfig()">重置</button>
               <button class="btn btn-primary btn-sm" id="btn-simple-bt-save" onclick="saveBtSimpleConfig()" style="font-size:12px">保存配置</button>
-              <button class="btn btn-sm" style="border-color:var(--accent);color:var(--accent);font-size:11px" onclick="applyBtToSystem()" title="将当前回测参数写入实盘系统配置">→ 填入系统</button>
               <button class="btn btn-success btn-sm" id="btn-simple-bt-run" onclick="runSimpleBacktest()" style="font-size:13px;font-weight:bold">开始回测</button>
             </div>
           </div>
@@ -969,64 +968,43 @@
             </div>
           </div>
 
-          <!-- Card: 回测默认参数 -->
+          <!-- Card: 止盈止损参数 -->
           <div class="settings-card">
             <div style="display:flex; justify-content:space-between; align-items:center;">
-              <h4>💰 回测默认参数</h4>
+              <h4>🛡️ 止盈止损参数</h4>
               <div>
-                <button class="btn btn-ghost btn-sm" onclick="saveBacktestSettings()" style="color:var(--accent)">保存此卡</button>
-                <span id="save-backtest-msg" style="font-size:11px;margin-left:6px;color:var(--text2)"></span>
+                <button class="btn btn-ghost btn-sm" onclick="saveRiskSettings()" style="color:var(--accent)">保存此卡</button>
+                <span id="save-risk-msg" style="font-size:11px;margin-left:6px;color:var(--text2)"></span>
               </div>
             </div>
-            <p class="hint">回测页面的默认资金和仓位参数，运行时仍可临时调整</p>
+            <p class="hint">直接写入 config.py，模拟盘和回测同时生效</p>
             <div class="row">
-              <div>
-                <label>初始资金</label>
-                <select id="set-bt-capital">
-                  <option value="500000">50 万</option>
-                  <option value="1000000">100 万</option>
-                  <option value="2000000">200 万</option>
-                  <option value="5000000">500 万</option>
-                </select>
+              <div><label><span class="reason-tag" style="color:#f85149">HS</span> 硬止损%</label><input type="number" id="set-stop" step="0.5"></div>
+            </div>
+            <div style="margin-top:6px">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                <span style="font-size:11px;font-weight:600;color:var(--text2)">阶梯止盈</span>
+                <button class="btn btn-ghost btn-sm" onclick="addRiskTier()" style="font-size:11px;color:var(--accent)">+ 添加档位</button>
+                <button class="btn btn-ghost btn-sm" onclick="delRiskTier()" style="font-size:11px;color:var(--red)">- 删除末档</button>
               </div>
-              <div>
-                <label>单票买入上限 (元)</label>
-                <input type="number" id="set-bt-position-size" step="10000">
-              </div>
+              <div id="set-tp-tiers-container" style="display:flex;flex-direction:column;gap:4px"></div>
             </div>
             <div class="row">
-              <div>
-                <label>连败暂停 (笔)</label>
-                <input type="number" id="set-bt-streak" min="0" max="10" step="1">
-                <p class="hint">连续N笔亏损后暂停交易，0=禁用</p>
-              </div>
-              <div>
-                <label>暂停天数</label>
-                <input type="number" id="set-bt-pause-days" min="1" max="30" step="1">
-              </div>
+              <div><label><span class="reason-tag" style="color:#58a6ff">TR</span> 移动激活%</label><input type="number" id="set-trail-act" step="0.5"></div>
+              <div><label><span class="reason-tag" style="color:#58a6ff">TR</span> 回撤%</label><input type="number" id="set-trail-dd" step="0.5"></div>
             </div>
             <div class="row">
-              <div>
-                <label>连败半仓 (笔)</label>
-                <input type="number" id="set-bt-streak-halve" min="0" max="10" step="1">
-                <p class="hint">连续N笔亏损后仓位减半，0=禁用</p>
-              </div>
-              <div>
-                <label>最小买入金额 (元)</label>
-                <input type="number" id="set-bt-min-buy" min="1000" step="1000">
-              </div>
+              <div><label><span class="reason-tag" style="color:#a371f7">TC</span> 退出天数</label><input type="number" id="set-days" step="1"></div>
+              <div><label><span class="reason-tag" style="color:#a371f7">TC</span> 盈利阈值%</label><input type="number" id="set-days-min-pnl" step="0.5"></div>
+              <div><label><span class="reason-tag" style="color:#8b949e">TF</span> 强制退出天</label><input type="number" id="set-force-days" step="1"></div>
             </div>
             <div class="row">
-              <div>
-                <label>买入时间</label>
-                <input type="text" id="set-bt-buy-time" placeholder="14:52" style="width:100%">
-                <p class="hint">模拟盘定时选股买入</p>
-              </div>
-              <div>
-                <label>卖出时间</label>
-                <input type="text" id="set-bt-sell-time" placeholder="14:54" style="width:100%">
-                <p class="hint">模拟盘定时止盈止损</p>
-              </div>
+              <div><label>连亏半仓 (笔)</label><input type="number" id="set-streak-halve" min="0" step="1"><p class="hint">连亏N笔后仓位减半，0=禁用</p></div>
+              <div><label>连亏暂停 (笔)</label><input type="number" id="set-streak-pause" min="0" step="1"><p class="hint">连亏N笔后暂停买入</p></div>
+              <div><label>暂停天数</label><input type="number" id="set-pause-days" min="1" step="1"></div>
+            </div>
+            <div class="row">
+              <div><label>同股冷却 (天)</label><input type="number" id="set-cooldown" min="0" step="1"><p class="hint">同只股票卖出后N天内不再买入</p></div>
             </div>
           </div>
 
@@ -1255,64 +1233,63 @@
       <!-- ══ 模拟盘 TAB ════════════════════════════════ -->
       <div id="tab-sim-trader">
         <div class="card" style="margin-bottom:12px; padding:10px 14px;">
-          <div style="display:flex; align-items:center; gap:12px">
-            <span style="font-weight:bold; white-space:nowrap">📐 买入策略</span>
-            <select id="sim-strategy" onchange="switchSimStrategy(this.value)" style="flex:1; max-width:280px">
-              <option value="">加载中...</option>
-            </select>
-            <span id="sim-strategy-desc" style="font-size:11px;color:var(--text2)"></span>
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+            <span style="font-weight:bold;white-space:nowrap">📐 买入策略</span>
+            <span style="font-size:12px;color:var(--text1)" id="sim-strategy-display">--</span>
+            <button class="btn btn-ghost btn-sm" onclick="editSimStrategy()" style="font-size:11px;color:var(--accent)">编辑</button>
+            <button class="btn btn-ghost btn-sm" onclick="saveSimStrategy()" style="font-size:11px;color:var(--accent);display:none" id="btn-sim-save-strategy">保存</button>
+            <span id="sim-strategy-msg" style="font-size:11px;color:var(--text2)"></span>
+          </div>
+          <div style="display:none; margin-top:4px" id="sim-strategy-edit">
+            <select id="sim-strategy-select" style="font-size:12px;max-width:280px"><option value="">加载中...</option></select>
           </div>
         </div>
         <!-- 盘中监控 -->
         <div class="card" style="margin-bottom:12px; padding:10px 14px;">
-          <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap">
-            <span style="font-weight:bold; white-space:nowrap">📡 盘中监控</span>
-            <span style="font-size:11px;color:var(--text2)">关闭</span>
-            <label class="toggle-switch" style="margin:0">
-              <input type="checkbox" id="sim-monitor-enabled" onchange="updateSimMonitor()">
-              <span class="toggle-slider"></span>
-            </label>
-            <span style="font-size:11px;color:var(--text2)">开启</span>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px">
+            <span style="font-weight:bold;white-space:nowrap">📡 盘中监控</span>
+            <button class="btn btn-ghost btn-sm" onclick="editSimMonitor()" style="font-size:11px;color:var(--accent)">编辑</button>
+            <button class="btn btn-ghost btn-sm" onclick="saveSimMonitor()" style="font-size:11px;color:var(--accent);display:none" id="btn-sim-save-monitor">保存</button>
+            <span id="sim-monitor-msg" style="font-size:11px;color:var(--text2)"></span>
             <span id="sim-monitor-status" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#555;margin:0 4px" title="监控状态"></span>
-            <span id="sim-monitor-label" style="font-size:11px;color:var(--text2)">未启动</span>
-            <select id="sim-monitor-mode" onchange="updateSimMonitorMode()" style="font-size:11px;width:auto;height:24px;margin-left:8px">
-              <option value="intraday">盘中执行</option>
-              <option value="close">仅告警</option>
-            </select>
+          </div>
+          <div style="font-size:12px;color:var(--text2)" id="sim-monitor-display">
+            状态: <b id="sim-mon-val" style="color:var(--text1)">--</b>
+            &nbsp;|&nbsp;模式: <b id="sim-mon-mode-val" style="color:var(--text1)">--</b>
+          </div>
+          <div style="display:none; gap:8px; margin-top:4px" id="sim-monitor-edit">
+            <label style="font-size:11px">状态 <select id="sim-edit-mon"><option value="true">开启</option><option value="false">关闭</option></select></label>
+            <label style="font-size:11px">模式 <select id="sim-edit-mon-mode"><option value="intraday">盘中执行</option><option value="close">仅告警</option></select></label>
           </div>
         </div>
         <div class="card" style="margin-bottom:12px; padding:10px 14px;">
-          <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap">
-            <span style="font-weight:bold; white-space:nowrap">🛡️ 执行开关</span>
-            <!-- 卖出 -->
-            <span style="font-size:11px;color:var(--text2)">告警</span>
-            <label class="toggle-switch" style="margin:0">
-              <input type="checkbox" id="sim-auto-sell" onchange="updateSimSwitches()">
-              <span class="toggle-slider"></span>
-            </label>
-            <span style="font-size:11px;color:var(--text2)">卖出</span>
-            <!-- 选股 -->
-            <span style="font-size:11px;color:var(--text2);margin-left:8px">停选</span>
-            <label class="toggle-switch" style="margin:0">
-              <input type="checkbox" id="sim-auto-scan" onchange="updateSimSwitches()">
-              <span class="toggle-slider"></span>
-            </label>
-            <span style="font-size:11px;color:var(--text2)">选股</span>
-            <!-- 买入 -->
-            <span style="font-size:11px;color:var(--text2);margin-left:8px">不买</span>
-            <label class="toggle-switch" style="margin:0">
-              <input type="checkbox" id="sim-auto-buy" onchange="updateSimSwitches()">
-              <span class="toggle-slider"></span>
-            </label>
-            <span style="font-size:11px;color:var(--text2)">买入</span>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px">
+            <span style="font-weight:bold;white-space:nowrap">🛡️ 执行开关</span>
+            <button class="btn btn-ghost btn-sm" onclick="editSimSwitches()" style="font-size:11px;color:var(--accent)">编辑</button>
+            <button class="btn btn-ghost btn-sm" onclick="saveSimSwitches()" style="font-size:11px;color:var(--accent);display:none" id="btn-sim-save-switches">保存</button>
+            <span id="sim-switches-msg" style="font-size:11px;color:var(--text2)"></span>
           </div>
-          <div style="margin-top:4px;padding-top:4px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px">
-            <span style="font-size:11px;color:var(--text2);white-space:nowrap">券商委托</span>
-            <label class="toggle-switch" style="margin:0">
-              <input type="checkbox" id="sim-broker-enabled" onchange="updateSimSwitches()">
-              <span class="toggle-slider"></span>
-            </label>
-            <span style="font-size:10px;color:var(--yellow)">⚠ 开启将通过gateway执行真实委托</span>
+          <div style="display:flex; gap:8px; font-size:12px; color:var(--text2)" id="sim-switches-display">
+            <span>卖出: <b id="sim-sell-val" style="color:var(--text1)">--</b></span>
+            <span>|</span>
+            <span>选股: <b id="sim-scan-val" style="color:var(--text1)">--</b></span>
+            <span>|</span>
+            <span>买入: <b id="sim-buy-val" style="color:var(--text1)">--</b></span>
+          </div>
+          <div style="display:none; gap:8px; margin-top:4px" id="sim-switches-edit">
+            <label style="font-size:11px">卖出 <select id="sim-edit-sell"><option value="true">开</option><option value="false">关</option></select></label>
+            <label style="font-size:11px">选股 <select id="sim-edit-scan"><option value="true">开</option><option value="false">关</option></select></label>
+            <label style="font-size:11px">买入 <select id="sim-edit-buy"><option value="true">开</option><option value="false">关</option></select></label>
+          </div>
+        </div>
+        <!-- 止盈止损参数 -->
+        <div class="card" style="margin-bottom:12px; padding:10px 14px;">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px">
+            <span style="font-weight:bold;white-space:nowrap">⚙️ 止盈止损</span>
+            <span style="font-size:10px;color:var(--text2)">参数来自 config.py，模拟盘和回测共用</span>
+          </div>
+          <div style="display:flex; gap:12px; flex-wrap:wrap; font-size:12px" id="sim-risk-params">
+            <span style="color:var(--text2)">加载中...</span>
           </div>
         </div>
         <div class="grid-3" style="margin-bottom:var(--gap)">
@@ -1339,7 +1316,7 @@
           <div class="tbl-wrap">
             <table>
               <thead><tr>
-                <th>代码</th><th>买入日期</th><th>买入价</th><th>当前价</th>
+                <th>代码</th><th>简称</th><th>买入日期</th><th>买入价</th><th>当前价</th>
                 <th>盈亏%</th><th>持仓量</th><th>市值</th>
               </tr></thead>
               <tbody id="sim-pos-tbody">
@@ -1354,11 +1331,11 @@
           <div class="tbl-wrap" style="max-height:400px; overflow-y:auto">
             <table>
               <thead><tr>
-                <th>代码</th><th>买入日</th><th>卖出日</th><th>买入价</th><th>卖出价</th>
-                <th>盈亏%</th><th>盈亏额</th><th>持仓天</th><th>买入原因</th><th>卖出时机</th><th>退出原因</th>
+                <th>代码</th><th>简称</th><th>买入日</th><th>卖出日</th><th>买入价</th><th>卖出价</th>
+                <th>盈亏%</th><th>盈亏额</th><th>持仓天</th><th>买入原因</th><th>状态</th>
               </tr></thead>
               <tbody id="sim-trade-tbody">
-                <tr><td colspan="12" style="text-align:center;color:var(--text2)">暂无记录</td></tr>
+                <tr><td colspan="11" style="text-align:center;color:var(--text2)">暂无记录</td></tr>
               </tbody>
             </table>
           </div>

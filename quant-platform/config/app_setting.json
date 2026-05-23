@@ -18,17 +18,13 @@
     ]
   },
   "risk": {
-    "trailing_stop_activate_pct": 3.0,
-    "trailing_stop_drawdown_pct": 1.0,
+    "trailing_stop_activate_pct": 5.0,
+    "trailing_stop_drawdown_pct": 2.0,
     "hard_stop_loss_pct": -6.0,
     "take_profit_tiers": [
       {
         "profit_pct": 0.03,
-        "sell_ratio": 0.1
-      },
-      {
-        "profit_pct": 0.06,
-        "sell_ratio": 0.2
+        "sell_ratio": 0.3
       }
     ],
     "time_exit_days": 7,
@@ -115,7 +111,7 @@
   "data": {
     "history_years": 1,
     "update_time": "17:00",
-    "auto_sync": "daily",
+    "auto_sync": "off",
     "default_exchanges": [
       "SSE",
       "SZSE"
@@ -141,15 +137,11 @@
     "take_profit_tiers": [
       {
         "profit_pct": 0.03,
-        "sell_ratio": 0.1
-      },
-      {
-        "profit_pct": 0.06,
-        "sell_ratio": 0.2
+        "sell_ratio": 0.3
       }
     ],
-    "trail_activate": 0.03,
-    "trail_dd": 0.01,
+    "trail_activate": 0.05,
+    "trail_dd": 0.02,
     "time_exit_days": 7,
     "time_exit_profit": 0.03,
     "time_force_days": 12,
@@ -173,7 +165,7 @@
     "redis_ttl_seconds": 600,
     "enable_ths_concepts": true,
     "enable_tushare_concepts": true,
-    "last_updated": "05/19 15:31"
+    "last_updated": "05/22 14:21"
   },
   "风险": {
     "hard_stop_loss_pct": -6.0,
@@ -192,5 +184,13 @@
         "sell_ratio": 0.25
       }
     ]
+  },
+  "sim_trader": {
+    "auto_sell": true,
+    "auto_scan": true,
+    "auto_buy": true,
+    "monitor_enabled": true,
+    "monitor_mode": "intraday",
+    "strategy_name": "QUANTQQ"
   }
 }

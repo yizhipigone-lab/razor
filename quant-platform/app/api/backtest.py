@@ -638,6 +638,66 @@ async def apply_bt_to_system():
         return {"status": "error", "message": str(e)}
 
 
+@router.post("/api/settings/risk-params")
+async def save_risk_params(body: dict):
+    """直接更新 config.py 中的止盈止损参数"""
+    import app.sim_trader.config as sc
+    try:
+        if 'hard_stop' in body:
+            sc.HARD_STOP = float(body['hard_stop'])
+        if 'trail_activate' in body:
+            sc.TRAIL_ACTIVATE = float(body['trail_activate'])
+        if 'trail_dd' in body:
+            sc.TRAIL_DD = float(body['trail_dd'])
+        if 'time_exit_days' in body:
+            sc.TIME_EXIT_DAYS = int(body['time_exit_days'])
+        if 'time_exit_profit' in body:
+            sc.TIME_EXIT_PROFIT = float(body['time_exit_profit'])
+        if 'time_force_days' in body:
+            sc.TIME_FORCE_DAYS = int(body['time_force_days'])
+        if 'loss_streak_halve' in body:
+            sc.LOSS_STREAK_HALVE = int(body['loss_streak_halve'])
+        if 'loss_streak_pause' in body:
+            sc.LOSS_STREAK_PAUSE = int(body['loss_streak_pause'])
+        if 'pause_days' in body:
+            sc.PAUSE_DAYS = int(body['pause_days'])
+        if 'same_stock_cooldown' in body:
+            sc.SAME_STOCK_COOLDOWN = int(body['same_stock_cooldown'])
+        if 'take_profit_tiers' in body:
+            sc.TAKE_PROFIT_TIERS = body['take_profit_tiers']
+
+        from core.settings import settings
+        settings.reload()
+        risk = settings._data.get('risk', {})
+        risk['hard_stop_loss_pct'] = sc.HARD_STOP * 100
+        risk['trailing_stop_activate_pct'] = sc.TRAIL_ACTIVATE * 100
+        risk['trailing_stop_drawdown_pct'] = sc.TRAIL_DD * 100
+        risk['time_exit_days'] = sc.TIME_EXIT_DAYS
+        risk['time_exit_min_profit_pct'] = sc.TIME_EXIT_PROFIT * 100
+        risk['time_exit_force_days'] = sc.TIME_FORCE_DAYS
+        risk['loss_streak_halve'] = sc.LOSS_STREAK_HALVE
+        risk['loss_streak_pause'] = sc.LOSS_STREAK_PAUSE
+        risk['pause_days'] = sc.PAUSE_DAYS
+        risk['same_stock_cooldown'] = sc.SAME_STOCK_COOLDOWN
+        risk['take_profit_tiers'] = [
+            {'profit_pct': t['profit_pct'], 'sell_ratio': t['sell_ratio']}
+            for t in sc.TAKE_PROFIT_TIERS
+        ]
+        settings._data['risk'] = risk
+        settings._data['backtest'] = {**settings._data.get('backtest', {}),
+            'hard_stop': sc.HARD_STOP, 'trail_activate': sc.TRAIL_ACTIVATE,
+            'trail_dd': sc.TRAIL_DD, 'time_exit_days': sc.TIME_EXIT_DAYS,
+            'time_exit_profit': sc.TIME_EXIT_PROFIT, 'time_force_days': sc.TIME_FORCE_DAYS,
+            'take_profit_tiers': sc.TAKE_PROFIT_TIERS,
+        }
+        settings.save()
+        log.info("止盈止损参数已更新到 config.py")
+        return {"status": "ok", "message": "止盈止损参数已保存"}
+    except Exception as e:
+        log.error(f"保存止盈止损参数失败: {e}")
+        return {"status": "error", "message": str(e)}
+
+
 @router.post("/api/backtest/run-simple")
 async def run_simple_backtest(body: dict):
     """执行日线收盘价回测"""

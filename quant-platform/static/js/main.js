@@ -74,6 +74,312 @@ function toggleExchChip(type, val) {
   }
 }
 
+async function loadSimTraderStatus() {
+  try {
+    const r = await fetch('/api/sim-trader/status').then(r => r.json());
+    if (r.status === 'ok') {
+      document.getElementById('sim-equity').textContent = (r.equity || 0).toLocaleString();
+      document.getElementById('sim-cash').textContent = (r.cash || 0).toLocaleString();
+      const totalBuys = (r.trade_count || 0) + (r.position_count || 0);
+      document.getElementById('sim-counts').textContent = (r.position_count || 0) + ' / ' + totalBuys;
+      document.getElementById('sim-losses').textContent = r.consecutive_losses || 0;
+      document.getElementById('sim-paused').textContent = r.paused ? '暂停中' : '正常';
+      document.getElementById('sim-today').textContent = r.today || '--';
+      // 持仓表格
+      const tbody = document.getElementById('sim-pos-tbody');
+      const positions = r.positions || [];
+      if (tbody) {
+        tbody.innerHTML = positions.length > 0
+          ? positions.map(p =>
+            '<tr><td>' + p.code + '</td><td>' + (p.name || '') + '</td><td>' + (p.entry_date || '--') + '</td><td>' + (p.entry_price || 0).toFixed(2) + '</td><td>' + (p.current_price || 0).toFixed(2) + '</td><td style=\"color:' + ((p.profit_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)') + '\">' + ((p.profit_pct || 0) >= 0 ? '+' : '') + (p.profit_pct || 0).toFixed(2) + '%</td><td>' + (p.remaining || p.shares || 0) + '</td><td>' + Number(p.market_value || 0).toLocaleString() + '</td></tr>'
+          ).join('')
+          : '<tr><td colspan=\"8\" style=\"text-align:center;color:var(--text2)\">暂无持仓</td></tr>';
+      }
+    }
+  } catch(e) { console.error('loadSimTraderStatus:', e); }
+}
+function renderStages(tiers) { /* stub */ }
+function initLogDates() { /* stub */ }
+function loadSimLogs() { /* stub */ }
+function appendSimLog(msg) { addLog('info', msg.msg || JSON.stringify(msg)); }
+async function loadSimRiskParams() {
+  try {
+    const resp = await fetch('/api/backtest/simple-config').then(r => r.json());
+    const sys = resp.system_config || {};
+    const tp = (sys.take_profit_tiers || [{}])[0];
+    const tags = [
+      { color: '#f85149', label: 'HS', text: '硬止损 ' + ((sys.hard_stop||0)*100).toFixed(0) + '%' },
+      { color: '#d29922', label: 'TP1', text: '止盈 +' + ((tp.profit_pct||0)*100).toFixed(0) + '% 卖' + ((tp.sell_ratio||0)*100).toFixed(0) + '%' },
+      { color: '#58a6ff', label: 'TR', text: '移动止盈 激活' + ((sys.trail_activate||0)*100).toFixed(0) + '% 回撤' + ((sys.trail_dd||0)*100).toFixed(0) + '%' },
+      { color: '#a371f7', label: 'TC', text: '时间退出 ' + (sys.time_exit_days||0) + '天 盈利>' + ((sys.time_exit_profit||0)*100).toFixed(0) + '%' },
+      { color: '#8b949e', label: 'TF', text: '强制退出 ' + (sys.time_force_days||0) + '天' },
+    ];
+    const el = document.getElementById('sim-risk-params');
+    if (el) el.innerHTML = tags.map(t =>
+      '<span style=\"white-space:nowrap\"><span class=\"reason-tag\" style=\"color:' + t.color + ';font-weight:600\">' + t.label + '</span> ' + t.text + '</span>'
+    ).join(' &nbsp;|&nbsp; ');
+  } catch(e) {}
+}
+
+function switchSimStrategy(val) { /* deprecated - use edit/save */ }
+
+async function loadSimTrades() {
+  try {
+    const r = await fetch('/api/sim-trader/trades').then(r => r.json());
+    const tbody = document.getElementById('sim-trade-tbody');
+    if (tbody && r.trades) {
+      tbody.innerHTML = r.trades.length > 0
+        ? r.trades.map(t => {
+            const statusColor = t.status === '持仓中' ? 'var(--accent)' : 'var(--text2)';
+            return '<tr><td>' + t.code + '</td><td>' + (t.name || '') + '</td><td>' + t.entry + '</td><td>' + t.exit + '</td><td>' + t.entry_px + '</td><td>' + t.exit_px + '</td><td style=\"color:' + (t.ret_pct >= 0 ? 'var(--green)' : 'var(--red)') + '\">' + (t.ret_pct >= 0 ? '+' : '') + t.ret_pct.toFixed(2) + '%</td><td>' + Math.round(t.profit).toLocaleString() + '</td><td>' + t.hold_days + '</td><td>' + (t.entry_reason || '') + '</td><td style=\"color:' + statusColor + '\">' + (t.status || '') + '</td></tr>';
+          }).join('')
+        : '<tr><td colspan=\"11\" style=\"text-align:center;color:var(--text2)\">暂无记录</td></tr>';
+    }
+  } catch(e) {}
+}
+
+async function loadSimStrategy() {
+  try {
+    const r = await fetch('/api/sim-trader/config').then(r => r.json());
+    if (r.status === 'ok') {
+      document.getElementById('sim-strategy-display').textContent = r.current_strategy || '--';
+      const sel = document.getElementById('sim-strategy-select');
+      if (sel && r.strategies) {
+        const pyOpts = r.strategies.map(s => '<option value=\"' + s.name + '\" data-type=\"python\">' + s.name + '</option>').join('');
+        sel.innerHTML = pyOpts + '<optgroup label=\"TDX 策略\"><option value=\"QUANTQQ\" data-type=\"tdx\">QUANTQQ</option></optgroup>';
+      }
+    }
+  } catch(e) {}
+}
+
+function editSimStrategy() {
+  const sel = document.getElementById('sim-strategy-select');
+  sel.value = document.getElementById('sim-strategy-display').textContent;
+  document.getElementById('sim-strategy-display').style.display = 'none';
+  document.getElementById('sim-strategy-edit').style.display = 'block';
+  document.getElementById('btn-sim-save-strategy').style.display = 'inline';
+}
+
+async function saveSimStrategy() {
+  const sel = document.getElementById('sim-strategy-select');
+  const name = sel.value;
+  const opt = sel.selectedOptions[0];
+  const type = opt ? opt.dataset.type : 'python';
+  try {
+    const r = await fetch('/api/settings/sim-switches', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({strategy_name: name, strategy_type: type}) }).then(r => r.json());
+    document.getElementById('sim-strategy-display').textContent = name;
+    document.getElementById('sim-strategy-display').style.display = 'inline';
+    document.getElementById('sim-strategy-edit').style.display = 'none';
+    document.getElementById('btn-sim-save-strategy').style.display = 'none';
+    const msg = document.getElementById('sim-strategy-msg');
+    if (msg) { msg.textContent = r.status === 'ok' ? '已保存' : '失败'; msg.style.color = r.status === 'ok' ? 'var(--green)' : 'var(--red)'; }
+  } catch(e) {
+    document.getElementById('sim-strategy-msg').textContent = '网络错误';
+  }
+}
+async function loadSimMonitor() {
+  try {
+    const r = await fetch('/api/sim-trader/status').then(r => r.json());
+    if (r.status === 'ok') {
+      document.getElementById('sim-mon-val').textContent = r.monitor_enabled ? '开启' : '关闭';
+      document.getElementById('sim-mon-mode-val').textContent = r.monitor_mode === 'intraday' ? '盘中执行' : '仅告警';
+    }
+  } catch(e) {}
+}
+
+function editSimMonitor() {
+  document.getElementById('sim-monitor-display').style.display = 'none';
+  document.getElementById('sim-monitor-edit').style.display = 'flex';
+  document.getElementById('btn-sim-save-monitor').style.display = 'inline';
+  document.getElementById('sim-edit-mon').value = document.getElementById('sim-mon-val').textContent === '开启' ? 'true' : 'false';
+  document.getElementById('sim-edit-mon-mode').value = document.getElementById('sim-mon-mode-val').textContent === '盘中执行' ? 'intraday' : 'close';
+}
+
+async function saveSimMonitor() {
+  const body = {
+    monitor_enabled: document.getElementById('sim-edit-mon').value === 'true',
+    monitor_mode: document.getElementById('sim-edit-mon-mode').value,
+  };
+  try {
+    const r = await fetch('/api/settings/sim-switches', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) }).then(r => r.json());
+    const msg = document.getElementById('sim-monitor-msg');
+    if (msg) { msg.textContent = r.status === 'ok' ? '已保存' : '失败'; msg.style.color = r.status === 'ok' ? 'var(--green)' : 'var(--red)'; }
+    document.getElementById('sim-mon-val').textContent = body.monitor_enabled ? '开启' : '关闭';
+    document.getElementById('sim-mon-mode-val').textContent = body.monitor_mode === 'intraday' ? '盘中执行' : '仅告警';
+    document.getElementById('sim-monitor-display').style.display = 'block';
+    document.getElementById('sim-monitor-edit').style.display = 'none';
+    document.getElementById('btn-sim-save-monitor').style.display = 'none';
+  } catch(e) {
+    const msg = document.getElementById('sim-monitor-msg');
+    if (msg) { msg.textContent = '网络错误'; msg.style.color = 'var(--red)'; }
+  }
+}
+
+async function loadSimSwitches() {
+  try {
+    const r = await fetch('/api/sim-trader/status').then(r => r.json());
+    if (r.status === 'ok') {
+      document.getElementById('sim-sell-val').textContent = r.auto_sell ? '开' : '关';
+      document.getElementById('sim-scan-val').textContent = r.auto_scan ? '开' : '关';
+      document.getElementById('sim-buy-val').textContent = r.auto_buy ? '开' : '关';
+    }
+  } catch(e) {}
+}
+
+function editSimSwitches() {
+  const disp = document.getElementById('sim-switches-display');
+  const edit = document.getElementById('sim-switches-edit');
+  const saveBtn = document.getElementById('btn-sim-save-switches');
+  if (disp) disp.style.display = 'none';
+  if (edit) edit.style.display = 'flex';
+  if (saveBtn) saveBtn.style.display = 'inline';
+  // pre-fill from current display values
+  document.getElementById('sim-edit-sell').value = document.getElementById('sim-sell-val').textContent === '开' ? 'true' : 'false';
+  document.getElementById('sim-edit-scan').value = document.getElementById('sim-scan-val').textContent === '开' ? 'true' : 'false';
+  document.getElementById('sim-edit-buy').value = document.getElementById('sim-buy-val').textContent === '开' ? 'true' : 'false';
+}
+
+async function saveSimSwitches() {
+  const body = {
+    auto_sell: document.getElementById('sim-edit-sell').value === 'true',
+    auto_scan: document.getElementById('sim-edit-scan').value === 'true',
+    auto_buy: document.getElementById('sim-edit-buy').value === 'true',
+  };
+  try {
+    const r = await fetch('/api/settings/sim-switches', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) }).then(r => r.json());
+    const msg = document.getElementById('sim-switches-msg');
+    if (msg) { msg.textContent = r.status === 'ok' ? '已保存' : '失败'; msg.style.color = r.status === 'ok' ? 'var(--green)' : 'var(--red)'; }
+    // update display
+    document.getElementById('sim-sell-val').textContent = body.auto_sell ? '开' : '关';
+    document.getElementById('sim-scan-val').textContent = body.auto_scan ? '开' : '关';
+    document.getElementById('sim-buy-val').textContent = body.auto_buy ? '开' : '关';
+    // hide edit
+    document.getElementById('sim-switches-display').style.display = 'flex';
+    document.getElementById('sim-switches-edit').style.display = 'none';
+    document.getElementById('btn-sim-save-switches').style.display = 'none';
+  } catch(e) {
+    const msg = document.getElementById('sim-switches-msg');
+    if (msg) { msg.textContent = '网络错误'; msg.style.color = 'var(--red)'; }
+  }
+}
+
+async function executeSimTrader() {
+  const btn = document.getElementById('btn-sim-execute');
+  const resultDiv = document.getElementById('sim-execute-result');
+  if (btn) btn.disabled = true;
+  if (resultDiv) { resultDiv.style.display = 'block'; resultDiv.innerHTML = '<span style=\"color:var(--text2)\">⏳ 正在执行...</span>'; }
+  try {
+    const r = await fetch('/api/sim-trader/execute', { method: 'POST' }).then(r => r.json());
+    if (resultDiv) {
+      const ok = r.status === 'ok';
+      resultDiv.style.background = ok ? 'rgba(63,185,80,0.1)' : 'rgba(248,81,73,0.1)';
+      resultDiv.innerHTML = '<span style=\"color:' + (ok ? 'var(--green)' : 'var(--red)') + '\">' + (r.summary || r.message || JSON.stringify(r)) + '</span>';
+    }
+    loadSimTraderStatus();
+  } catch(e) {
+    if (resultDiv) { resultDiv.style.background = 'rgba(248,81,73,0.1)'; resultDiv.innerHTML = '<span style=\"color:var(--red)\">网络错误: ' + e.message + '</span>'; }
+  }
+  if (btn) btn.disabled = false;
+}
+
+async function resetSimTrader() {
+  if (!confirm('确认重置模拟盘？所有持仓和交易记录将被清空。')) return;
+  try {
+    await fetch('/api/sim-trader/reset', { method: 'POST' });
+    loadSimTraderStatus();
+    addLog('ok', '模拟盘已重置');
+  } catch(e) { addLog('error', '重置失败: ' + e.message); }
+}
+
+function renderRiskTiers(tiers) {
+  const container = document.getElementById('set-tp-tiers-container');
+  if (!container) return;
+  const colors = ['#d29922','#3fb950','#58a6ff','#a371f7','#f59e0b'];
+  container.innerHTML = tiers.map((t, i) => {
+    const c = colors[i % colors.length];
+    return '<div class=\"bt-cfg-grid\" style=\"margin-bottom:4px\">' +
+      '<div class=\"bt-cfg-item\"><label><span class=\"reason-tag\" style=\"color:'+c+'\">TP'+(i+1)+'</span> 止盈%</label><input type=\"number\" class=\"risk-tier-pct\" step=\"0.5\" value=\"'+(t.profit_pct*100).toFixed(1)+'\"></div>' +
+      '<div class=\"bt-cfg-item\"><label><span class=\"reason-tag\" style=\"color:'+c+'\">TP'+(i+1)+'</span> 卖出%</label><input type=\"number\" class=\"risk-tier-ratio\" step=\"5\" value=\"'+(t.sell_ratio*100).toFixed(0)+'\"></div>' +
+      '</div>';
+  }).join('');
+}
+
+function addRiskTier() {
+  const container = document.getElementById('set-tp-tiers-container');
+  if (!container) return;
+  const idx = container.querySelectorAll('.bt-cfg-grid').length;
+  const colors = ['#d29922','#3fb950','#58a6ff','#a371f7','#f59e0b'];
+  const c = colors[idx % colors.length];
+  const div = document.createElement('div');
+  div.className = 'bt-cfg-grid'; div.style.marginBottom = '4px';
+  div.innerHTML =
+    '<div class=\"bt-cfg-item\"><label><span class=\"reason-tag\" style=\"color:'+c+'\">TP'+(idx+1)+'</span> 止盈%</label><input type=\"number\" class=\"risk-tier-pct\" step=\"0.5\" value=\"'+(3+idx*3)+'.0\"></div>' +
+    '<div class=\"bt-cfg-item\"><label><span class=\"reason-tag\" style=\"color:'+c+'\">TP'+(idx+1)+'</span> 卖出%</label><input type=\"number\" class=\"risk-tier-ratio\" step=\"5\" value=\"'+(Math.min(15+idx*10,50))+'\"</div>';
+  container.appendChild(div);
+}
+
+function delRiskTier() {
+  const container = document.getElementById('set-tp-tiers-container');
+  if (!container) return;
+  const rows = container.querySelectorAll('.bt-cfg-grid');
+  if (rows.length <= 1) return;
+  rows[rows.length - 1].remove();
+}
+
+async function saveRiskSettings() {
+  const getv = (id, fn) => { const el = document.getElementById(id); if (!el || el.value === '') return null; return fn ? fn(el.value) : el.value; };
+  const tiers = [];
+  document.querySelectorAll('#set-tp-tiers-container .bt-cfg-grid').forEach(row => {
+    const pct = parseFloat(row.querySelector('.risk-tier-pct')?.value);
+    const ratio = parseFloat(row.querySelector('.risk-tier-ratio')?.value);
+    if (!isNaN(pct) && !isNaN(ratio) && pct > 0 && ratio > 0) {
+      tiers.push({ profit_pct: pct / 100, sell_ratio: ratio / 100 });
+    }
+  });
+  const body = {
+    hard_stop: getv('set-stop', v => -Math.abs(parseFloat(v)) / 100),
+    take_profit_tiers: tiers.length > 0 ? tiers : [{ profit_pct: 0.03, sell_ratio: 0.30 }],
+    trail_activate: getv('set-trail-act', v => parseFloat(v) / 100),
+    trail_dd: getv('set-trail-dd', v => parseFloat(v) / 100),
+    time_exit_days: getv('set-days', v => parseInt(v)),
+    time_exit_profit: getv('set-days-min-pnl', v => parseFloat(v) / 100),
+    time_force_days: getv('set-force-days', v => parseInt(v)),
+    loss_streak_halve: getv('set-streak-halve', v => parseInt(v)),
+    loss_streak_pause: getv('set-streak-pause', v => parseInt(v)),
+    pause_days: getv('set-pause-days', v => parseInt(v)),
+    same_stock_cooldown: getv('set-cooldown', v => parseInt(v)),
+  };
+  try {
+    const r = await fetch('/api/settings/risk-params', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) }).then(r => r.json());
+    const msg = document.getElementById('save-risk-msg');
+    if (msg) { msg.textContent = r.status === 'ok' ? '✓ 已保存' : '✗ 失败'; msg.style.color = r.status === 'ok' ? 'var(--green)' : 'var(--red)'; }
+  } catch(e) {
+    const msg = document.getElementById('save-risk-msg');
+    if (msg) { msg.textContent = '✗ 网络错误'; msg.style.color = 'var(--red)'; }
+  }
+}
+function renderSearchSpace(data) { /* stub - AI optimizer card */ }
+function saveDataSettings() { /* stub */ }
+function saveSettings() { /* stub */ }
+function saveSearchSpace() { /* stub */ }
+function saveGatewaySettings() { /* stub */ }
+function loadReportsPage() { /* stub */ }
+function loadReportsList() { /* stub */ }
+function downloadModalMD() { /* stub */ }
+function downloadViewerMD() { /* stub */ }
+function searchStockForReport() { /* stub */ }
+function openNewReportSearch() { /* stub */ }
+function closeAiReport() { /* stub */ }
+function addWatchlist() { /* stub */ }
+function loadWatchlist() { /* stub */ }
+function refreshHotSector() { /* stub */ }
+function loadHotSectorData() { /* stub */ }
+function queryHotStockScore() { /* stub */ }
+function doTdxTranslate() { /* stub */ }
+function closeTdxModal() { /* stub */ }
+function closeConstituentModal() { /* stub */ }
+function loadSectorHierarchy() { /* stub */ }
+
 function switchTab(name) {
   console.log('switchTab called with name:', name);
   // 更可靠的按钮激活判断方法
@@ -95,7 +401,7 @@ function switchTab(name) {
   if (name === 'backtest') { loadBacktestCapitalDefaults(); loadBtSimpleConfig(); }
   if (name === 'ai-backtest') { loadBacktestCapitalDefaults(); initAIBacktest(); }
   if (name === 'radar') loadHotSectorData();
-  if (name === 'sim-trader') { loadSimTraderStatus(); initLogDates(); loadSimLogs(); }
+  if (name === 'sim-trader') { loadSimTraderStatus(); initLogDates(); loadSimLogs(); loadSimRiskParams(); loadSimSwitches(); loadSimMonitor(); loadSimStrategy(); loadSimTrades(); }
   if (name === 'tqsdk') { initTqsdkTab(); }
 }
 
@@ -342,6 +648,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
   };
+  // 页面初始化时加载策略列表
+  loadStrategies();
 });
 
 
@@ -403,10 +711,12 @@ function collectRiskParams(prefix) {
   }
 
   // Staged TP
-  const tp1Pct = parseFloat(document.getElementById(prefix+'-tp1-pct').value);
-  const tp1Ratio = parseFloat(document.getElementById(prefix+'-tp1-ratio').value);
-  const tp2Pct = parseFloat(document.getElementById(prefix+'-tp2-pct').value);
-  const tp2Ratio = parseFloat(document.getElementById(prefix+'-tp2-ratio').value);
+  const tp1El = document.getElementById(prefix+'-tp1-pct');
+  const tp2El = document.getElementById(prefix+'-tp2-pct');
+  const tp1Pct = tp1El ? parseFloat(tp1El.value) : NaN;
+  const tp1Ratio = parseFloat((document.getElementById(prefix+'-tp1-ratio') || {}).value);
+  const tp2Pct = tp2El ? parseFloat(tp2El.value) : NaN;
+  const tp2Ratio = parseFloat((document.getElementById(prefix+'-tp2-ratio') || {}).value);
   const tp2All = document.getElementById(prefix+'-tp2-all');
   if (!isNaN(tp1Pct) || !isNaN(tp2Pct)) {
     rp['staged_take_profit'] = [];
@@ -797,7 +1107,8 @@ function handleWS(msg) {
   } else if (msg.type === 'done') {
     addLog('ok', getMsg(msg));
     hideProgress('dl');
-    document.getElementById('dl-done').style.display = 'block';
+    const dlDone = document.getElementById('dl-done');
+    if (dlDone) dlDone.style.display = 'block';
   } else if (msg.type === 'log') {
     addLog(msg.level || 'info', getMsg(msg));
   } else if (msg.type === 'info') {
@@ -1083,15 +1394,16 @@ function updateProgress(ctx, step, total, msg) {
   const msgEl = document.getElementById(`${prefix}-msg`);
   if (!wrap) return;
   wrap.classList.add('active');
-  fill.style.width = `${Math.round(step / total * 100)}%`;
-  msgEl.textContent = msg;
+  if (fill) fill.style.width = `${Math.round(step / total * 100)}%`;
+  if (msgEl) msgEl.textContent = msg;
 }
 function hideProgress(ctx) {
   // 统一处理所有上下文的进度条隐藏
   if (ctx === 'simple-bt') {
     const wrap = document.getElementById('simple-bt-progress');
     if (wrap) wrap.style.display = 'none';
-    document.getElementById('btn-simple-bt-run').disabled = false;
+    const runBtn = document.getElementById('btn-simple-bt-run');
+    if (runBtn) runBtn.disabled = false;
     return;
   }
   const prefix = ctx === 'backtest' ? 'bt' : ctx === 'dl' ? 'dl' : 'scan';
@@ -1153,9 +1465,14 @@ function renderStrategyList() {
     </div>
   `).join('');
   
-  const options = factoryStrategies.filter(s => s.is_active).map(s => `<option value="${s.name}">${s.name}</option>`).join('');
-  document.querySelectorAll('#bt-strategy, #scan-strategy, #ai-bt-strategy').forEach(el => {
-    if(el) el.innerHTML = options;
+  const pyOpts = factoryStrategies.filter(s => s.is_active).map(s => `<option value="${s.name}">${s.name}</option>`).join('');
+  const tdxOpt = '<optgroup label=\"TDX 策略\"><option value=\"QUANTQQ\" data-strategy-type=\"tdx\">QUANTQQ</option></optgroup>';
+  // AI 回测不支持 TDX，仅 Python
+  document.querySelectorAll('#bt-strategy, #scan-strategy, #sim-strategy, #sim-strategy-select').forEach(el => {
+    if(el) el.innerHTML = pyOpts + tdxOpt;
+  });
+  document.querySelectorAll('#ai-bt-strategy').forEach(el => {
+    if(el) el.innerHTML = pyOpts;
   });
 }
 
@@ -2359,9 +2676,16 @@ async function loadSettings() {
     setVal('set-stop', r.hard_stop_loss_pct);
     setVal('set-days', r.time_exit_days);
     setVal('set-days-min-pnl', r.time_exit_min_profit_pct);
+    // TP tiers — 动态渲染
+    renderRiskTiers(r.take_profit_tiers || [{profit_pct: 0.03, sell_ratio: 0.30}]);
     setVal('set-break-act', r.breakeven_threshold_pct);
     setVal('set-break-stop', r.breakeven_stop_pnl_pct);
     setVal('set-force-days', r.time_exit_force_days || 10);
+    // 风控参数
+    setVal('set-streak-halve', r.loss_streak_halve ?? 3);
+    setVal('set-streak-pause', r.loss_streak_pause ?? 5);
+    setVal('set-pause-days', r.pause_days ?? 3);
+    setVal('set-cooldown', r.same_stock_cooldown ?? 20);
     // ATR 动态止损
     const atrStop = r.use_atr_stop === true;
     setVal('set-atr-stop', atrStop, 'checked');
@@ -2386,16 +2710,6 @@ async function loadSettings() {
     const opt = data.optimizer || {};
     renderSearchSpace(opt.search_space || {});
 
-    // 加载回测默认参数
-    const bt = data.backtest || {};
-    setVal('set-bt-capital', bt.initial_capital || 1000000);
-    setVal('set-bt-position-size', bt.position_size || 50000);
-    setVal('set-bt-streak', bt.streak_pause ?? 5);
-    setVal('set-bt-pause-days', bt.pause_days ?? 3);
-    setVal('set-bt-streak-halve', bt.streak_halve ?? 3);
-    setVal('set-bt-min-buy', bt.min_buy_amount || 5000);
-    document.getElementById('set-bt-buy-time').value = bt.buy_time || '14:52';
-    document.getElementById('set-bt-sell-time').value = bt.sell_time || '14:54';
   } catch(e) { console.error('Async error:', e); }
 
   // 加载 API Key（脱敏显示）
@@ -3134,23 +3448,6 @@ function initTqsdkTab() {
       String(prev.getDate()).padStart(2, '0');
   }
   loadTqsdkHistory();
-}
-
-function showProgress(id, msg) {
-  const wrap = document.getElementById(id + '-progress');
-  if (wrap) wrap.style.display = 'block';
-  const msgEl = document.getElementById(id + '-progress-msg');
-  if (msgEl) msgEl.textContent = msg || '';
-}
-
-function hideProgress(id) {
-  const wrap = document.getElementById(id + '-progress');
-  if (wrap) wrap.style.display = 'none';
-}
-
-function updateProgressFill(id, step, total) {
-  const fill = document.getElementById(id + '-progress-fill');
-  if (fill) fill.style.width = total > 0 ? Math.round(step / total * 100) + '%' : '0%';
 }
 
 function toggleTqsdkButtons(running) {

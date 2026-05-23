@@ -244,33 +244,32 @@ async def sync_index_data():
 
     def _do_sync_index():
         try:
-            from app.data_manager.qmt_index_sync import sync_index_daily_qmt
+            from app.data_manager.tushare_sync import tushare_sync_manager
 
             def _cb(curr, total, msg):
                 sync_broadcast({"type": "progress", "step": curr, "total": total, "msg": msg})
                 sync_broadcast({"type": "log", "level": "info", "msg": f"[{curr}/{total}] {msg}"})
 
-            # ── 方案A: QMT Proxy 优先 ────────────────────────────
+            # ── 方案A: Tushare 优先（与个股日线数据源一致）─────────
             sync_broadcast({"type": "log", "level": "info",
-                            "msg": "📈 [QMT] 开始同步全量指数日线数据（14支指数）..."})
-            ok = sync_index_daily_qmt(progress_cb=_cb)
-            source = "QMT"
+                            "msg": "📈 [Tushare] 开始同步全量指数日线数据..."})
+            ok = tushare_sync_manager.sync_index_daily(progress_cb=_cb)
+            source = "Tushare"
 
-            # ── 方案B: QMT 失败，降级 Tushare ────────────────────
+            # ── 方案B: Tushare 失败，降级 QMT ────────────────────
             if not ok:
-                from app.data_manager.tushare_sync import tushare_sync_manager
+                from app.data_manager.qmt_index_sync import sync_index_daily_qmt
                 sync_broadcast({"type": "log", "level": "warning",
-                                "msg": "⚠️ QMT 不可用，降级到 Tushare..."})
-                ok = tushare_sync_manager.sync_index_daily(progress_cb=_cb)
-                source = "Tushare"
+                                "msg": "⚠️ Tushare 不可用，降级到 QMT..."})
+                ok = sync_index_daily_qmt(progress_cb=_cb)
+                source = "QMT"
 
             if ok:
                 sync_broadcast({"type": "done",
-                                "msg": f"✅ 市场指数同步完成！（数据来源: {source}）"
-                                       f"沪深300将作为 Regime 检测基准。"})
+                                "msg": f"✅ 市场指数同步完成！（数据来源: {source}）"})
             else:
                 sync_broadcast({"type": "log", "level": "error",
-                                "msg": "❌ 指数同步失败（QMT 和 Tushare 均不可用）"})
+                                "msg": "❌ 指数同步失败（Tushare 和 QMT 均不可用）"})
         except Exception as e:
             log.error(f"指数同步失败: {e}")
             sync_broadcast({"type": "log", "level": "error", "msg": f"❌ 指数同步异常: {e}"})

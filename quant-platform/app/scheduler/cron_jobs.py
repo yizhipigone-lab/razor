@@ -23,15 +23,16 @@ class DataPipelineScheduler:
 
     def _init_monitor(self):
         """根据配置启停盘中监控"""
-        from app.sim_trader.config import MONITOR_ENABLED, MONITOR_MODE
         from app.api.sim_trader import get_engine
         engine = get_engine()
-        if MONITOR_ENABLED and engine.monitor:
-            engine.monitor.mode = MONITOR_MODE
+        # 从 config 重新读取（不能用 import 捕获的旧值）
+        import app.sim_trader.config as _sc2
+        if _sc2.MONITOR_ENABLED and engine.monitor:
+            engine.monitor.mode = _sc2.MONITOR_MODE
             engine.monitor.start()
-            log.info(f"CronScheduler | 盘中监控已自动启动，模式={MONITOR_MODE}")
+            log.info(f"CronScheduler | 盘中监控已自动启动，模式={_sc2.MONITOR_MODE}")
         else:
-            log.info(f"CronScheduler | 盘中监控未自动启动（MONITOR_ENABLED={MONITOR_ENABLED}）")
+            log.info(f"CronScheduler | 盘中监控未自动启动（MONITOR_ENABLED={_sc2.MONITOR_ENABLED}）")
 
     def stop(self):
         if self._scheduler.running:
@@ -169,14 +170,23 @@ class DataPipelineScheduler:
             log.warning(f"CronScheduler | [监控扫描] 异常: {e}")
 
     async def sync_index_daily(self):
-        """盘后自动更新指数日线数据（QMT优先，Tushare兜底）"""
+        """盘后自动更新指数日线数据（Tushare优先，与个股数据源一致）"""
+        try:
+            from app.data_manager.tushare_sync import tushare_sync_manager
+            loop = asyncio.get_running_loop()
+            ok = await loop.run_in_executor(None, tushare_sync_manager.sync_index_daily)
+            if ok:
+                log.info("CronScheduler | [指数更新] Tushare 指数日线同步完成")
+                return
+        except Exception as e:
+            log.warning(f"CronScheduler | [指数更新] Tushare失败: {e}，尝试QMT")
         try:
             from app.data_manager.qmt_index_sync import sync_index_daily_qmt
             if sync_index_daily_qmt():
                 log.info("CronScheduler | [指数更新] QMT dispatch 成功")
                 return
         except Exception as e:
-            log.warning(f"CronScheduler | [指数更新] QMT失败: {e}，回退Tushare")
+            log.warning(f"CronScheduler | [指数更新] QMT失败: {e}，回退akshare")
         try:
             from app.data_manager.index_updater import update_all_indices
             result = update_all_indices()
@@ -245,29 +255,34 @@ class DataPipelineScheduler:
             # 0. QMT 股票列表同步（新股/退市检测）
             try:
                 from app.data_manager.qmt_stock_sync import qmt_stock_sync
-                sync_info("[1/4] 正在同步股票列表（新股/退市检测）...")
+                sync_info("[1/5] 正在同步股票列表（新股/退市检测）...")
                 result = await loop.run_in_executor(None, qmt_stock_sync.sync)
                 if result.get("status") == "ok":
                     msg = f"股票列表同步: 新增 {result['added']}, 退市 {result['delisted']}"
                     log.info(msg)
-                    sync_ok(f"[1/4] {msg}")
+                    sync_ok(f"[1/5] {msg}")
                 else:
-                    sync_warn(f"[1/4] 股票列表同步: {result.get('message')}")
+                    sync_warn(f"[1/5] 股票列表同步: {result.get('message')}")
             except Exception as e:
-                sync_warn(f"[1/4] QMT 股票列表同步跳过: {e}")
+                sync_warn(f"[1/5] QMT 股票列表同步跳过: {e}")
                 log.warning(f"QMT 股票列表同步失败（非致命）: {e}")
 
             # 1. 基础日线和财务信息快照（在线程池中执行，避免阻塞事件循环）
-            sync_info("[2/4] 正在同步股票基础信息...")
+            sync_info("[2/5] 正在同步股票基础信息...")
             await loop.run_in_executor(None, tushare_sync_manager.sync_stock_basic)
-            sync_info("[3/4] 正在同步财务快照...")
+            sync_info("[3/5] 正在同步财务快照...")
             await loop.run_in_executor(None, tushare_sync_manager.sync_fundamentals_snapshot)
-            sync_ok("[3/4] 财务快照已完成")
+            sync_ok("[3/5] 财务快照已完成")
 
             # 2. 全市场 Parquet K线清洗 (默认最近7日增量或补齐)
-            sync_info("[4/4] 正在拉取日 K 线并写入 Parquet...")
+            sync_info("[4/5] 正在拉取个股日 K 线并写入 Parquet...")
             await loop.run_in_executor(None, parquet_pipeline.sync_daily_klinesto_parquet)
-            sync_ok("[4/4] 日 K 线已更新")
+            sync_ok("[4/5] 个股日 K 线已更新")
+
+            # 3. 指数日线同步（与个股数据源一致，Tushare）
+            sync_info("[5/5] 正在同步指数日线数据...")
+            await loop.run_in_executor(None, tushare_sync_manager.sync_index_daily)
+            sync_ok("[5/5] 指数日线已更新")
 
             sync_ok("=== 全量数据洗盘完成 ===")
             log.info("CronScheduler ========= [收取管道] 完美结束 =========")

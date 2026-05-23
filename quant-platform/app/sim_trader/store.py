@@ -2,6 +2,7 @@
 模拟盘交易 — 持久化存储
 所有持仓/交易/引擎状态变化即时写入 DuckDB，服务器重启可恢复。
 """
+import json
 from datetime import date
 from typing import Optional, Dict, List
 from pathlib import Path
@@ -201,6 +202,95 @@ class SimTraderStore:
             'pause_until': pause,
             'trade_count': int(state.get('trade_count', '0')),
         }
+
+
+class JsonSimStore:
+    """JSON 文件持久化（无 DuckDB 依赖，无锁）"""
+    def __init__(self, path: str = None):
+        from pathlib import Path as _P
+        self._path = _P(path or str(_P(__file__).parent.parent.parent / "output" / "sim_trader" / "state.json"))
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._data = {}
+        if self._path.exists():
+            try:
+                with open(self._path, 'r', encoding='utf-8') as f:
+                    self._data = json.load(f)
+            except Exception:
+                self._data = {}
+
+    def _save(self):
+        with open(self._path, 'w', encoding='utf-8') as f:
+            json.dump(self._data, f, ensure_ascii=False, indent=2, default=str)
+
+    def load_state(self) -> dict:
+        s = self._data.get('state', {})
+        return {
+            'cash': float(s.get('cash', 1_000_000)),
+            'consecutive_losses': int(s.get('consecutive_losses', 0)),
+            'pause_until': date.fromisoformat(s['pause_until']) if s.get('pause_until') else None,
+            'trade_count': int(s.get('trade_count', 0)),
+        }
+
+    def save_state(self, cash, consecutive_losses, pause_until, trade_count):
+        self._data['state'] = {
+            'cash': cash, 'consecutive_losses': consecutive_losses,
+            'pause_until': str(pause_until) if pause_until else None,
+            'trade_count': trade_count,
+        }
+        self._save()
+
+    def load_positions(self) -> Dict[str, "Position"]:
+        from app.sim_trader.engine import Position
+        result = {}
+        for code, p in self._data.get('positions', {}).items():
+            result[code] = Position(
+                code=code, entry_date=date.fromisoformat(p['entry_date']),
+                entry_price=float(p['entry_price']), shares=int(p['shares']),
+                cost=float(p['cost']), strategy_name=p.get('strategy_name', ''),
+            )
+        return result
+
+    def save_positions(self, positions: Dict[str, "Position"]):
+        self._data['positions'] = {
+            code: {'entry_date': str(p.entry_date), 'entry_price': p.entry_price,
+                   'shares': p.shares, 'cost': p.cost, 'strategy_name': p.strategy_name}
+            for code, p in positions.items()
+        }
+        self._save()
+
+    def save_trade(self, trade: "Trade"):
+        trades = self._data.setdefault('trades', [])
+        trades.append({
+            'code': trade.code, 'entry_date': str(trade.entry_date), 'exit_date': str(trade.exit_date),
+            'entry_price': trade.entry_price, 'exit_price': trade.exit_price,
+            'shares': trade.shares, 'ret_pct': trade.return_pct,
+            'profit': trade.profit_amount, 'reason': trade.exit_reason,
+            'hold_days': trade.hold_days,
+        })
+        self._save()
+
+    def load_trades(self) -> List["Trade"]:
+        from app.sim_trader.engine import Trade
+        result = []
+        for t in self._data.get('trades', []):
+            result.append(Trade(
+                code=t['code'], entry_date=date.fromisoformat(t['entry_date']),
+                exit_date=date.fromisoformat(t['exit_date']),
+                entry_price=float(t['entry_price']), exit_price=float(t['exit_price']),
+                shares=int(t['shares']), return_pct=float(t['ret_pct']),
+                profit_amount=float(t['profit']), exit_reason=t['reason'],
+                hold_days=int(t['hold_days']),
+            ))
+        return result
+
+    def save_equity_point(self, d: date, equity: float, cash: float, positions: int):
+        pts = self._data.setdefault('equity_curve', [])
+        pts.append({'date': str(d), 'equity': equity, 'cash': cash, 'pos': positions})
+        if len(pts) % 10 == 0:
+            self._save()
+
+    def load_equity_curve(self) -> List[Dict]:
+        return self._data.get('equity_curve', [])
 
     # ── 全量清空 ────────────────────────────────
 
