@@ -9,6 +9,7 @@ from datetime import date, datetime
 from pathlib import Path
 from core.logger import get_logger
 from server.websocket.manager import sync_broadcast
+import json
 import threading
 import pandas as pd
 
@@ -239,23 +240,40 @@ async def sim_trader_status():
 @router.post("/api/sim-trader/execute")
 async def sim_trader_execute():
     today = date.today()
+
+    # 执行日期 fallback：非交易日回退到最近交易日
     if not is_trading_day(today):
         trade_dates = get_trading_dates()
         past_dates = [d for d in trade_dates if d < today]
         if not past_dates:
             return {'status': 'error', 'message': f'{today} 不是交易日，且无历史交易日数据'}
         today = max(past_dates)
-        log.info(f"手动触发: {date.today()} 非交易日，回退到最近交易日 {today}")
-    log.info(f"手动触发模拟盘交易: {today}")
-    sync_broadcast({'type': 'log', 'level': 'info', 'msg': f'手动触发: {today}，后台执行中...'})
+
+    # 信号日期：盘前(<9:30)用昨天信号，盘中/盘后用今天
+    now = datetime.now()
+    if is_trading_day(date.today()) and now.hour * 60 + now.minute >= 9 * 60 + 30:
+        signal_date = today
+    else:
+        trade_dates = get_trading_dates()
+        past_dates = [d for d in trade_dates if d < today]
+        signal_date = max(past_dates) if past_dates else today
+        if signal_date != today:
+            log.info(f"手动触发: {date.today()} 盘前，信号回退到最近交易日 {signal_date}")
+    log.info(f"手动触发模拟盘交易: 执行日={today} 信号日={signal_date}")
+    sync_broadcast({'type': 'log', 'level': 'info', 'msg': f'手动触发: 执行日={today} 信号日={signal_date}，后台执行中...'})
+
+    # 盘前(<9:25)手动触发用 Parquet 昨收价
+    pre_market = is_trading_day(date.today()) and datetime.now().hour * 60 + datetime.now().minute < 9 * 60 + 25
 
     def _run():
         try:
             from app.backtest.simple_runner import load_daily_bars
             from app.sim_trader.data_loader import get_daily_snapshot
             engine = get_engine()
+            # 盘前用最近完整交易日收盘价，盘中用 QMT 实时价
+            price_date = max(d for d in get_trading_dates() if d < today) if pre_market else today
             bars = load_daily_bars(end=today)
-            snapshot = get_daily_snapshot(bars, today)
+            snapshot = get_daily_snapshot(bars, price_date)
             trading_dates = get_trading_dates()
             sell_count = 0
             if engine.auto_sell:
@@ -270,7 +288,7 @@ async def sim_trader_execute():
                     from app.tqsdk.bridge import TdxBridge
                     bridge = TdxBridge()
                     sig_result = bridge.execute_screen(
-                        end_time=today.strftime('%Y%m%d'),
+                        end_time=signal_date.strftime('%Y%m%d'),
                         lookback_days=500,
                     )
                     if sig_result.get('status') == 'ok':
@@ -316,7 +334,8 @@ async def sim_trader_trades(limit: int = 50):
     for t in reversed(trades):
         result.append({
             'code': t.code, 'name': names.get(t.code, ''),
-            'entry': str(t.entry_date), 'exit': str(t.exit_date),
+            'entry': str(t.entry_date), 'entry_time': getattr(t, 'entry_time', '15:00'),
+            'exit': str(t.exit_date), 'exit_time': getattr(t, 'exit_time', '15:00'),
             'entry_px': t.entry_price, 'exit_px': t.exit_price,
             'shares': t.shares, 'ret_pct': round(t.return_pct, 2),
             'profit': round(t.profit_amount, 0), 'reason': t.exit_reason,
@@ -333,13 +352,19 @@ async def sim_trader_trades(limit: int = 50):
             if f.exists():
                 df_snap = pd.read_parquet(str(f), columns=['date', 'close'])
                 df_snap['date'] = pd.to_datetime(df_snap['date']).dt.date
+                df_snap = df_snap.sort_values('date')
                 row = df_snap[df_snap['date'] == today]
+                if row.empty:
+                    past = df_snap[df_snap['date'] < today]
+                    if not past.empty:
+                        row = past.iloc[[-1]]
                 if not row.empty:
                     cur_px = float(row.iloc[0]['close'])
             ret = (cur_px / p.entry_price - 1) * 100
             result.append({
                 'code': p.code, 'name': names.get(p.code, ''),
-                'entry': str(p.entry_date), 'exit': '持仓中',
+                'entry': str(p.entry_date), 'entry_time': getattr(p, 'entry_time', '15:00'),
+                'exit': '持仓中', 'exit_time': '',
                 'entry_px': p.entry_price, 'exit_px': cur_px,
                 'shares': p.shares, 'ret_pct': round(ret, 2),
                 'profit': round(p.shares * (cur_px - p.entry_price), 0),
@@ -351,6 +376,100 @@ async def sim_trader_trades(limit: int = 50):
         pass
 
     return {'status': 'ok', 'trades': result}
+
+
+@router.get("/api/sim-trader/equity")
+async def sim_trader_equity():
+    engine = get_engine()
+    equity = engine.equity_curve
+    if not equity:
+        return {'status': 'ok', 'equity': [], 'indices': {}}
+    indices = {}
+    try:
+        from app.backtest.simple_runner import load_index_data
+        indices = load_index_data()
+    except Exception:
+        pass
+
+    # QMT 实时指数补位：Tushare 当天数据有延迟，用 QMT 实时价补齐最新一天
+    today_str = str(date.today())
+    try:
+        idx_code_map = {
+            '上证指数': '000001.SH', '沪深300': '000300.SH', '中证500': '000905.SH',
+            '中证1000': '000852.SH', '中证A500': '000510.SH', '创业板指': '399006.SZ',
+        }
+        need_today = any(
+            name in indices and (not indices[name] or indices[name][-1]['date'] < today_str)
+            for name in idx_code_map
+        )
+        if need_today:
+            import urllib.request, json as _json
+            from datetime import timedelta
+            codes = ','.join(idx_code_map.values())
+            url = f'http://localhost:8081/api/quotes?codes={codes}'
+            resp = _json.loads(urllib.request.urlopen(url, timeout=5).read())
+            for name, qmt_code in idx_code_map.items():
+                tick = resp.get(qmt_code, {})
+                px = float(tick.get('lastPrice', 0))
+                if px > 0:
+                    if name not in indices:
+                        indices[name] = []
+                    series = indices[name]
+                    # 补齐 Parquet 最后日期到今天之间的缺口
+                    if series:
+                        last_d = date.fromisoformat(series[-1]['date'])
+                        last_close = series[-1]['close']
+                        d = last_d + timedelta(days=1)
+                        while d < date.today():
+                            series.append({'date': str(d), 'close': last_close, 'norm': round(last_close / (series[0]['close'] or 1), 4)})
+                            d += timedelta(days=1)
+                    # 追加/更新今天
+                    if series and series[-1]['date'] == today_str:
+                        series[-1]['close'] = px
+                        series[-1]['norm'] = round(px / (series[0]['close'] or 1), 4)
+                    else:
+                        base = series[0]['close'] if series else px
+                        series.append({'date': today_str, 'close': px, 'norm': round(px / base if base else 1, 4)})
+    except Exception:
+        pass
+
+    return {
+        'status': 'ok',
+        'equity': [{'date': str(e['date']), 'equity': e['equity'], 'cash': e.get('cash', 0), 'pos': e.get('pos', 0)} for e in equity],
+        'indices': indices,
+    }
+
+
+@router.get("/api/sim-trader/log-dates")
+async def sim_trader_log_dates():
+    """列出可用的日志日期"""
+    log_dir = ROOT_DIR / "output" / "sim_trader" / "logs"
+    if not log_dir.exists():
+        return {'status': 'ok', 'dates': []}
+    dates = sorted(
+        [f.stem for f in log_dir.glob("*.jsonl") if f.stem.count('-') == 2],
+        reverse=True,
+    )
+    return {'status': 'ok', 'dates': dates}
+
+
+@router.get("/api/sim-trader/logs")
+async def sim_trader_logs(log_date: str = "", limit: int = 200):
+    """读取指定日期的交易日志"""
+    if not log_date:
+        log_date = str(date.today())
+    log_dir = ROOT_DIR / "output" / "sim_trader" / "logs"
+    log_file = log_dir / f"{log_date}.jsonl"
+    if not log_file.exists():
+        return {'status': 'ok', 'entries': []}
+    entries = []
+    with open(log_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            try:
+                entries.append(json.loads(line))
+            except Exception:
+                pass
+    return {'status': 'ok', 'entries': entries[-limit:]}
 
 
 @router.post("/api/sim-trader/reset")

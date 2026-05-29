@@ -41,7 +41,8 @@ class TdxBridge:
 
     def execute_screen_range(self, end_time: str, kline_count: int,
                               return_count: int = None,
-                              stock_list_override: list = None):
+                              stock_list_override: list = None,
+                              start_time: str = ""):
         """
         区间选股：返回信号 + 价格
 
@@ -57,6 +58,7 @@ class TdxBridge:
             "formula_arg": FORMULA_ARG,
             "output_var_name": OUTPUT_VAR,
             "end_time": end_time,
+            "start_time": start_time,
             "stock_list_override": stock_list_override,
             "kline_count": kline_count,
             "return_count": return_count,
@@ -66,7 +68,8 @@ class TdxBridge:
     def execute_screen_range_5m(self, end_time: str, kline_count: int,
                                  start_date: str = None,
                                  return_count: int = None,
-                                 stock_list_override: list = None):
+                                 stock_list_override: list = None,
+                                 start_time: str = ""):
         """
         区间选股 5分钟增强版：两步调用 worker
         Step 1: range → 信号 + 日线收盘价 (快)
@@ -85,6 +88,7 @@ class TdxBridge:
             "formula_arg": FORMULA_ARG,
             "output_var_name": OUTPUT_VAR,
             "end_time": end_time,
+            "start_time": start_time,
             "stock_list_override": stock_list_override,
             "kline_count": kline_count,
             "return_count": return_count,

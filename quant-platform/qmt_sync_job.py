@@ -174,6 +174,11 @@ def execute_sync(freq: str, days: int, start_date: str, end_date: str):
                         log_to_ui(f"⚠️ {code_clean} 的历史簇已受损，进行全量覆写: {merge_err}", "warning")
 
                 # 永远进行严格的升序排列重整，为回测组件提供优质土壤
+                # 统一 time_col 类型，防止 concat 后混合 Timestamp/str 导致排序失败
+                if freq == "daily":
+                    df[time_col] = pd.to_datetime(df[time_col], errors='coerce').dt.date
+                else:
+                    df[time_col] = pd.to_datetime(df[time_col], errors='coerce')
                 df.sort_values(time_col).to_parquet(save_path, compression='snappy')
                 written += 1
 

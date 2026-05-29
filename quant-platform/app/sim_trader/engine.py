@@ -9,7 +9,7 @@ import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 import pandas as pd
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from dataclasses import dataclass
 from typing import Optional, Dict, List, Tuple
 from collections import Counter
@@ -19,12 +19,43 @@ from core.logger import get_logger
 
 log = get_logger("SimEngine")
 
+_stock_name_cache = {}
+
+def _get_stock_name(code: str) -> str:
+    """查股票简称，带缓存"""
+    if code in _stock_name_cache:
+        return _stock_name_cache[code]
+    try:
+        from database.duckdb_manager import db
+        df = db.conn.execute("SELECT name FROM stocks WHERE code = ?", [code]).fetchdf()
+        name = str(df.iloc[0]['name']) if not df.empty else ''
+    except Exception:
+        name = ''
+    _stock_name_cache[code] = name
+    return name
+
 
 def _safe_broadcast(data: dict):
     """安全广播到前端（非 server 环境静默跳过）"""
     try:
         from server.websocket.manager import sync_broadcast
         sync_broadcast(data)
+    except Exception:
+        pass
+    # 同步写日志文件持久化
+    _write_log(data)
+
+
+def _write_log(entry: dict):
+    """追加一行 JSON 到当日日志文件"""
+    import json, os
+    from datetime import date
+    try:
+        log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'output', 'sim_trader', 'logs')
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, f'{date.today()}.jsonl')
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(entry, ensure_ascii=False, default=str) + '\n')
     except Exception:
         pass
 
@@ -42,6 +73,7 @@ class Position:
     tp2_triggered: bool = False
     is_active: bool = True
     strategy_name: str = ""
+    entry_time: str = "15:00"
 
     def __post_init__(self):
         self.peak_price = self.entry_price
@@ -79,6 +111,8 @@ class Trade:
     hold_days: int
     entry_reason: str = ""
     exit_timing: str = "close"  # "intraday" | "close"
+    entry_time: str = "15:00"
+    exit_time: str = "15:00"
 
 
 class SimTraderEngine:
@@ -180,11 +214,12 @@ class SimTraderEngine:
             return None
 
         pos = Position(code=code, entry_date=today, entry_price=price,
-                       shares=shares, cost=cost, strategy_name=strategy_name)
+                       shares=shares, cost=cost, strategy_name=strategy_name,
+                       entry_time=datetime.now().strftime('%H:%M:%S'))
         self.cash -= cost
         self.positions[code] = pos
         log.info(f"[买入] {code} 价格={price:.2f} 数量={shares} 金额={cost:.0f} 剩余现金={self.cash:.0f} 策略={strategy_name}")
-        _safe_broadcast({"type":"sim_trader_log","action":"buy","code":code,"price":round(price,2),"shares":shares,"cost":round(cost,0),"cash":round(self.cash,0),"strategy":strategy_name,"date":str(today)})
+        _safe_broadcast({"type":"sim_trader_log","action":"buy","code":code,"name":_get_stock_name(code),"price":round(price,2),"shares":shares,"cost":round(cost,0),"cash":round(self.cash,0),"strategy":strategy_name,"date":str(today),"time":datetime.now().strftime('%H:%M:%S')})
         if self._store:
             self._store.save_positions(self.positions)
             self._store.save_state(
@@ -308,7 +343,7 @@ class SimTraderEngine:
         self._trade_count += 1
 
         log.info(f"[卖出] {pos.code} 价格={exit_price:.2f} 数量={ss} 收益={rp:.1f}% 利润={profit:.0f} 原因={reason} 剩余现金={self.cash:.0f}")
-        _safe_broadcast({"type":"sim_trader_log","action":"sell","code":pos.code,"price":round(exit_price,2),"shares":ss,"ret_pct":round(rp,1),"profit":round(profit,0),"reason":reason,"cash":round(self.cash,0),"date":str(exit_date or date.today())})
+        _safe_broadcast({"type":"sim_trader_log","action":"sell","code":pos.code,"name":_get_stock_name(pos.code),"price":round(exit_price,2),"shares":ss,"ret_pct":round(rp,1),"profit":round(profit,0),"reason":reason,"cash":round(self.cash,0),"date":str(exit_date or date.today()),"time":datetime.now().strftime('%H:%M:%S')})
 
         return Trade(
             code=pos.code, entry_date=pos.entry_date,
@@ -317,6 +352,8 @@ class SimTraderEngine:
             shares=ss, return_pct=rp, profit_amount=profit,
             exit_reason=reason, hold_days=0,
             entry_reason=pos.strategy_name, exit_timing=exit_timing,
+            entry_time=getattr(pos, 'entry_time', '15:00'),
+            exit_time=datetime.now().strftime('%H:%M:%S'),
         )
 
     def sell_phase(self, today: date, snapshot: dict,
@@ -374,7 +411,7 @@ class SimTraderEngine:
     def record(self, today: date, snapshot: dict):
         eq = self.total_equity(snapshot)
         log.info(f"[快照] 日期={today} 权益={eq:,.0f} 现金={self.cash:,.0f} 持仓={self.position_count}")
-        _safe_broadcast({"type":"sim_trader_log","action":"snapshot","date":str(today),"equity":round(eq,0),"cash":round(self.cash,0),"positions":self.position_count})
+        _safe_broadcast({"type":"sim_trader_log","action":"snapshot","date":str(today),"time":datetime.now().strftime('%H:%M:%S'),"equity":round(eq,0),"cash":round(self.cash,0),"positions":self.position_count})
         self.equity_curve.append({
             'date': today,
             'equity': eq,

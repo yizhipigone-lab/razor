@@ -16,6 +16,8 @@ export class WebSocketManager {
     this.reconnectAttempts = 0;
     this.messageHandlers = new Map();
     this.connectPromise = null;
+    this.messageQueue = [];
+    this._lastSubscribeMsg = null;
   }
 
   connect() {
@@ -30,17 +32,28 @@ export class WebSocketManager {
         this.ws.onopen = () => {
           this.connected = true;
           this.reconnectAttempts = 0;
+          // 发送所有缓存消息
+          while (this.messageQueue.length > 0) {
+            const msg = this.messageQueue.shift();
+            this.ws.send(JSON.stringify(msg));
+          }
+          // 断线重连后恢复上一次订阅（仅当队列中无订阅消息时）
+          if (this._lastSubscribeMsg && !this._sentLastSub) {
+            this._sentLastSub = true;
+            this.ws.send(JSON.stringify(this._lastSubscribeMsg));
+          }
           innerResolve(this.ws);
           resolve(this.ws);
         };
         this.ws.onclose = () => {
           this.connected = false;
+          this._sentLastSub = false;  // 允许下次重连后重新订阅
           this.scheduleReconnect();
         };
-        this.ws.onerror = (error) => {
-          this.reconnectAttempts++;
-          innerReject(error);
-          reject(error);
+        this.ws.onerror = () => {
+          // onclose 也会触发 scheduleReconnect，不重复计数
+          innerReject(new Error('WebSocket error'));
+          reject(new Error('WebSocket error'));
         };
         this.ws.onmessage = (e) => this.handleMessage(e);
       });
@@ -66,8 +79,14 @@ export class WebSocketManager {
   }
 
   sendMessage(type, data) {
-    if (this.connected) {
+    // 记住最后一次订阅，断线重连时自动恢复
+    if (type === 'subscribe') {
+      this._lastSubscribeMsg = { type, data };
+    }
+    if (this.connected && this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type, data }));
+    } else {
+      this.messageQueue.push({ type, data });
     }
   }
 

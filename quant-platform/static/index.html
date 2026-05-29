@@ -8,8 +8,8 @@
   <script src="/static/lib/marked.min.js"></script>
     <script src="/static/lib/monaco/loader.js"></script>
     <script type="module">
-      import { wsManager } from '/static/js/websocket.js';
-      import { MarketUpdater } from '/static/js/market-updater.js?v=2';
+      import { wsManager } from '/static/js/websocket.js?v=3';
+      import { MarketUpdater } from '/static/js/market-updater.js?v=9';
       import { createNotification } from '/static/js/utils.js';
 
       async function initializeApp() {
@@ -56,8 +56,6 @@
 <nav id="tab-nav">
   <button class="active" onclick="switchTab('screener')">💡 选股</button>
   <button onclick="switchTab('watchlist')">⭐ 自选股</button>
-  <button onclick="switchTab('positions')">📊 持仓</button>
-  <button onclick="switchTab('trades')">📋 交易记录</button>
   <button onclick="switchTab('backtest')">🔬 回测</button>
   <button onclick="switchTab('ai-backtest')">🤖 AI 回测</button>
   <button onclick="switchTab('data')">💾 数据管理</button>
@@ -231,50 +229,6 @@
         </div>
       </div>
 
-      <!-- ══ 持仓 TAB ═══════════════════════════════════ -->
-      <div id="tab-positions">
-        <div class="grid-3" style="margin-bottom:var(--gap)">
-          <div class="stat-card"><div class="label">持仓股票数</div><div class="value" id="pos-count">0</div></div>
-          <div class="stat-card"><div class="label">总持仓成本</div><div class="value" id="pos-cost">--</div></div>
-          <div class="stat-card"><div class="label">移动止盈激活</div><div class="value" id="pos-trailing">0</div></div>
-        </div>
-        <div class="card">
-          <h3>手工买入</h3>
-          <div class="form-row">
-            <label>股票代码</label><input type="text" id="buy-code" placeholder="000001" style="width:100px">
-            <label>参考价格</label><input type="number" id="buy-price" placeholder="12.50" step="0.01" style="width:90px">
-            <button class="btn btn-success" onclick="confirmBuy()">✅ 确认买入</button>
-          </div>
-        </div>
-        <div class="card">
-          <h3>当前持仓</h3>
-          <div class="tbl-wrap">
-            <table>
-              <thead><tr>
-                <th>代码</th><th>名称</th><th>开仓价</th><th>当前价</th>
-                <th>盈亏%</th><th>持仓量</th><th>操作</th>
-              </tr></thead>
-              <tbody id="pos-tbody"></tbody>
-            </table>
-          </div>
-          <button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="loadPositions()">刷新持仓</button>
-        </div>
-      </div>
-
-      <!-- ══ 交易记录 TAB ═══════════════════════════════ -->
-      <div id="tab-trades">
-        <div class="card">
-          <h3>交易记录</h3>
-          <div class="tbl-wrap">
-            <table>
-              <thead><tr><th>时间</th><th>代码</th><th>名称</th><th>方向</th><th>价格</th><th>数量</th><th>原因</th></tr></thead>
-              <tbody id="trade-tbody"></tbody>
-            </table>
-          </div>
-          <button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="loadTrades()">刷新记录</button>
-        </div>
-      </div>
-
       <!-- ══ 回测 TAB ═══════════════════════════════════ -->
       <div id="tab-backtest">
 
@@ -421,8 +375,13 @@
 
         <!-- 回测历史 -->
         <div class="card" style="margin-top:12px">
-          <h4 style="margin:0 0 8px 0">回测历史记录</h4>
-          <div id="simple-bt-history-list" style="max-height:240px;overflow-y:auto"></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <h4 style="margin:0">回测历史记录</h4>
+            <button class="btn btn-sm" onclick="loadSimpleBtHistory()" style="font-size:11px">刷新</button>
+          </div>
+          <div id="simple-bt-history-list" style="max-height:240px;overflow-y:auto">
+            <div style="color:var(--text2);font-size:12px;text-align:center;padding:8px">点击刷新或运行回测</div>
+          </div>
         </div>
 
         >
@@ -438,23 +397,21 @@
           </h3>
           <div id="bt-monthly-chart" style="width:100%; height:280px;"></div>
         </div>
+
+        <!-- 4合1可视化面板 -->
+        <div id="bt-viz-panel" style="display:none; grid-template-columns:1fr 1fr; grid-template-rows:auto auto; gap:var(--gap); margin-top:var(--gap)">
+          <div class="card" style="margin:0"><h3 style="margin:0 0 8px 0;font-size:13px">月度收益 (每月累计涨跌幅)</h3><div id="bt-chart-monthly-return" style="width:100%;height:300px"></div></div>
+          <div class="card" style="margin:0"><h3 style="margin:0 0 8px 0;font-size:13px">盈亏分布 (每笔交易赚/亏多少)</h3><div id="bt-chart-pnl-dist" style="width:100%;height:300px"></div></div>
+          <div class="card" style="margin:0"><h3 style="margin:0 0 8px 0;font-size:13px">卖出原因 (什么条件触发了卖出)</h3><div id="bt-chart-exit-reason" style="width:100%;height:300px"></div></div>
+          <div class="card" style="margin:0"><h3 style="margin:0 0 8px 0;font-size:13px">持仓天数 (持有多久才卖出)</h3><div id="bt-chart-hold-days" style="width:100%;height:300px"></div></div>
+        </div>
+
         <div class="card" id="bt-result-card" style="display:none">
           <div class="tbl-wrap">
             <table id="bt-table">
               <thead><tr><th style="width:30px"></th><th>代码</th><th>名称</th><th>买入价</th><th>卖出价</th><th>买入日期</th><th>卖出日期</th><th>持仓天数</th><th>盈亏%</th><th>原因</th><th>操作</th></tr></thead>
               <tbody id="bt-tbody"></tbody>
             </table>
-          </div>
-        </div>
-
-        <!-- 回测历史记录面板 -->
-        <div class="card" style="margin-top:12px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-            <h3 style="margin:0">📂 回测历史记录</h3>
-            <button class="btn btn-sm" onclick="loadBacktestHistory()" style="font-size:12px">🔄 刷新</button>
-          </div>
-          <div id="bt-history-list">
-            <div style="color:var(--text2);font-size:12px;text-align:center;padding:8px">点击「刷新」加载历史记录</div>
           </div>
         </div>
       </div>
@@ -1299,8 +1256,29 @@
         </div>
         <div class="grid-3" style="margin-bottom:var(--gap)">
           <div class="stat-card"><div class="label">连亏笔数</div><div class="value" id="sim-losses">0</div></div>
+          <div class="stat-card"><div class="label">持仓盈亏</div><div class="value" id="sim-total-pnl-val">--</div></div>
           <div class="stat-card"><div class="label">暂停状态</div><div class="value" id="sim-paused">正常</div></div>
+        </div>
+        <div class="grid-3" style="margin-bottom:var(--gap)">
           <div class="stat-card"><div class="label">今日日期</div><div class="value" id="sim-today">--</div></div>
+        </div>
+
+        <div class="card">
+          <div id="sim-equity-chart" style="width:100%; height:350px;"></div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+            <button class="btn btn-sm" onclick="simCalPrevMonth()" style="font-size:16px; padding:2px 10px">&#8249;</button>
+            <h3 style="margin:0" id="sim-cal-title">2026年1月</h3>
+            <button class="btn btn-sm" onclick="simCalNextMonth()" style="font-size:16px; padding:2px 10px">&#8250;</button>
+          </div>
+          <div id="sim-calendar-chart" style="width:100%"></div>
+        </div>
+
+        <div class="card">
+          <h3 style="margin-bottom:8px">股票盈亏分析</h3>
+          <div id="sim-stock-treemap" style="width:100%; height:350px;"></div>
         </div>
 
         <div class="card">
@@ -1327,15 +1305,15 @@
         </div>
 
         <div class="card" style="margin-top:12px">
-          <h3>交易记录 <span class="sub" id="sim-trade-count"></span></h3>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h3 style="margin:0">交易记录 <span class="sub" id="sim-trade-count"></span></h3><button class="btn btn-sm" onclick="loadSimTrades()" style="font-size:11px">刷新</button></div>
           <div class="tbl-wrap" style="max-height:400px; overflow-y:auto">
             <table>
               <thead><tr>
-                <th>代码</th><th>简称</th><th>买入日</th><th>卖出日</th><th>买入价</th><th>卖出价</th>
+                <th>代码</th><th>简称</th><th>买入日</th><th>卖出日</th><th>买入价</th><th>卖出价</th><th>数量</th><th>金额</th>
                 <th>盈亏%</th><th>盈亏额</th><th>持仓天</th><th>买入原因</th><th>状态</th>
               </tr></thead>
               <tbody id="sim-trade-tbody">
-                <tr><td colspan="11" style="text-align:center;color:var(--text2)">暂无记录</td></tr>
+                <tr><td colspan="13" style="text-align:center;color:var(--text2)">暂无记录</td></tr>
               </tbody>
             </table>
           </div>
@@ -1486,6 +1464,6 @@
   </div>
 </div>
 
-    <script src="/static/js/main.js"></script>
+    <script src="/static/js/main.js?v=33"></script>
 </body>
 </html>

@@ -24,8 +24,16 @@ export class UIRenderer {
     }
 
     if (pct) {
-      pct.textContent = formatPercent(data.priceChangeRatio || data.change_pct || 0);
-      pct.className = getTrendClass(data.priceChangeRatio || data.change_pct || 0);
+      const ratio = data.priceChangeRatio || data.change_pct;
+      const lastClose = parseFloat(data.lastClose || data.preClose || 0);
+      const curPrice = parseFloat(data.lastPrice || data.price || 0);
+      let change = ratio != null ? parseFloat(ratio) : NaN;
+      if (isNaN(change) && lastClose > 0) {
+        change = (curPrice - lastClose) / lastClose * 100;
+      }
+      if (isNaN(change)) change = 0;
+      pct.textContent = formatPercent(change);
+      pct.className = getTrendClass(change);
     }
   }
 
@@ -114,6 +122,16 @@ export class UIRenderer {
    * @returns {Object|null} 股票行情数据
    */
   findQuote(data, code) {
-    return data[code] || data[code + '.SH'] || data[code + '.SZ'] || null;
+    // 按代码前缀匹配正确交易所，避免 000905 股票被 000905.SH 指数覆盖
+    if (!code) return null;
+    if (data[code]) return data[code];
+    if (code.includes('.')) {
+      const bare = code.split('.')[0];
+      if (data[bare]) return data[bare];
+      code = bare;
+    }
+    if (code.startsWith('6')) return data[code + '.SH'] || null;
+    if (code.startsWith('0') || code.startsWith('3')) return data[code + '.SZ'] || null;
+    return null;
   }
 }

@@ -235,11 +235,9 @@ class BacktestEngine:
             except Exception as e:
                 log.warning(f"热门概念过滤失败: {e}，跳过此过滤器")
 
-        _prog(4, 5, f"处理 {len(signals)} 条信号，执行精细分钟线仿真...")
-        
+        _prog(4, 5, f"处理 {len(signals)} 条信号，日线OHLC仿真...")
+
         all_trades = []
-        bar_cache_5m = {}
-        
         for i, (_, row) in enumerate(signals.iterrows()):
             if stop_event and stop_event.is_set(): break
             code = row["code"]
@@ -269,35 +267,10 @@ class BacktestEngine:
                     log.debug(f"朣戒 [{code}] 信号日涨跌停 ({pct:.1f}%)，跳过")
                     continue
 
-            # 准备分钟线数据
-            hold_bars_5m = pd.DataFrame()
-            time_col = "datetime"
-            
-            if code in bar_cache_5m:
-                hold_bars_full_5m = bar_cache_5m[code]
-                if not hold_bars_full_5m.empty:
-                    time_col = "datetime" if "datetime" in hold_bars_full_5m.columns else "date"
-                    mask = pd.to_datetime(hold_bars_full_5m[time_col]).dt.date >= signal_date
-                    hold_bars_5m = hold_bars_full_5m[mask]
-            else:
-                try:
-                    hold_bars_5m = db.load_bars(code, freq=intraday_freq, start=signal_date, end=end_date)
-                    if not hold_bars_5m.empty:
-                        time_col = "datetime" if "datetime" in hold_bars_5m.columns else "date"
-                        if len(hold_bars_5m) < 20000: bar_cache_5m[code] = hold_bars_5m
-                except Exception:
-                    pass  # 5分钟数据不是必需的，加载失败不影响日线回测
-
-            can_use_5m = False
-            if not hold_bars_5m.empty:
-                first_bar_date = pd.to_datetime(hold_bars_5m[time_col].iloc[0]).date()
-                if first_bar_date <= (signal_date + timedelta(days=2)): can_use_5m = True
-
-            if can_use_5m:
-                trade = self._simulate_trade_v2(code, name, entry_price, signal_date, hold_bars_5m, params_override=params_override, time_exit_min_pnl=time_exit_min_pnl, apply_costs=apply_costs)
-            else:
-                # 无分钟线数据 → 跳过此交易（不再降级到 OHLC）
-                continue
+            # 日线OHLC仿真
+            stock_daily = full_daily[full_daily["code"] == code]
+            bars_daily = stock_daily[stock_daily["date"] >= signal_date]
+            trade = self._simulate_trade_daily_fallback(code, name, entry_price, signal_date, bars_daily, params_override=params_override, time_exit_min_pnl=time_exit_min_pnl)
 
             if trade:
                 # 传递quality和股票元信息给组合管理
@@ -924,9 +897,20 @@ class BacktestEngine:
 
     def _wrap_result(self, code, name, entry, exit_p, b_date, e_date, days, pnl, events):
         reasons = [e['reason'].split('(')[0] for e in events if e['type'] == 'sell']
+        b_str = str(b_date)
+        e_str = str(e_date)
+        if ' ' in b_str:
+            bd, bt = b_str.split(' ', 1)
+        else:
+            bd, bt = b_str, '09:30'
+        if ' ' in e_str:
+            ed, et = e_str.split(' ', 1)
+        else:
+            ed, et = e_str, '15:00'
         return {
             "code": code, "name": name, "entry_price": entry, "exit_price": exit_p,
-            "buy_date": str(b_date), "sell_date": str(e_date), "hold_days": days,
+            "buy_date": bd, "buy_time": bt, "sell_date": ed, "sell_time": et,
+            "hold_days": days,
             "pnl_pct": pnl, "exit_reason": "+".join(sorted(list(set(reasons)))), "sell_events": events,
         }
 
