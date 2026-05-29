@@ -366,11 +366,26 @@ class DataPipelineScheduler:
             bars = load_all_bars()
             bars, snapshot = augment_bars_with_realtime(bars, today)
 
-            # ── 选股始终执行（信息价值，不受开关影响） ──
+            # ── 选股：通过 TDX 桥接获取 QUANTQQ 信号 ──
+            signals = []
             if engine.auto_scan:
-                signals = generate_today_signals(bars, today)
-            else:
-                signals = []
+                try:
+                    from app.tqsdk.bridge import TdxBridge
+                    bridge = TdxBridge()
+                    sig_result = bridge.execute_screen(
+                        end_time=today.strftime('%Y%m%d'),
+                        lookback_days=500,
+                    )
+                    if sig_result.get('status') == 'ok':
+                        matched = sig_result.get('matched', [])
+                        log.info(f'CronScheduler | [模拟盘] QUANTQQ选股: {len(matched)}只')
+                        for code in matched:
+                            code_num = code.split('.')[0] if '.' in code else code
+                            px = snapshot.get(code_num, {}).get('close', 0)
+                            if px > 0:
+                                signals.append((code_num, px))
+                except Exception as e:
+                    log.warning(f'CronScheduler | [模拟盘] TDX选股失败: {e}')
 
             if not engine.auto_sell and not engine.auto_buy:
                 # 全部告警：检查但不执行

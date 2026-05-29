@@ -763,6 +763,7 @@ async def run_simple_backtest(body: dict):
                     'indices': result['indices'],
                     'daily_trades': result.get('daily_trades', {}),
                     'params': result.get('params', {}),
+                    'message': result.get('message', ''),
                 }
                 save_path = _BT_RESULTS_DIR / f"{result_id}.json"
                 with open(save_path, 'w', encoding='utf-8') as f:

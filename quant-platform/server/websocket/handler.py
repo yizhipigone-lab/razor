@@ -11,11 +11,18 @@ async def websocket_endpoint(ws: WebSocket):
     try:
         while True:
             data = await ws.receive_json()
+            if not isinstance(data, dict):
+                continue
             await handle_client_message(data, ws)
     except WebSocketDisconnect:
-        await manager.disconnect(ws)
+        pass
     except Exception as e:
         print(f"WebSocket 连接错误: {e}")
+    finally:
+        # 清理订阅状态，避免广播循环空转
+        market_broadcaster.subscription_manager.remove_ws(ws)
+        if market_broadcaster.subscription_manager.get_connected_clients() == 0:
+            await market_broadcaster.stop_broadcast_loop()
         await manager.disconnect(ws)
 
 async def handle_client_message(data: dict, ws: WebSocket):

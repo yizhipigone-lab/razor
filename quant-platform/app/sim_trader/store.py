@@ -247,13 +247,15 @@ class JsonSimStore:
                 code=code, entry_date=date.fromisoformat(p['entry_date']),
                 entry_price=float(p['entry_price']), shares=int(p['shares']),
                 cost=float(p['cost']), strategy_name=p.get('strategy_name', ''),
+                entry_time=p.get('entry_time', '15:00'),
             )
         return result
 
     def save_positions(self, positions: Dict[str, "Position"]):
         self._data['positions'] = {
             code: {'entry_date': str(p.entry_date), 'entry_price': p.entry_price,
-                   'shares': p.shares, 'cost': p.cost, 'strategy_name': p.strategy_name}
+                   'shares': p.shares, 'cost': p.cost, 'strategy_name': p.strategy_name,
+                   'entry_time': getattr(p, 'entry_time', '15:00')}
             for code, p in positions.items()
         }
         self._save()
@@ -266,6 +268,8 @@ class JsonSimStore:
             'shares': trade.shares, 'ret_pct': trade.return_pct,
             'profit': trade.profit_amount, 'reason': trade.exit_reason,
             'hold_days': trade.hold_days,
+            'entry_time': getattr(trade, 'entry_time', '15:00'),
+            'exit_time': getattr(trade, 'exit_time', '15:00'),
         })
         self._save()
 
@@ -280,6 +284,8 @@ class JsonSimStore:
                 shares=int(t['shares']), return_pct=float(t['ret_pct']),
                 profit_amount=float(t['profit']), exit_reason=t['reason'],
                 hold_days=int(t['hold_days']),
+                entry_time=t.get('entry_time', '15:00'),
+                exit_time=t.get('exit_time', '15:00'),
             ))
         return result
 

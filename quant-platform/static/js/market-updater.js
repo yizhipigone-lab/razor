@@ -3,8 +3,8 @@
  * 行情更新器模块
  */
 
-import { wsManager } from './websocket.js';
-import { UIRenderer } from './ui-renderer.js';
+import { wsManager } from './websocket.js?v=3';
+import { UIRenderer } from './ui-renderer.js?v=2';
 import { createNotification } from './utils.js';
 
 export class MarketUpdater {
@@ -45,8 +45,10 @@ export class MarketUpdater {
     const indexCodes = ['000001.SH', '399001.SZ', '399006.SZ', '000905.SH', '000510.SH'];
     // 订阅自选股
     const watchlistCodes = this.getWatchlistCodes();
+    // 订阅持仓股
+    const positionCodes = this.getPositionCodes();
     // 合并所有代码
-    return [...new Set([...indexCodes, ...watchlistCodes])];
+    return [...new Set([...indexCodes, ...watchlistCodes, ...positionCodes])];
   }
 
   getWatchlistCodes() {
@@ -64,12 +66,32 @@ export class MarketUpdater {
     return codes;
   }
 
-  handleMarketQuotes(data) {
+  getPositionCodes() {
+    // 从页面中获取持仓股代码
+    const positionRows = document.querySelectorAll('#sim-pos-tbody tr.pos-row');
+    const codes = [];
+
+    positionRows.forEach((tr) => {
+      const code = tr.getAttribute('data-code');
+      if (code) {
+        codes.push(code);
+      }
+    });
+
+    return codes;
+  }
+
+  handleMarketQuotes(msg) {
+    // 提取行情数据（msg 为完整 WebSocket 消息 {type, data}）
+    const data = msg.data || msg;
+    window._lastQuotes = data;
     const now = Date.now();
 
     // 节流处理
     if (now - this.lastUpdateTime < this.updateThrottleInterval) {
-      this.pendingUpdates = new Map([...this.pendingUpdates, ...data]);
+      for (const [k, v] of Object.entries(data)) {
+        this.pendingUpdates.set(k, v);
+      }
       return;
     }
 
@@ -95,7 +117,8 @@ export class MarketUpdater {
     // 使用 requestAnimationFrame 优化渲染
     requestAnimationFrame(() => {
       this.uiRenderer.updateTableRows('#watchlist-tbody tr.wl-row', data);
-      this.uiRenderer.updateTableRows('#positions-tbody tr', data);
+      this.uiRenderer.updateTableRows('#sim-pos-tbody tr', data);
+      this.uiRenderer.updateTableRows('#sim-trade-tbody tr', data);
       this.uiRenderer.updateTableRows('.radar-stock-link', data);
     });
   }

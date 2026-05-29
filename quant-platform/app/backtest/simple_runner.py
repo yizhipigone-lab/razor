@@ -27,10 +27,12 @@ class Position:
 
 
 class Trade:
-    __slots__ = ('code','entry_date','exit_date','entry_px','exit_px',
-                 'shares','ret','profit','reason','hold')
-    def __init__(self, c, ed, xd, ep, xp, sh, ret, profit, reason, hold):
+    __slots__ = ('code','entry_date','exit_date','entry_time','exit_time',
+                 'entry_px','exit_px','shares','ret','profit','reason','hold')
+    def __init__(self, c, ed, xd, ep, xp, sh, ret, profit, reason, hold,
+                 et='09:30', xt='15:00'):
         self.code=c; self.entry_date=ed; self.exit_date=xd
+        self.entry_time=et; self.exit_time=xt
         self.entry_px=ep; self.exit_px=xp; self.shares=sh
         self.ret=ret; self.profit=profit; self.reason=reason; self.hold=hold
 
@@ -536,7 +538,9 @@ def run_backtest(params: dict, progress_cb: Optional[Callable] = None,
             'code': t.code,
             'name': stock_names.get(t.code, '') if stock_names else '',
             'entry_date': str(t.entry_date),
+            'entry_time': getattr(t, 'entry_time', '09:30'),
             'exit_date': str(t.exit_date),
+            'exit_time': getattr(t, 'exit_time', '15:00'),
             'entry_px': round(float(t.entry_px), 2),
             'exit_px': round(float(t.exit_px), 2),
             'shares': int(t.shares),

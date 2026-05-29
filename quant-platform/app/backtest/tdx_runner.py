@@ -29,10 +29,13 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
     natural_days = (end - start).days
     est_trade_days = int(natural_days * 0.7)
     lookback = 80
-    kline_count = max(100, est_trade_days + lookback)  # 无上限，超时由bridge保护
+    kline_count = max(100, est_trade_days + lookback)
     end_time = params.get("end_time") or end.strftime("%Y%m%d")
     start_time_str = start.strftime("%Y%m%d")
-    log.info(f"TDX回测: {start}~{end} ({natural_days}d) kline_count={kline_count}")
+    # 公式需要足够历史K线，start_time 向前推1年
+    from datetime import timedelta
+    formula_start = (start - timedelta(days=365)).strftime("%Y%m%d")
+    log.info(f"TDX回测: {start}~{end} ({natural_days}d) kline_count={kline_count} formula_start={formula_start}")
 
     # 默认参数 — 全部从 config.py 读取，不硬编码任何数字
     from app.sim_trader.config import (
@@ -63,40 +66,15 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
     if stop_event and stop_event.is_set():
         return {"status": "stopped"}
 
-    # ── 优先尝试 5 分钟模式 ────────────────────────────
+    # ── 日线收盘价回测 ────────────────────────────
     if progress_cb:
-        progress_cb(0, 4, f"尝试 5 分钟线回测 (QUANTQQ, {kline_count}条K线)...")
+        progress_cb(0, 4, f"日线回测 (QUANTQQ, {kline_count}条K线)...")
 
-    try:
-        sig_result = bridge.execute_screen_range_5m(
-            end_time=end_time,
-            kline_count=kline_count,
-            start_date=start_time_str,
-        )
-    except Exception as e:
-        log.warning(f"5分钟模式初始化失败: {e}，降级日线")
-        sig_result = {"status": "error", "message": str(e)}
-
-    bars_5m = sig_result.get("bars_5m")
-    if sig_result.get("status") == "ok" and bars_5m:
-        result = _run_5m_backtest(
-            sig_result, params, start, end, progress_cb,
-            stop_event, stock_names or {},
-        )
-        if result is not None:
-            return result
-        log.warning("5分钟回测失败，降级日线")
-
-    # ── 降级：日线收盘价回测（原有逻辑） ───────────────
-    if progress_cb:
-        progress_cb(0, 4, f"降级日线回测 (QUANTQQ, {kline_count}条K线)...")
-
-    if sig_result.get("status") != "ok" or not sig_result.get("signals"):
-        # 重新获取日线数据
-        sig_result = bridge.execute_screen_range(
-            end_time=end_time,
-            kline_count=kline_count,
-        )
+    sig_result = bridge.execute_screen_range(
+        end_time=end_time,
+        kline_count=kline_count,
+        start_time=formula_start,
+    )
     if sig_result.get("status") != "ok":
         return {"status": "error", "message": sig_result.get("message", "TDX 信号获取失败")}
 
@@ -534,6 +512,8 @@ def _build_result(eng, stock_names, params, td_list, total_buy_signals,
     """构建与 simple_runner 完全一致的输出格式"""
     trades = eng.trades
     n = len(trades)
+    # 买入次数 = 唯一 (code, entry_date) 组合
+    unique_buys = len(set((t.code, str(t.entry_date)) for t in trades))
     wins = [t for t in trades if t.ret > 0]
     losses = [t for t in trades if t.ret <= 0]
     nw, nl = len(wins), len(losses)
@@ -558,7 +538,9 @@ def _build_result(eng, stock_names, params, td_list, total_buy_signals,
             'code': t.code,
             'name': stock_names.get(t.code, ''),
             'entry_date': str(t.entry_date),
+            'entry_time': getattr(t, 'entry_time', None) or '09:30',
             'exit_date': str(t.exit_date),
+            'exit_time': getattr(t, 'exit_time', None) or '15:00',
             'entry_px': round(float(t.entry_px), 2),
             'exit_px': round(float(t.exit_px), 2),
             'shares': int(t.shares),
@@ -645,7 +627,9 @@ def _build_result(eng, stock_names, params, td_list, total_buy_signals,
         'profit_ratio': round(float(pf), 2),
         'ann_return': round(float(ann_ret), 2),
         'signals': total_buy_signals,
-        'trades': n,
+        'buy_signals': unique_buys,
+        'sell_signals': n,
+        'trades': unique_buys + n,
         'wins': nw,
         'losses': nl,
         'profit_factor': round(float(pf), 2),
