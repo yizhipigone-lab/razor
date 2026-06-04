@@ -271,11 +271,21 @@ class SimTraderEngine:
                         pos.peak_price *= ratio
                         current_pct = close_p / pos.entry_price - 1
 
+            # 0.5 强制首日弱势离场（买入后前N个交易日检测当日最高价是否达标）
+            if FIRST_DAY_EXIT_MIN_PROFIT > 0 and 2 <= hold_days <= FIRST_DAY_EXIT_DAYS + 1:
+                day_high_pct = high_p / pos.entry_price - 1
+                if day_high_pct < FIRST_DAY_EXIT_MIN_PROFIT:
+                    sells.append((pos, close_p,
+                        f"首日未达标(最高+{day_high_pct*100:.1f}%)", None))
+                    continue
+
             # 1. 硬止损
             if current_pct <= HARD_STOP:
-                sells.append((pos, close_p,
-                    f"硬止损({current_pct*100:.1f}%)", None))
-                continue
+                day_high_pct = high_p / pos.entry_price - 1
+                if day_high_pct < FIRST_DAY_EXIT_MIN_PROFIT:
+                    sells.append((pos, close_p,
+                        f"首日未达标(最高+{day_high_pct*100:.1f}%)", None))
+                    continue
 
             # 2. 时间强制
             if hold_days > TIME_FORCE_DAYS:

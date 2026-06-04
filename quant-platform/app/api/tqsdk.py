@@ -3,7 +3,7 @@
 """
 import json
 import threading
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter
@@ -60,36 +60,66 @@ async def start_screen(body: dict):
 
     def _run():
         try:
-            sync_broadcast({
-                "type": "tqsdk_progress",
-                "step": 1, "total": 3, "msg": "正在执行 QUANTQQ 选股..."
-            })
-
             from app.tqsdk.bridge import TdxBridge
             bridge = TdxBridge()
-            result = bridge.execute_screen(
-                end_time=end_time or datetime.now().strftime("%Y%m%d"),
-                stock_list_override=stock_list_override,
-                lookback_days=500,
-            )
 
-            stop = _stop_events.get("tqsdk")
-            if stop and stop.is_set():
-                sync_broadcast({"type": "tqsdk_screen_done", "status": "stopped"})
-                return
+            # ── 确定需要扫描的交易日列表 ──
+            from app.api.sim_trader import _load_trading_calendar
+            cal = _load_trading_calendar()
+            scan_dates = []
+            if start_time and start_time != end_time:
+                sd = date.fromisoformat(db_start)
+                ed = date.fromisoformat(db_end)
+                d = sd
+                while d <= ed:
+                    if d in cal or d.weekday() < 5:
+                        scan_dates.append(d)
+                    d += timedelta(days=1)
+                if not cal:
+                    scan_dates = [d for d in scan_dates if d.weekday() < 5]
+            else:
+                scan_dates = [date.today()]
 
-            if result.get("status") != "ok":
-                sync_broadcast({
-                    "type": "tqsdk_screen_done",
-                    "status": "error",
-                    "message": result.get("message", "选股失败"),
-                })
-                return
+            if len(scan_dates) == 0:
+                scan_dates = [date.today()]
 
-            matched = result.get("matched", [])
+            log.info(f"TDX 区间选股: {scan_dates[0]} ~ {scan_dates[-1]}, 共 {len(scan_dates)} 个交易日")
             sync_broadcast({
                 "type": "tqsdk_progress",
-                "step": 2, "total": 3, "msg": f"选股完成，共 {len(matched)} 只，正在保存..."
+                "step": 0, "total": len(scan_dates) + 2,
+                "msg": f"区间选股 {scan_dates[0]} ~ {scan_dates[-1]}, 共 {len(scan_dates)} 天"
+            })
+
+            all_matched = {}  # code -> first_date
+            total = len(scan_dates)
+            for i, d in enumerate(scan_dates):
+                stop = _stop_events.get("tqsdk")
+                if stop and stop.is_set():
+                    sync_broadcast({"type": "tqsdk_screen_done", "status": "stopped"})
+                    return
+
+                d_str = d.strftime("%Y%m%d")
+                sync_broadcast({
+                    "type": "tqsdk_progress",
+                    "step": i + 1, "total": total + 2,
+                    "msg": f"扫描 {d} ({i+1}/{total})..."
+                })
+
+                result = bridge.execute_screen(
+                    end_time=d_str,
+                    stock_list_override=stock_list_override,
+                    lookback_days=500,
+                )
+                if result.get("status") == "ok":
+                    for code in result.get("matched", []):
+                        if code not in all_matched:
+                            all_matched[code] = str(d)
+
+            matched = list(all_matched.keys())
+            sync_broadcast({
+                "type": "tqsdk_progress",
+                "step": total + 1, "total": total + 2,
+                "msg": f"选股完成，{len(scan_dates)}天共 {len(matched)} 只，正在保存..."
             })
 
             # 补充股票名称和板块
@@ -202,41 +232,63 @@ async def delete_history(hist_id: int):
 # ── 6. 一键回测 ──
 
 @router.post("/api/tqsdk/backtest")
-async def start_backtest(body: dict):
-    """从选股历史直接启动回测"""
-    from app.backtest.simple_runner import run_backtest
-
-    history_id = body.get("history_id")
-    if not history_id:
-        return {"status": "error", "message": "history_id 不能为空"}
-
-    # 获取选股结果
-    detail = db.get_tqsdk_screen_history_detail(history_id)
-    if not detail:
-        return {"status": "error", "message": "选股记录不存在"}
-
-    stock_list = body.get("stock_codes") or detail.get("stock_codes", [])
-    if not stock_list:
-        return {"status": "error", "message": "该选股结果为空，无法回测"}
-
-    # 加载默认回测参数
-    params = _load_bt_defaults()
-    params["strategy_name"] = body.get("strategy_name", "盘整突破")
-    params["start_date"] = body.get("start_date") or detail.get("start_date") or "2023-01-01"
-    params["end_date"] = body.get("end_date") or detail.get("end_date") or str(date.today())
-    params["stock_pool"] = stock_list
-
-    stop_evt = threading.Event()
-    with _stop_lock:
-        _stop_events["tqsdk_bt"] = stop_evt
+async def run_tqsdk_bt(body: dict):
+    """QUANTQQ 一键回测：选股 + 轻量回测"""
+    result = None
 
     def _run():
+        nonlocal result
+        import threading as _th
+        from app.backtest.simple_runner import run_backtest
+        from app.backtest.tdx_runner import run_tdx_backtest
+        from datetime import date as _date
+
         try:
+            history_id = body.get("history_id")
+            params = body.get("params", body)
+
+            strategy_type = params.get("strategy_type", "tdx")
+            stock_list_override = params.get("stock_list_override")
+            n_min = params.get("n_min", 100)
+            n_max = params.get("n_max", 300)
+            start = params.get("start_date", "2023-01-01")
+            end = params.get("end_date", str(_date.today()))
+
+            if isinstance(start, str):
+                start = _date.fromisoformat(start)
+            if isinstance(end, str):
+                end = _date.fromisoformat(end)
+
+            sync_broadcast({
+                "type": "tqsdk_progress",
+                "step": 1, "total": 4, "msg": "加载股票列表..."
+            })
+
+            # 从历史记录加载股票池
+            stock_list = stock_list_override
+            if not stock_list and history_id:
+                detail = db.get_tqsdk_screen_history_detail(int(history_id))
+                if detail and detail.get("stock_codes"):
+                    stock_list = detail["stock_codes"]
+
+            if not stock_list:
+                # 使用全市场
+                stocks_df = db.get_all_stocks()
+                stock_list = stocks_df["code"].tolist()
+
+            sync_broadcast({
+                "type": "tqsdk_progress",
+                "step": 2, "total": 4,
+                "msg": f"股票池 {len(stock_list)} 只，执行回测..."
+            })
+
+            stop_evt = _th.Event()
+
             def _prog(step, total, msg):
                 sync_broadcast({
                     "type": "backtest_progress",
                     "step": step, "total": total, "msg": msg,
-                    "context": "tqsdk_bt",
+                    "context": "tqsdk_bt"
                 })
 
             stock_names = {}
@@ -272,31 +324,29 @@ async def start_backtest(body: dict):
         except Exception as e:
             log.error(f"回测异常: {e}")
             sync_broadcast({
-                "type": "simple_bt_done",
-                "status": "error",
-                "message": str(e),
+                "type": "log", "level": "error", "msg": f"回测失败: {e}"
             })
         finally:
-            with _stop_lock:
-                _stop_events.pop("tqsdk_bt", None)
+            # 清理：移除 BacktestEngine._intraday_cache
+            try:
+                from app.backtest.engine import BacktestEngine
+                if hasattr(BacktestEngine, '_intraday_cache'):
+                    delattr(BacktestEngine, '_intraday_cache')
+            except Exception:
+                pass
 
     run_in_thread(_run)
     return {"status": "started"}
 
 
-def _load_bt_defaults() -> dict:
-    """加载回测默认参数"""
+# ── 7. 停止回测 ──
+
+@router.post("/api/tqsdk/backtest/stop")
+async def stop_tqsdk_bt():
     try:
-        if _BT_CONFIG_FILE.exists():
-            with open(_BT_CONFIG_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+        from app.api.backtest import stop_events
+        if "simple_bt" in stop_events:
+            stop_events["simple_bt"].set()
+        return {"status": "ok", "message": "已发送停止信号"}
     except Exception:
-        pass
-    return {
-        "strategy_name": "盘整突破",
-        "initial_capital": 1_000_000,
-        "position_size": 50_000,
-        "hard_stop": -0.06,
-        "take_profit_tiers": [{"profit_pct": 0.03, "sell_ratio": 0.10}],
-        "use_atr_trail": False,
-    }
+        return {"status": "ok", "message": "已发送停止信号"}

@@ -25,6 +25,8 @@ ATR_TRAIL_MULTIPLIER = 1.0    # ATR 倍数（1.0 = ATR本身作为回撤距离�
 TIME_EXIT_PROFIT = 0.03       # 时间条件退出盈利阈值
 TIME_FORCE_DAYS = 12          # 时间强制退出天数（优化：9→12，赢率+2%）
 SAME_STOCK_COOLDOWN = 20      # 同股票冷却天数
+FIRST_DAY_EXIT_MIN_PROFIT = 0.03  # 首日弱势离场：目标涨幅阈值（0=禁用）
+FIRST_DAY_EXIT_DAYS = 1          # 首日弱势离场：买入后前N个交易日检查（默认仅第1天）
 
 # 多档阶梯止盈: 按顺序触发，每档卖出剩余仓位的 sell_ratio%
 # 触发过的不再重复，剩余仓位最终由 TR 移动止盈保护

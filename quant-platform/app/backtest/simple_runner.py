@@ -131,6 +131,13 @@ class FastEngine:
                         p.peak_price *= ratio
                         cur = cp / p.entry_price - 1
 
+            # 首日弱势离场：买入后前N个交易日最高价未达目标则强制卖出
+            fd_min_profit = self.p.get('first_day_exit_min_profit', 0)
+            fd_days = self.p.get('first_day_exit_days', 1)
+            if fd_min_profit > 0 and 2 <= hd <= fd_days + 1:
+                day_high_pct = hp / p.entry_price - 1
+                if day_high_pct < fd_min_profit:
+                    sells.append((p, cp, f"FD({day_high_pct*100:.1f}%)", None)); continue
             if cur <= hs:
                 sells.append((p, cp, "HS", None)); continue
             if hd > time_force:
