@@ -187,20 +187,39 @@ async def sim_trader_status():
     today = date.today()
     names = _load_stock_names()
 
-    # 直接从 Parquet 读取今日收盘价（避免 DuckDB 锁）
+    # 优先 QMT 实时行情，失败回退 Parquet
+    active_codes = [p.code for p in engine.active_positions()]
     snapshot = {}
-    try:
-        daily_dir = ROOT_DIR / "data" / "parquet" / "daily"
-        for p in engine.active_positions():
-            f = daily_dir / f"{p.code}.parquet"
-            if f.exists():
-                df = pd.read_parquet(str(f), columns=['date', 'close'])
-                df['date'] = pd.to_datetime(df['date']).dt.date
-                row = df[df['date'] == today]
-                if not row.empty:
-                    snapshot[p.code] = {'close': float(row.iloc[0]['close'])}
-    except Exception as e:
-        log.warning(f"读取今日快照失败: {e}")
+    missing = set(active_codes)
+
+    if active_codes:
+        try:
+            from app.data_manager.engine import get_realtime_quote
+            rt = get_realtime_quote(active_codes)
+            if not rt.empty:
+                for _, row in rt.iterrows():
+                    code = str(row.get('code', ''))
+                    price = float(row.get('price', 0))
+                    if price > 0:
+                        snapshot[code] = {'close': price}
+                        missing.discard(code)
+        except Exception as e:
+            log.warning(f"QMT实时行情失败: {e}")
+
+    # 回退：从 Parquet 读取今日收盘价
+    if missing:
+        try:
+            daily_dir = ROOT_DIR / "data" / "parquet" / "daily"
+            for code in list(missing):
+                f = daily_dir / f"{code}.parquet"
+                if f.exists():
+                    df = pd.read_parquet(str(f), columns=['date', 'close'])
+                    df['date'] = pd.to_datetime(df['date']).dt.date
+                    row = df[df['date'] == today]
+                    if not row.empty:
+                        snapshot[code] = {'close': float(row.iloc[0]['close'])}
+        except Exception as e:
+            log.warning(f"Parquet回退失败: {e}")
 
     positions = []
     for p in engine.active_positions():

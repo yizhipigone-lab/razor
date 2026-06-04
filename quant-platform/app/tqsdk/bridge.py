@@ -14,8 +14,15 @@ log = get_logger("TdxBridge")
 
 TDX_USER_DIR = Path(r"E:\NEW_TDX\PYPlugins\user")
 WORKER_SCRIPT = TDX_USER_DIR / "tqsdk_bridge_worker.py"
-FORMULA_NAME = "QUANTQQ"
-FORMULA_ARG = ""
+
+def _get_formula_name():
+    try:
+        from core.settings import settings
+        name = settings.get("tqsdk", "formula_name", default="QUANTQQ")
+        return name
+    except Exception:
+        return "QUANTQQ"
+
 OUTPUT_VAR = "ZP"
 MATCH_VALUE = "1"
 TIMEOUT = 600  # 10分钟
@@ -28,8 +35,8 @@ class TdxBridge:
                        lookback_days: int = 30):
         """单日选股：返回当天 ZP=1 的股票列表"""
         task = {
-            "formula_name": FORMULA_NAME,
-            "formula_arg": FORMULA_ARG,
+            "formula_name": _get_formula_name(),
+            "formula_arg": "",
             "output_var_name": OUTPUT_VAR,
             "match_value": MATCH_VALUE,
             "end_time": end_time,
@@ -54,8 +61,8 @@ class TdxBridge:
             return_count = kline_count
         task = {
             "task_type": "range",
-            "formula_name": FORMULA_NAME,
-            "formula_arg": FORMULA_ARG,
+            "formula_name": _get_formula_name(),
+            "formula_arg": "",
             "output_var_name": OUTPUT_VAR,
             "end_time": end_time,
             "start_time": start_time,
@@ -69,7 +76,8 @@ class TdxBridge:
                                  start_date: str = None,
                                  return_count: int = None,
                                  stock_list_override: list = None,
-                                 start_time: str = ""):
+                                 start_time: str = "",
+                                 signal_start: str = ""):
         """
         区间选股 5分钟增强版：两步调用 worker
         Step 1: range → 信号 + 日线收盘价 (快)
@@ -84,8 +92,8 @@ class TdxBridge:
         # ── Step 1: 获取信号 + 日线收盘价 ──────────────────
         task1 = {
             "task_type": "range",
-            "formula_name": FORMULA_NAME,
-            "formula_arg": FORMULA_ARG,
+            "formula_name": _get_formula_name(),
+            "formula_arg": "",
             "output_var_name": OUTPUT_VAR,
             "end_time": end_time,
             "start_time": start_time,
@@ -99,13 +107,18 @@ class TdxBridge:
         if result.get("status") != "ok":
             return result
 
-        # ── Step 2: 获取 5 分钟 OHLC（仅对信号股） ────────
+        # ── Step 2: 获取 5 分钟 OHLC（仅对信号股，且信号在回测区间内） ──
         signals = result.get("signals", {})
         signal_codes = []
         for code, d in signals.items():
+            dates = d.get("Date", [])
             zps = d.get("ZP", d.get(OUTPUT_VAR, []))
-            if "1" in [str(v) for v in zps]:
-                signal_codes.append(code)
+            for dt, v in zip(dates, zps):
+                if str(v) == "1":
+                    if signal_start and str(dt) < signal_start:
+                        continue  # 信号在回测区间之前，不拿5m数据
+                    signal_codes.append(code)
+                    break
 
         if not signal_codes:
             return result
@@ -114,7 +127,9 @@ class TdxBridge:
         from datetime import datetime
         try:
             end_dt = datetime.strptime(end_time, "%Y%m%d")
-            if start_date:
+            if signal_start:
+                start_dt = datetime.strptime(signal_start, "%Y%m%d")
+            elif start_date:
                 start_dt = datetime.strptime(start_date, "%Y%m%d")
             else:
                 start_dt = end_dt.replace(day=1)

@@ -683,6 +683,8 @@ async function saveRiskSettings() {
     loss_streak_pause: getv('set-streak-pause', v => parseInt(v)),
     pause_days: getv('set-pause-days', v => parseInt(v)),
     same_stock_cooldown: getv('set-cooldown', v => parseInt(v)),
+    first_day_exit_min_profit: (function() { var ck = document.getElementById('set-fd-enable'); if (ck && !ck.checked) return 0; var el = document.getElementById('set-fd-profit'); if (!el || el.value === '') return 0.03; return parseFloat(el.value) / 100; })(),
+    first_day_exit_days: getv('set-fd-days', v => parseInt(v)) || 1,
   };
   try {
     const r = await fetch('/api/settings/risk-params', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) }).then(r => r.json());
@@ -3412,6 +3414,20 @@ async function loadSettings() {
     setVal('set-streak-pause', r.loss_streak_pause ?? 5);
     setVal('set-pause-days', r.pause_days ?? 3);
     setVal('set-cooldown', r.same_stock_cooldown ?? 20);
+    // 首日弱势离场
+    var fdProfit = r.first_day_exit_min_profit;
+    var fdCk = document.getElementById('set-fd-enable');
+    var fdProfitEl = document.getElementById('set-fd-profit');
+    var fdDaysEl = document.getElementById('set-fd-days');
+    if (fdProfit !== undefined && fdProfit > 0) {
+      if (fdCk) fdCk.checked = true;
+      if (fdProfitEl) { fdProfitEl.value = (fdProfit * 100).toFixed(1); fdProfitEl.disabled = false; }
+    } else {
+      if (fdCk) fdCk.checked = false;
+      if (fdProfitEl) { fdProfitEl.value = '3.0'; fdProfitEl.disabled = true; }
+    }
+    if (fdDaysEl && r.first_day_exit_days !== undefined) fdDaysEl.value = r.first_day_exit_days;
+    if (fdCk && !fdCk.checked && fdDaysEl) fdDaysEl.disabled = true;
     // ATR 动态止损
     const atrStop = r.use_atr_stop === true;
     setVal('set-atr-stop', atrStop, 'checked');
@@ -3549,6 +3565,7 @@ async function loadBtSimpleConfig() {
       'sbt-ted': 'time_exit_days', 'sbt-tep': 'time_exit_profit',
       'sbt-tfd': 'time_force_days', 'sbt-lsh': 'loss_streak_halve',
       'sbt-lsp': 'loss_streak_pause', 'sbt-pd': 'pause_days',
+      'sbt-fd-profit': 'first_day_exit_min_profit', 'sbt-fd-days': 'first_day_exit_days',
     };
     for (const [elId, key] of Object.entries(map)) {
       if (cfg[key] !== undefined) {
@@ -3605,6 +3622,7 @@ function _collectBtConfig() {
     'sbt-ted': 'time_exit_days', 'sbt-tep': 'time_exit_profit',
     'sbt-tfd': 'time_force_days', 'sbt-lsh': 'loss_streak_halve',
     'sbt-lsp': 'loss_streak_pause', 'sbt-pd': 'pause_days',
+    'sbt-fd-profit': 'first_day_exit_min_profit', 'sbt-fd-days': 'first_day_exit_days',
   };
   const cfg = {};
   for (const [elId, key] of Object.entries(map)) {
@@ -3613,7 +3631,7 @@ function _collectBtConfig() {
     let val = parseFloat(el.value);
     if (isNaN(val)) continue;
     if (key === 'hard_stop' || key === 'trail_activate' || key === 'trail_dd' ||
-        key === 'time_exit_profit') {
+        key === 'time_exit_profit' || key === 'first_day_exit_min_profit') {
       val = val / 100;
     }
     cfg[key] = val;

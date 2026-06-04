@@ -135,6 +135,16 @@ class Settings:
         return int(self.get("risk", "time_exit_force_days", default=10))
 
     @property
+    def first_day_exit_min_profit(self) -> float:
+        """首日弱势离场：目标涨幅阈值（0=禁用）"""
+        return float(self.get("risk", "first_day_exit_min_profit", default=0.0))
+
+    @property
+    def first_day_exit_days(self) -> int:
+        """首日弱势离场：买入后前N个交易日检查（默认1=仅首日）"""
+        return int(self.get("risk", "first_day_exit_days", default=1))
+
+    @property
     def poll_interval_seconds(self) -> int:
         """盘中行情轮询间隔（秒）"""
         return int(self.get("monitor", "poll_interval_seconds", default=180))

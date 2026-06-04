@@ -283,7 +283,7 @@
             </div>
             <!-- 止盈止损 -->
             <div class="bt-cfg-group">
-              <div class="bt-cfg-title">止盈止损 <span style="font-weight:400;color:var(--text3)">优先级：HS → TF → TP档 → TR → TC</span></div>
+              <div class="bt-cfg-title">止盈止损 <span style="font-weight:400;color:var(--text3)">优先级：HS → FD → TF → TP档 → TR → TC</span></div>
               <div class="bt-cfg-grid">
                 <div class="bt-cfg-item hs"><label><span class="reason-tag" style="color:#f85149">HS</span> 硬止损%</label><input type="number" id="sbt-hs" step="0.5" value="-6.0"></div>
                 <div class="bt-cfg-item tr"><label><span class="reason-tag" style="color:#58a6ff">TR</span> 移动止盈激活%</label><input type="number" id="sbt-ta" step="0.5"></div>
@@ -293,6 +293,11 @@
                   <input type="checkbox" id="sbt-atr" checked style="margin:0;width:16px;height:16px">
                   <input type="number" id="sbt-atr-mul" step="0.25" value="1.0" style="width:50px;height:22px;font-size:10px">
                 </div>
+              </div>
+              <!-- 首日弱势离场 -->
+              <div class="bt-cfg-grid" style="margin-top:6px">
+                <div class="bt-cfg-item fd"><label><span class="reason-tag" style="color:#f59e0b">FD</span> 目标涨幅%</label><input type="number" id="sbt-fd-profit" step="0.5" value="3.0"></div>
+                <div class="bt-cfg-item fd"><label><span class="reason-tag" style="color:#f59e0b">FD</span> 有效天数</label><input type="number" id="sbt-fd-days" step="1" value="1"></div>
               </div>
               <div style="margin-top:8px;font-size:11px;color:var(--text2)">阶梯止盈（按顺序触发，每档只触发一次，剩余仓位最终由 TR 保护）</div>
               <div id="sbt-tiers-container" style="margin-top:4px">
@@ -937,6 +942,21 @@
             <p class="hint">直接写入 config.py，模拟盘和回测同时生效</p>
             <div class="row">
               <div><label><span class="reason-tag" style="color:#f85149">HS</span> 硬止损%</label><input type="number" id="set-stop" step="0.5"></div>
+            </div>
+            <!-- 首日弱势离场 -->
+            <div style="margin-top:8px;padding:6px 8px;border:1px solid var(--border);border-radius:6px">
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+                <span class="reason-tag" style="color:#f59e0b">FD</span>
+                <span style="font-size:12px;font-weight:600">首日弱势离场</span>
+                <label style="font-size:11px;margin-left:auto;display:flex;align-items:center;gap:4px">
+                  <input type="checkbox" id="set-fd-enable" checked onchange="document.getElementById('set-fd-profit').disabled=!this.checked;document.getElementById('set-fd-days').disabled=!this.checked"> 启用
+                </label>
+              </div>
+              <div class="row">
+                <div><label style="font-size:11px">目标涨幅%</label><input type="number" id="set-fd-profit" step="0.5" value="3.0" style="width:100%"></div>
+                <div><label style="font-size:11px">有效天数</label><input type="number" id="set-fd-days" step="1" value="1" style="width:100%"></div>
+              </div>
+              <div style="font-size:10px;color:var(--text2);margin-top:2px">买入后前N天，当日最高价未达目标则14:52强制卖出</div>
             </div>
             <div style="margin-top:6px">
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">

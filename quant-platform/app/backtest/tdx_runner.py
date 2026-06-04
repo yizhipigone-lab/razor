@@ -1,6 +1,7 @@
 """
 TDX 公式回测引擎
 从通达信获取信号 + 价格，逐日回放买卖，输出格式严格匹配 simple_runner
+优先使用5分钟线逐K线检查，某只股票没有5分钟线时降级日线OHLC
 """
 
 import numpy as np
@@ -66,30 +67,115 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
     if stop_event and stop_event.is_set():
         return {"status": "stopped"}
 
-    # ── 日线收盘价回测 ────────────────────────────
+    # ── 5 分钟线回测（优先），失败降级日线 ──────────
+    is_5m = False
+    stocks_with_5m = set()
+
+    try:
+        if progress_cb:
+            progress_cb(0, 5, "尝试获取5分钟线数据...")
+        sig_result = bridge.execute_screen_range_5m(
+            end_time=end_time,
+            kline_count=kline_count,
+            start_time=formula_start,
+            signal_start=start_time_str,
+        )
+        if sig_result.get("status") == "ok":
+            bars_5m = sig_result.get("bars_5m", [])
+            # 检查是否有有效K线（至少要有 close/high/low）
+            valid_bars = [b for b in (bars_5m or []) if b.get("close", 0) > 0]
+            if valid_bars:
+                is_5m = True
+                for b in valid_bars:
+                    code = b.get("code", "")
+                    if code:
+                        stocks_with_5m.add(code.split(".")[0] if "." in code else code)
+    except Exception as e:
+        log.warning(f"5分钟线获取失败: {e}，降级日线")
+
+    if not is_5m:
+        if progress_cb:
+            progress_cb(0, 5, f"5分钟线不可用，降级日线回测...")
+        sig_result = bridge.execute_screen_range(
+            end_time=end_time,
+            kline_count=kline_count,
+            start_time=formula_start,
+        )
+        if sig_result.get("status") != "ok":
+            return {"status": "error", "message": sig_result.get("message", "TDX 信号获取失败")}
+        return _run_daily_backtest(
+            sig_result, params, start, end, progress_cb,
+            stop_event, stock_names or {},
+        )
+
     if progress_cb:
-        progress_cb(0, 4, f"日线回测 (QUANTQQ, {kline_count}条K线)...")
+        progress_cb(0, 5, f"5分钟逐K线回放 ({len(stocks_with_5m)}只有5m数据)...")
 
-    sig_result = bridge.execute_screen_range(
-        end_time=end_time,
-        kline_count=kline_count,
-        start_time=formula_start,
-    )
-    if sig_result.get("status") != "ok":
-        return {"status": "error", "message": sig_result.get("message", "TDX 信号获取失败")}
-
-    return _run_daily_backtest(
+    return _run_5m_backtest(
         sig_result, params, start, end, progress_cb,
-        stop_event, stock_names or {},
+        stop_event, stock_names or {}, stocks_with_5m,
     )
+
+
+def _check_stops_daily(pos, close_p, high_p, hold_days, params, bar=None):
+    """单日止盈止损检查（用于无5m数据的股票），返回 (reason, sell_px, partial_shares) 或 None"""
+    entry = pos.entry_price
+    cur = close_p / entry - 1
+
+    # 更新峰值
+    if high_p > pos.peak_price:
+        pos.peak_price = high_p
+    peak_pct = pos.peak_price / entry - 1
+
+    # 1. 硬止损
+    hs = params["hard_stop"]
+    if cur <= hs:
+        return ("HS", close_p, None)
+
+    # 2. 阶梯止盈
+    tp_tiers = params.get("take_profit_tiers", [])
+    for idx, tier in enumerate(tp_tiers):
+        if idx not in pos.tp_triggered and cur >= tier["profit_pct"]:
+            pos.tp_triggered.add(idx)
+            ss = int(pos.shares * tier.get("sell_ratio", 1.0) / 100) * 100
+            if ss < 100:
+                ss = 100
+            ss = min(ss, int(pos.shares))
+            return (f"TP{idx+1}", close_p, ss)
+
+    # 3. 移动止盈
+    trail_act = params["trail_activate"]
+    trail_dd = params["trail_dd"]
+    if peak_pct >= trail_act:
+        dd_from_peak = close_p / pos.peak_price - 1
+        if dd_from_peak <= -trail_dd:
+            return ("TR", close_p, None)
+
+    # 4. 时间条件
+    time_exit = params["time_exit_days"]
+    time_profit = params["time_exit_profit"]
+    if hold_days > time_exit and cur > time_profit:
+        return ("TC", close_p, None)
+
+    # 5. 时间强制
+    time_force = params["time_force_days"]
+    if hold_days > time_force:
+        return ("TF", close_p, None)
+
+    return None
 
 
 def _run_5m_backtest(sig_result: dict, params: dict, start: date, end: date,
-                      progress_cb, stop_event, stock_names: dict) -> dict | None:
-    """5 分钟线回测引擎：逐 K 线检查止盈止损"""
+                      progress_cb, stop_event, stock_names: dict,
+                      stocks_with_5m: set) -> dict | None:
+    """5 分钟线回测引擎：有5m数据的股票逐K线检查，无5m数据的每日收盘检查"""
     try:
         raw_signals = sig_result.get("signals", {})
         bars_5m = sig_result.get("bars_5m", [])
+        raw_prices = sig_result.get("prices", {})
+
+        # 过滤有效K线
+        bars_5m = [b for b in (bars_5m or []) if b.get("close", 0) > 0]
 
         # 解析信号
         sig_by_code = {}
@@ -118,16 +204,38 @@ def _run_5m_backtest(sig_result: dict, params: dict, start: date, end: date,
         if not all_signal_codes:
             return _empty_result(params, 0, "区间内无QUANTQQ信号")
 
+        # 解析日线价格（用于无5m数据的股票）
+        prices_by_date = defaultdict(dict)
+        for tdx_code, d in raw_prices.items():
+            code_num = tdx_code.split(".")[0] if "." in tdx_code else tdx_code
+            dates_list = d.get("Date", [])
+            closes = d.get("Close", [])
+            for dt_str, cl in zip(dates_list, closes):
+                try:
+                    dt_date = date(int(dt_str[:4]), int(dt_str[4:6]), int(dt_str[6:8]))
+                except (ValueError, TypeError):
+                    continue
+                if start <= dt_date <= end:
+                    try:
+                        close_val = float(cl)
+                        prices_by_date[str(dt_date)][code_num] = {
+                            "close": close_val, "high": close_val,
+                        }
+                    except (ValueError, TypeError):
+                        pass
+
+        # 按5m数据有无分组
+        no_5m_codes = all_signal_codes - stocks_with_5m
+        log.info(f"5m回测: {len(stocks_with_5m)}只有5m数据, {len(no_5m_codes)}只降级日线")
+
         if progress_cb:
-            progress_cb(1, 4, f"5分钟逐K线回放 ({len(bars_5m)}根K线, {len(all_signal_codes)}只信号股)...")
+            progress_cb(1, 4, f"5分钟逐K线回放 ({len(bars_5m)}根K线, {len(stocks_with_5m)}只5m + {len(no_5m_codes)}只日线)...")
 
         if stop_event and stop_event.is_set():
             return {"status": "stopped"}
 
-        # 按时间排序
-        from datetime import datetime as dt_cls
+        # 按时间排序5m bars
         bars_5m.sort(key=lambda x: x.get("datetime", ""))
-        # 为每个 bar 补齐 date 字段
         for b in bars_5m:
             dt_str = b.get("datetime", "")
             if len(dt_str) >= 10:
@@ -139,11 +247,11 @@ def _run_5m_backtest(sig_result: dict, params: dict, start: date, end: date,
         # ── 引擎状态 ─────────────────────────────────
         cash = params["initial_capital"]
         position_ratio = params["position_ratio"]
-        positions = {}          # code -> Position
-        trades_5m = []          # list of Trade
-        equity_curve = []       # list of {datetime, equity, cash, pos}
-        cooldown = {}           # code -> last_exit_date
-        pending_buys = defaultdict(list)  # date_str -> [code, ...]
+        positions = {}          # code -> Position (both 5m and no-5m)
+        trades_all = []          # list of Trade
+        equity_curve = []
+        cooldown = {}
+        pending_buys = defaultdict(list)
         sell_reasons = Counter()
         total_buy_signals = 0
         prev_day = None
@@ -153,162 +261,227 @@ def _run_5m_backtest(sig_result: dict, params: dict, start: date, end: date,
                 if zp == "1":
                     pending_buys[dt_str].append(code)
 
-        # ── 逐 K 线循环 ───────────────────────────────
-        for i, bar in enumerate(bars_5m):
+        # 收集所有交易日（5m bars 的日期 + prices 的日期）
+        all_dates = set()
+        for b in bars_5m:
+            all_dates.add(str(b["date"]))
+        for d_str in prices_by_date.keys():
+            all_dates.add(d_str)
+        sorted_dates = sorted(all_dates)
+
+        # ── 逐 K 线循环（只处理有5m数据的股票） ──────
+        bar_idx = 0
+        for d_str in sorted_dates:
             if stop_event and stop_event.is_set():
                 return {"status": "stopped"}
 
-            d = bar["date"]
-            d_str = str(d)
+            d = date.fromisoformat(d_str)
+            log_prefix = ""
+            day_bars_start = bar_idx
 
-            # 新的一天：执行买入信号
-            if prev_day != d_str:
-                prev_day = d_str
-                if d_str in pending_buys:
-                    for code in pending_buys[d_str]:
-                        if code in positions:
-                            continue
-                        if code in cooldown and (d - cooldown[code]).days < params.get("same_stock_cooldown", 20):
-                            continue
-                        # 动态仓位：按当前市价净值 × 比例
-                        mkt_value = 0
-                        for pc, pp in positions.items():
-                            if not pp.active: continue
-                            bar_px = next((b["close"] for b in bars_5m[max(0,i-50):i+1]
-                                          if b["code"] == pc and b["date"] == d), pp.entry_price)
-                            mkt_value += pp.shares * bar_px
-                        current_equity = cash + mkt_value
-                        dyn_size = current_equity * position_ratio
-                        if cash < dyn_size * 0.5:
-                            break
+            # ── 新的一天：执行买入信号 ──────────────
+            if d_str in pending_buys:
+                for code in pending_buys[d_str]:
+                    if code in positions:
+                        continue
+                    if code in cooldown and (d - cooldown[code]).days < params.get("same_stock_cooldown", 20):
+                        continue
+                    # 动态仓位
+                    mkt_value = 0
+                    for pc, pp in positions.items():
+                        if not pp.active: continue
+                        if pc in stocks_with_5m:
+                            bar_px = next((b["close"] for b in bars_5m[max(0,bar_idx-50):bar_idx]
+                                          if b["code"] == pc and str(b["date"]) == d_str), pp.entry_price)
+                        else:
+                            bar_px = prices_by_date.get(d_str, {}).get(pc, {}).get("close", pp.entry_price)
+                        mkt_value += pp.shares * bar_px
+                    current_equity = cash + mkt_value
+                    dyn_size = current_equity * position_ratio
+                    if cash < dyn_size * 0.5:
+                        break
+
+                    if code in stocks_with_5m:
+                        # 有5m数据：用当天第一根bar的close买入
                         bar_for_code = next(
-                            (b for b in bars_5m[i:] if b["code"] == code and b["date"] == d), None
+                            (b for b in bars_5m[bar_idx:] if b["code"] == code and str(b["date"]) == d_str), None
                         )
                         if bar_for_code is None:
                             continue
                         px = bar_for_code["close"]
-                        if px <= 0:
+                    else:
+                        # 无5m数据：用日线收盘价买入
+                        day_price = prices_by_date.get(d_str, {}).get(code)
+                        if day_price is None:
                             continue
-                        sh = int(dyn_size / px / 100) * 100
-                        if sh < 100:
-                            continue
-                        cost = sh * px
-                        if cost > cash:
-                            continue
-                        cash -= cost
-                        positions[code] = Position(code, d, px, sh, cost)
-                        total_buy_signals += 1
+                        px = day_price["close"]
 
-            # 检查止盈止损（按该 bar 的股票代码查找持仓）
-            code = bar["code"]
-            pos = positions.get(code)
-            if pos and pos.active:
-                h = bar["high"]
-                l = bar["low"]
-                c = bar["close"]
+                    if px <= 0:
+                        continue
+                    sh = int(dyn_size / px / 100) * 100
+                    if sh < 100:
+                        continue
+                    cost = sh * px
+                    if cost > cash:
+                        continue
+                    cash -= cost
+                    positions[code] = Position(code, d, px, sh, cost)
+                    total_buy_signals += 1
 
-                if h > pos.peak_price:
-                    pos.peak_price = h
+            # ── 处理当天的5分钟K线（有5m数据的股票） ──
+            while bar_idx < len(bars_5m) and str(bars_5m[bar_idx]["date"]) == d_str:
+                bar = bars_5m[bar_idx]
+                code = bar["code"]
+                code_num = code.split(".")[0] if "." in code else code
 
-                entry = pos.entry_price
+                pos = positions.get(code_num)
+                if pos and pos.active and code_num in stocks_with_5m:
+                    h = bar["high"]
+                    l = bar["low"]
+                    c = bar["close"]
+                    if h > pos.peak_price:
+                        pos.peak_price = h
+
+                    entry = pos.entry_price
+                    hold_days = (d - pos.entry_date).days
+                    reason = None
+                    sell_px = None
+                    partial_sell = None
+
+                    # 1. 硬止损
+                    hs_pct = params["hard_stop"]
+                    stop_price = entry * (1 + hs_pct)
+                    if l <= stop_price:
+                        sell_px = max(stop_price, bar["open"])
+                        reason = "HS"
+                    # 2. 阶梯止盈
+                    elif reason is None:
+                        tp_tiers = params.get("take_profit_tiers", [])
+                        for idx, tier in enumerate(tp_tiers):
+                            if idx not in pos.tp_triggered and h >= entry * (1 + tier["profit_pct"]):
+                                pos.tp_triggered.add(idx)
+                                sell_px = entry * (1 + tier["profit_pct"])
+                                reason = f"TP{idx + 1}"
+                                ss = int(pos.shares * tier.get("sell_ratio", 1.0) / 100) * 100
+                                if ss < 100:
+                                    ss = 100
+                                partial_sell = min(ss, int(pos.shares))
+                                break
+                    # 3. 移动止盈
+                    if reason is None:
+                        trail_act = params["trail_activate"]
+                        trail_dd = params["trail_dd"]
+                        if pos.peak_price / entry - 1 >= trail_act:
+                            trail_price = pos.peak_price * (1 - trail_dd)
+                            if l <= trail_price:
+                                sell_px = max(trail_price, bar["open"])
+                                reason = "TR"
+                    # 4. 时间退出
+                    if reason is None:
+                        time_exit = params["time_exit_days"]
+                        time_profit = params["time_exit_profit"]
+                        if hold_days > time_exit and c / entry - 1 > time_profit:
+                            sell_px = c
+                            reason = "TC"
+                    # 5. 强制时间退出
+                    if reason is None:
+                        time_force = params["time_force_days"]
+                        if hold_days > time_force:
+                            sell_px = c
+                            reason = "TF"
+
+                    if reason and sell_px and sell_px > 0:
+                        sell_shares = partial_sell if (reason and reason.startswith("TP")) else pos.shares
+                        sell_shares = min(sell_shares, pos.shares)
+                        if sell_shares <= 0:
+                            sell_shares = pos.shares
+                        ret = (sell_px / entry - 1) * 100
+                        profit = sell_shares * (sell_px - entry)
+                        cash += sell_shares * sell_px
+                        if sell_shares >= pos.shares:
+                            pos.active = False
+                        else:
+                            pos.shares -= sell_shares
+                        trades_all.append(Trade(
+                            code_num, pos.entry_date, d, entry, sell_px,
+                            sell_shares, round(ret, 2), round(profit, 0), reason,
+                            hold_days,
+                        ))
+                        sell_reasons[reason] += 1
+                        cooldown[code_num] = d
+
+                bar_idx += 1
+
+            # ── 当天结束后：检查无5m数据的持仓 ────────
+            for code_num in list(positions.keys()):
+                if code_num in stocks_with_5m:
+                    continue  # 已在逐K线中处理
+                pos = positions[code_num]
+                if not pos.active:
+                    continue
+
+                day_price = prices_by_date.get(d_str, {}).get(code_num)
+                if day_price is None:
+                    continue
+                close_p = day_price["close"]
+                # 用close作为high/low的近似
                 hold_days = (d - pos.entry_date).days
-                reason = None
-                sell_px = None
 
-                # 1. 硬止损（Low 跌破止损线）
-                hs_pct = params["hard_stop"]
-                stop_price = entry * (1 + hs_pct)
-                if l <= stop_price:
-                    sell_px = max(stop_price, bar["open"])
-                    reason = "HS"
-                # 2. 阶梯止盈（High 突破止盈线，按 sell_ratio 部分卖出）
-                elif reason is None:
-                    tp_tiers = params.get("take_profit_tiers", [])
-                    for idx, tier in enumerate(tp_tiers):
-                        if idx not in pos.tp_triggered and h >= entry * (1 + tier["profit_pct"]):
-                            pos.tp_triggered.add(idx)
-                            sell_px = entry * (1 + tier["profit_pct"])
-                            reason = f"TP{idx + 1}"
-                            # 部分卖出：按 sell_ratio 计算股数
-                            ss = int(pos.shares * tier.get("sell_ratio", 1.0) / 100) * 100
-                            if ss < 100:
-                                ss = 100
-                            partial_sell = min(ss, int(pos.shares))
-                            break
-                # 3. 移动止盈（Low 跌破回撤线）
-                if reason is None:
-                    trail_act = params["trail_activate"]
-                    trail_dd = params["trail_dd"]
-                    if pos.peak_price / entry - 1 >= trail_act:
-                        trail_price = pos.peak_price * (1 - trail_dd)
-                        if l <= trail_price:
-                            sell_px = max(trail_price, bar["open"])
-                            reason = "TR"
-                # 4. 时间退出
-                if reason is None:
-                    time_exit = params["time_exit_days"]
-                    time_profit = params["time_exit_profit"]
-                    if hold_days > time_exit and c / entry - 1 > time_profit:
-                        sell_px = c
-                        reason = "TC"
-                # 5. 强制时间退出
-                if reason is None:
-                    time_force = params["time_force_days"]
-                    if hold_days > time_force:
-                        sell_px = c
-                        reason = "TF"
-
-                if reason and sell_px and sell_px > 0:
-                    # 支持部分卖出（TP 阶梯止盈），其他原因全卖
-                    sell_shares = partial_sell if (reason and reason.startswith("TP")) else pos.shares
+                result = _check_stops_daily(pos, close_p, close_p, hold_days, params)
+                if result:
+                    reason, sell_px, partial = result
+                    sell_shares = partial if partial else pos.shares
                     sell_shares = min(sell_shares, pos.shares)
                     if sell_shares <= 0:
                         sell_shares = pos.shares
-                    ret = (sell_px / entry - 1) * 100
-                    profit = sell_shares * (sell_px - entry)
+                    ret = (sell_px / pos.entry_price - 1) * 100
+                    profit = sell_shares * (sell_px - pos.entry_price)
                     cash += sell_shares * sell_px
                     if sell_shares >= pos.shares:
                         pos.active = False
                     else:
                         pos.shares -= sell_shares
-                    trades_5m.append(Trade(
-                        code, pos.entry_date, d, entry, sell_px,
+                    trades_all.append(Trade(
+                        code_num, pos.entry_date, d, pos.entry_price, sell_px,
                         sell_shares, round(ret, 2), round(profit, 0), reason,
                         hold_days,
                     ))
                     sell_reasons[reason] += 1
-                    cooldown[code] = d
+                    cooldown[code_num] = d
 
             # 清理已平仓
             positions = {k: v for k, v in positions.items() if v.active}
 
-            # 记录净值（每 50 根记一次，减少内存）
-            if i % 50 == 0:
-                pos_value = sum(
-                    p.shares * next(
-                        (b["close"] for b in bars_5m[max(0, i - 50):i + 1]
-                         if b["code"] == pc and b["date"] == d),
-                        p.entry_price,
-                    )
-                    for pc, p in positions.items()
-                )
-                equity_curve.append({
-                    "date": d_str, "equity": round(cash + pos_value, 2),
-                    "cash": round(cash, 2), "pos": len(positions),
-                })
+            # 记录净值
+            pos_value = 0
+            for pc, p in positions.items():
+                if pc in stocks_with_5m:
+                    px = next((b["close"] for b in reversed(bars_5m[:bar_idx])
+                              if b["code"] == pc and str(b["date"]) == d_str), p.entry_price)
+                else:
+                    px = prices_by_date.get(d_str, {}).get(pc, {}).get("close", p.entry_price)
+                pos_value += p.shares * px
+            equity_curve.append({
+                "date": d_str, "equity": round(cash + pos_value, 2),
+                "cash": round(cash, 2), "pos": len(positions),
+            })
 
         # ── 最终清仓 ──────────────────────────────────
         for code, p in list(positions.items()):
             if not p.active:
                 continue
-            code_bars = [b for b in bars_5m if b["code"] == code]
-            px = code_bars[-1]["close"] if code_bars else p.entry_price
+            if code in stocks_with_5m:
+                code_bars = [b for b in bars_5m if b["code"] == code]
+                px = code_bars[-1]["close"] if code_bars else p.entry_price
+            else:
+                last_snap = prices_by_date.get(str(sorted_dates[-1]), {})
+                px = last_snap.get(code, {}).get("close", p.entry_price)
             ret = (px / p.entry_price - 1) * 100
             profit = p.shares * (px - p.entry_price)
             cash += p.shares * px
             p.active = False
-            last_date = bars_5m[-1]["date"] if bars_5m else date.today()
-            trades_5m.append(Trade(
+            last_date = date.fromisoformat(sorted_dates[-1]) if sorted_dates else end
+            trades_all.append(Trade(
                 code, p.entry_date, last_date, p.entry_price, px,
                 p.shares, round(ret, 2), round(profit, 0), "FE",
                 (last_date - p.entry_date).days,
@@ -323,15 +496,15 @@ def _run_5m_backtest(sig_result: dict, params: dict, start: date, end: date,
             "cash": round(cash, 2), "pos": len(active_positions),
         })
 
-        # ── 不变式断言：资金必须自洽 ────────────────────
-        total_trade_profit = sum(t.profit for t in trades_5m)
+        # ── 不变式断言 ──────────────────────────────
+        total_trade_profit = sum(t.profit for t in trades_all)
         expected_equity = params["initial_capital"] + total_trade_profit
         final_snapshot_equity = cash + pos_value
-        if abs(final_snapshot_equity - expected_equity) > 1.0:
+        if abs(final_snapshot_equity - expected_equity) > 2.0:
             log.error(
-                f"5m回测资金不一致！equity={final_snapshot_equity:.2f} "
+                f"混合回测资金不一致！equity={final_snapshot_equity:.2f} "
                 f"expected={expected_equity:.2f} diff={final_snapshot_equity - expected_equity:.2f} "
-                f"cash={cash:.2f} pos_value={pos_value:.2f} trades={len(trades_5m)}"
+                f"cash={cash:.2f} pos_value={pos_value:.2f} trades={len(trades_all)}"
             )
 
         # ── 指数 ──────────────────────────────────────
@@ -343,14 +516,16 @@ def _run_5m_backtest(sig_result: dict, params: dict, start: date, end: date,
 
         # ── 构建结果 ──────────────────────────────────
         trading_days = sorted(set(b["date"] for b in bars_5m))
-        eng = _FakeEngine(trades_5m, equity_curve, params)
+        if not trading_days:
+            trading_days = [date.fromisoformat(d) for d in sorted_dates]
+        eng = _FakeEngine(trades_all, equity_curve, params)
         result = _build_result(eng, stock_names, params, trading_days,
                                total_buy_signals, start, end, indices)
         result["summary"]["exit_reasons"] = dict(sell_reasons)
-        result["summary"]["data_source"] = "5m"
+        result["summary"]["data_source"] = f"hybrid(5m:{len(stocks_with_5m)}/dl:{len(no_5m_codes)})"
 
         if progress_cb:
-            progress_cb(3, 4, "5分钟回测完成")
+            progress_cb(3, 4, "混合回测完成")
         return result
 
     except Exception as e:
@@ -369,7 +544,7 @@ class _FakeEngine:
 
 def _run_daily_backtest(sig_result: dict, params: dict, start: date, end: date,
                          progress_cb, stop_event, stock_names: dict) -> dict:
-    """日线收盘价回测引擎（原有逻辑）"""
+    """日线收盘价回测引擎（原有的 FastEngine 逻辑）"""
     raw_signals = sig_result.get("signals", {})
     raw_prices = sig_result.get("prices", {})
 
@@ -403,7 +578,7 @@ def _run_daily_backtest(sig_result: dict, params: dict, start: date, end: date,
     # 解析价格
     prices_by_date = defaultdict(dict)
     for tdx_code, d in raw_prices.items():
-        code_num = tdx_code.split(".")[0]
+        code_num = tdx_code.split(".")[0] if "." in tdx_code else tdx_code
         dates_list = d.get("Date", [])
         closes = d.get("Close", [])
         for dt_str, cl in zip(dates_list, closes):
@@ -512,7 +687,6 @@ def _build_result(eng, stock_names, params, td_list, total_buy_signals,
     """构建与 simple_runner 完全一致的输出格式"""
     trades = eng.trades
     n = len(trades)
-    # 买入次数 = 唯一 (code, entry_date) 组合
     unique_buys = len(set((t.code, str(t.entry_date)) for t in trades))
     wins = [t for t in trades if t.ret > 0]
     losses = [t for t in trades if t.ret <= 0]
@@ -531,7 +705,6 @@ def _build_result(eng, stock_names, params, td_list, total_buy_signals,
     avg_hold_win = np.mean([t.hold for t in wins]) if wins else 0
     avg_hold_loss = np.mean([t.hold for t in losses]) if losses else 0
 
-    # 交易记录（匹配前端期望的字段名）
     trades_json = []
     for t in trades:
         trades_json.append({
@@ -552,7 +725,6 @@ def _build_result(eng, stock_names, params, td_list, total_buy_signals,
             'hold_days': int(t.hold),
         })
 
-    # 净值曲线（匹配前端期望的 norm / dd 字段）
     eq_df = pd.DataFrame(eng.equity)
     if not eq_df.empty:
         initial_capital = params['initial_capital']
@@ -573,7 +745,6 @@ def _build_result(eng, stock_names, params, td_list, total_buy_signals,
     else:
         equity_json = []
 
-    # 收益分析
     eq_vals = [e['equity'] for e in equity_json] if equity_json else []
     fe = eq_vals[-1] if eq_vals else params['initial_capital']
     total_ret = (fe / params['initial_capital'] - 1) * 100

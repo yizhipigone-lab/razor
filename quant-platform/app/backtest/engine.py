@@ -543,6 +543,8 @@ class BacktestEngine:
         max_hold     = _p('time_exit_days',          30)
         force_hold   = _p('time_exit_force_days',    30)
         hard_sl      = _p('hard_stop_loss_pct',      -7.0)
+        fd_min_profit = _p('first_day_exit_min_profit', 0.0)
+        fd_days = _p('first_day_exit_days', 1)
 
         # ATR 动态止损：用入场前14日ATR计算止损百分比
         vol_scale = 1.0  # 波动率缩放因子，默认不变
@@ -637,6 +639,16 @@ class BacktestEngine:
                 prev_date = prev_date.date() if hasattr(prev_date, 'date') else prev_date
                 if curr_date != prev_date:
                     hold_days += 1
+                    # 首日弱势离场：检查前N个完整交易日（hold_days=2对应第1个完整日）
+                    if 2 <= hold_days <= fd_days + 1 and fd_min_profit > 0:
+                        day_high_pct = _day_high / entry_price - 1
+                        if day_high_pct < fd_min_profit:
+                            realized_pnl += _cost_pnl(_day_close, remaining_ratio)
+                            sell_events.append({"type": "sell", "date": str(prev_date),
+                                                "price": _day_close, "ratio": remaining_ratio,
+                                                "reason": f"首日未达标(最高+{day_high_pct*100:.1f}%)"})
+                            remaining_ratio, exit_price, exit_date = 0, _day_close, prev_date
+                            break
                     # 成交量高潮离场：检查刚完成的那天
                     if _climax_avg_vol is not None and _day_vol > 0 and hold_days >= 1:
                         if _day_vol > _climax_avg_vol * 3.0:
@@ -770,6 +782,8 @@ class BacktestEngine:
         trail_dd     = _p('trailing_drawdown_pct',    5.0)
         max_hold     = _p('time_exit_days',          30)
         force_hold   = _p('time_exit_force_days',    30)
+        fd_min_profit = _p('first_day_exit_min_profit', 0.0)
+        fd_days = _p('first_day_exit_days', 1)
 
         if params_override and 'tp1_profit' in params_override:
             active_tp_plan = [
@@ -810,6 +824,17 @@ class BacktestEngine:
 
             close_pnl = (price_c / entry_price - 1) * 100
             highest_pnl = (highest / entry_price - 1) * 100
+
+            # 首日弱势离场：前N个交易日最高价未达目标则强制卖出
+            if 1 <= hold_days <= fd_days and fd_min_profit > 0:
+                day_high_pct = price_h / entry_price - 1
+                if day_high_pct < fd_min_profit:
+                    realized_pnl += close_pnl * remaining_ratio
+                    sell_events.append({"type": "sell", "date": str(d), "price": price_c,
+                                        "ratio": remaining_ratio,
+                                        "reason": f"首日未达标(最高+{day_high_pct*100:.1f}%)"})
+                    remaining_ratio, exit_price, exit_date = 0, price_c, d
+                    break
 
             # ① 分档止盈（用 High 检测，先涨先触发）
             tp_triggered = False

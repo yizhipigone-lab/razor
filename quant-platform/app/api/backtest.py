@@ -502,6 +502,8 @@ def _default_bt_config() -> dict:
         LOSS_STREAK_HALVE, LOSS_STREAK_PAUSE, PAUSE_DAYS,
         SAME_STOCK_COOLDOWN, SIGNAL_PARAMS, STRATEGY_NAME,
         USE_ATR_TRAIL, ATR_TRAIL_MULTIPLIER,
+        FIRST_DAY_EXIT_MIN_PROFIT,
+        FIRST_DAY_EXIT_DAYS,
     )
     return {
         "strategy_name": STRATEGY_NAME,
@@ -521,6 +523,8 @@ def _default_bt_config() -> dict:
         "same_stock_cooldown": SAME_STOCK_COOLDOWN,
         "use_atr_trail": USE_ATR_TRAIL,
         "atr_trail_multiplier": ATR_TRAIL_MULTIPLIER,
+        "first_day_exit_min_profit": FIRST_DAY_EXIT_MIN_PROFIT,
+        "first_day_exit_days": FIRST_DAY_EXIT_DAYS,
         "signal_params": copy.deepcopy(SIGNAL_PARAMS),
         "start_date": "2023-01-01",
         "end_date": str(date.today()),
@@ -555,6 +559,7 @@ async def get_simple_bt_config():
                  'time_exit_days', 'time_exit_profit', 'time_force_days',
                  'loss_streak_halve', 'loss_streak_pause', 'pause_days',
                  'same_stock_cooldown', 'use_atr_trail', 'atr_trail_multiplier',
+                 'first_day_exit_min_profit', 'first_day_exit_days',
                  'signal_params', 'position_size', 'min_buy_amt']
     for k in LIVE_KEYS:
         if k in sys_cfg:
@@ -599,6 +604,8 @@ async def apply_bt_to_system():
         sc.INITIAL_CAPITAL = int(cfg.get('initial_capital', sc.INITIAL_CAPITAL))
         sc.POSITION_SIZE = int(cfg.get('position_size', sc.POSITION_SIZE))
         sc.MIN_BUY_AMT = int(cfg.get('min_buy_amt', sc.MIN_BUY_AMT))
+        sc.FIRST_DAY_EXIT_MIN_PROFIT = float(cfg.get('first_day_exit_min_profit', sc.FIRST_DAY_EXIT_MIN_PROFIT))
+        sc.FIRST_DAY_EXIT_DAYS = int(cfg.get('first_day_exit_days', sc.FIRST_DAY_EXIT_DAYS))
         # 多档止盈
         tiers = cfg.get('take_profit_tiers', sc.TAKE_PROFIT_TIERS)
         sc.TAKE_PROFIT_TIERS = tiers
@@ -616,6 +623,8 @@ async def apply_bt_to_system():
         risk['time_exit_days'] = sc.TIME_EXIT_DAYS
         risk['time_exit_min_profit_pct'] = sc.TIME_EXIT_PROFIT * 100
         risk['time_exit_force_days'] = sc.TIME_FORCE_DAYS
+        risk['first_day_exit_min_profit'] = sc.FIRST_DAY_EXIT_MIN_PROFIT
+        risk['first_day_exit_days'] = sc.FIRST_DAY_EXIT_DAYS
         risk['take_profit_tiers'] = [
             {'profit_pct': t['profit_pct'], 'sell_ratio': t['sell_ratio']}
             for t in sc.TAKE_PROFIT_TIERS
@@ -627,6 +636,8 @@ async def apply_bt_to_system():
             'trail_activate': sc.TRAIL_ACTIVATE, 'trail_dd': sc.TRAIL_DD,
             'time_exit_days': sc.TIME_EXIT_DAYS, 'time_exit_profit': sc.TIME_EXIT_PROFIT,
             'time_force_days': sc.TIME_FORCE_DAYS,
+            'first_day_exit_min_profit': sc.FIRST_DAY_EXIT_MIN_PROFIT,
+            'first_day_exit_days': sc.FIRST_DAY_EXIT_DAYS,
             'loss_streak_halve': sc.LOSS_STREAK_HALVE, 'loss_streak_pause': sc.LOSS_STREAK_PAUSE,
             'pause_days': sc.PAUSE_DAYS, 'same_stock_cooldown': sc.SAME_STOCK_COOLDOWN,
         }
@@ -663,6 +674,10 @@ async def save_risk_params(body: dict):
             sc.PAUSE_DAYS = int(body['pause_days'])
         if 'same_stock_cooldown' in body:
             sc.SAME_STOCK_COOLDOWN = int(body['same_stock_cooldown'])
+        if 'first_day_exit_min_profit' in body:
+            sc.FIRST_DAY_EXIT_MIN_PROFIT = float(body['first_day_exit_min_profit'])
+        if 'first_day_exit_days' in body:
+            sc.FIRST_DAY_EXIT_DAYS = int(body['first_day_exit_days'])
         if 'take_profit_tiers' in body:
             sc.TAKE_PROFIT_TIERS = body['take_profit_tiers']
 
@@ -679,6 +694,8 @@ async def save_risk_params(body: dict):
         risk['loss_streak_pause'] = sc.LOSS_STREAK_PAUSE
         risk['pause_days'] = sc.PAUSE_DAYS
         risk['same_stock_cooldown'] = sc.SAME_STOCK_COOLDOWN
+        risk['first_day_exit_min_profit'] = sc.FIRST_DAY_EXIT_MIN_PROFIT
+        risk['first_day_exit_days'] = sc.FIRST_DAY_EXIT_DAYS
         risk['take_profit_tiers'] = [
             {'profit_pct': t['profit_pct'], 'sell_ratio': t['sell_ratio']}
             for t in sc.TAKE_PROFIT_TIERS
@@ -688,6 +705,8 @@ async def save_risk_params(body: dict):
             'hard_stop': sc.HARD_STOP, 'trail_activate': sc.TRAIL_ACTIVATE,
             'trail_dd': sc.TRAIL_DD, 'time_exit_days': sc.TIME_EXIT_DAYS,
             'time_exit_profit': sc.TIME_EXIT_PROFIT, 'time_force_days': sc.TIME_FORCE_DAYS,
+            'first_day_exit_min_profit': sc.FIRST_DAY_EXIT_MIN_PROFIT,
+            'first_day_exit_days': sc.FIRST_DAY_EXIT_DAYS,
             'take_profit_tiers': sc.TAKE_PROFIT_TIERS,
         }
         settings.save()

@@ -30,6 +30,8 @@
     "time_exit_days": 7,
     "time_exit_min_profit_pct": 3.0,
     "time_exit_force_days": 12,
+    "first_day_exit_min_profit": 0.03,
+    "first_day_exit_days": 1,
     "breakeven_threshold_pct": 99,
     "breakeven_stop_pnl_pct": -9,
     "use_atr_stop": false,
@@ -145,6 +147,8 @@
     "time_exit_days": 7,
     "time_exit_profit": 0.03,
     "time_force_days": 12,
+    "first_day_exit_min_profit": 0.03,
+    "first_day_exit_days": 1,
     "loss_streak_halve": 3,
     "loss_streak_pause": 5,
     "pause_days": 3,
@@ -165,7 +169,7 @@
     "redis_ttl_seconds": 600,
     "enable_ths_concepts": true,
     "enable_tushare_concepts": true,
-    "last_updated": "05/22 14:21"
+    "last_updated": "06/04 15:31"
   },
   "风险": {
     "hard_stop_loss_pct": -6.0,
@@ -184,6 +188,9 @@
         "sell_ratio": 0.25
       }
     ]
+  },
+  "tqsdk": {
+    "formula_name": "QUANTQQ"
   },
   "sim_trader": {
     "auto_sell": true,

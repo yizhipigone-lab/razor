@@ -36,6 +36,8 @@ def _load_frontend_config() -> dict:
         TIME_EXIT_DAYS, TIME_EXIT_PROFIT, TIME_FORCE_DAYS,
         LOSS_STREAK_HALVE, LOSS_STREAK_PAUSE, SAME_STOCK_COOLDOWN,
         STRATEGY_NAME, USE_ATR_TRAIL, ATR_TRAIL_MULTIPLIER,
+        FIRST_DAY_EXIT_MIN_PROFIT,
+        FIRST_DAY_EXIT_DAYS,
     )
     return {
         "strategy_name": STRATEGY_NAME,
@@ -49,6 +51,8 @@ def _load_frontend_config() -> dict:
         "loss_streak_halve": LOSS_STREAK_HALVE, "loss_streak_pause": LOSS_STREAK_PAUSE,
         "use_atr_trail": USE_ATR_TRAIL, "atr_trail_multiplier": ATR_TRAIL_MULTIPLIER,
         "take_profit_tiers": copy.deepcopy(TAKE_PROFIT_TIERS),
+        "first_day_exit_min_profit": FIRST_DAY_EXIT_MIN_PROFIT,
+        "first_day_exit_days": FIRST_DAY_EXIT_DAYS,
     }
 
 
@@ -89,6 +93,8 @@ def build_params(strategy_name: str = None, start_date: str = None,
         "use_atr_trail": cfg.get("use_atr_trail", True),
         "atr_trail_multiplier": cfg.get("atr_trail_multiplier", 1.0),
         "take_profit_tiers": copy.deepcopy(cfg.get("take_profit_tiers", [])),
+        "first_day_exit_min_profit": cfg.get("first_day_exit_min_profit", 0.03),
+        "first_day_exit_days": cfg.get("first_day_exit_days", 1),
         "signal_params": cfg.get("signal_params", {}),
     }
 
