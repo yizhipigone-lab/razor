@@ -1,10 +1,10 @@
 """
-轻量回测引擎 — 日线收盘价，纯 parquet 数据源，无 DuckDB 依赖
-直接复刻 scripts/ 中已验证的回测逻辑
+轻量回测引擎 — 日线收盘价 + 日内逐Bar仿真
+纯 parquet 数据源，无 DuckDB 依赖
 """
 import pandas as pd
 import numpy as np
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from collections import defaultdict, Counter
 from pathlib import Path
 from typing import Callable, Optional
@@ -51,7 +51,6 @@ class FastEngine:
         self.pause = None
         self.td_list = td_list
         self.p = params
-        # 向后兼容：旧的 tp1/tp2 参数自动转为 take_profit_tiers
         if 'take_profit_tiers' not in self.p:
             tiers = []
             if 'tp1_pct' in self.p:
@@ -96,88 +95,49 @@ class FastEngine:
         return p
 
     def check_stops(self, d, snap, prev_snap=None):
-        sells = []
-        hs = self.p['hard_stop']
-        tp_tiers = self.p.get('take_profit_tiers', [])
-        trail_act = self.p['trail_activate']
-        trail_dd = self.p['trail_dd']
-        time_exit = self.p['time_exit_days']
-        time_exit_profit = self.p['time_exit_profit']
-        time_force = self.p['time_force_days']
-        cooldown = self.p.get('same_stock_cooldown', 20)
+        from app.backtest.exit_rules import exit_rule_engine, RuleContext, adjust_for_gap
 
+        sells = []
         for code, p in list(self.positions.items()):
             if not p.active or p.remaining <= 0: continue
             bar = snap.get(code)
             if bar is None: continue
             cp = bar['close']; hp = bar.get('high', cp)
             if hp > p.peak_price: p.peak_price = hp
-            pp = p.peak_price / p.entry_price - 1
-            cur = cp / p.entry_price - 1
             hd = self._td(p.entry_date, d)
 
-            # 除权跳空保护
             if prev_snap:
                 prev_bar = prev_snap.get(code)
-                if prev_bar and prev_bar.get('close', 0) > 0:
-                    overnight_gap = cp / prev_bar['close'] - 1
-                    prefix = code[:3] if len(code) >= 3 else code
-                    if prefix in ('300', '301', '688'): gap_limit = -0.20
-                    elif prefix[0] == '8': gap_limit = -0.30
-                    else: gap_limit = -0.10
-                    if overnight_gap <= gap_limit:
-                        ratio = cp / prev_bar['close']
-                        p.entry_price *= ratio
-                        p.peak_price *= ratio
-                        cur = cp / p.entry_price - 1
+                if prev_bar:
+                    p.entry_price, p.peak_price = adjust_for_gap(
+                        code, p.entry_price, p.peak_price,
+                        cp, prev_bar.get('close', 0)
+                    )
 
-            # 首日弱势离场：买入后前N个交易日最高价未达目标则强制卖出
-            fd_min_profit = self.p.get('first_day_exit_min_profit', 0)
-            fd_days = self.p.get('first_day_exit_days', 1)
-            if fd_min_profit > 0 and 2 <= hd <= fd_days + 1:
-                day_high_pct = hp / p.entry_price - 1
-                if day_high_pct < fd_min_profit:
-                    sells.append((p, cp, f"FD({day_high_pct*100:.1f}%)", None)); continue
-            if cur <= hs:
-                sells.append((p, cp, "HS", None)); continue
-            if hd > time_force:
-                sells.append((p, cp, "TF", None)); continue
-
-            # 多档阶梯止盈：按顺序检查，每档只触发一次
-            # 每档卖出数量 = 原始买入股数 × sell_ratio，直观可预测
-            for idx, tier in enumerate(tp_tiers):
-                if idx not in p.tp_triggered and cur >= tier['profit_pct']:
-                    ss = int(p.shares * tier['sell_ratio'] / 100) * 100
+            ctx = exit_rule_engine.build_context(p, bar, hd, self.p, use_high_for_tp=True)
+            signal = exit_rule_engine.check(ctx)
+            if signal:
+                if signal.reason.startswith('TP'):
+                    idx = int(signal.reason[2]) - 1
+                    p.tp_triggered.add(idx)
+                if signal.sell_ratio < 1.0:
+                    ss = int(p.shares * signal.sell_ratio / 100) * 100
                     if ss > p.remaining:
                         ss = int(p.remaining // 100 * 100)
-                    if ss >= 100:
-                        p.tp_triggered.add(idx)
-                        label = f"TP{idx+1}"
-                        sells.append((p, cp, label, ss))
-                        break  # 每轮只触发一档
-
-            if pp >= trail_act:
-                dd = cp / p.peak_price - 1
-                # ATR 动态回撤: max(固定%, ATR倍数*ATR/入场价)
-                eff_trail_dd = trail_dd
-                if self.p.get('use_atr_trail') and bar.get('atr', 0) > 0:
-                    atr_mul = self.p.get('atr_trail_multiplier', 1.0)
-                    atr_pct = atr_mul * bar['atr'] / p.entry_price
-                    eff_trail_dd = max(trail_dd, atr_pct)
-                if dd <= -eff_trail_dd:
-                    sells.append((p, cp, "TR", None)); continue
-            if hd > time_exit and cur > time_exit_profit:
-                sells.append((p, cp, "TC", None)); continue
+                    if ss < 100:
+                        ss = min(100, int(p.remaining))
+                    sells.append((p, signal.sell_price, signal.reason, ss))
+                else:
+                    sells.append((p, signal.sell_price, signal.reason, None))
         return sells
 
     def sell(self, p, px, reason, partial=None, xd=None):
         ss = partial if partial else p.remaining
-        # 取整到100股（1手），不足1手至少卖100，零股全清
         ss = int(ss // 100 * 100)
         if ss < 100:
             ss = min(100, int(p.remaining))
         if ss <= 0: return None
-        ss = min(ss, int(p.remaining))  # 不能超卖
+        ss = min(ss, int(p.remaining))
         ret = (px / p.entry_price - 1) * 100
         profit = ss * (px - p.entry_price)
         p.remaining -= ss
@@ -189,7 +149,6 @@ class FastEngine:
     def sell_phase(self, d, snap, prev_snap=None):
         streak_pause = self.p.get('loss_streak_pause', 5)
         pause_days = self.p.get('pause_days', 3)
-        # 暂停期结束：重置连亏计数，恢复正常
         if self.pause and d > self.pause:
             self.pause = None
             self.cl = 0
@@ -225,7 +184,6 @@ def load_daily_bars(start_buffer=date(2021, 9, 1), end=date.today()):
             df = pd.read_parquet(str(f))
         except Exception:
             continue
-        # 列名规范化
         cmap = {}
         for c in df.columns:
             cl = c.lower()
@@ -239,7 +197,6 @@ def load_daily_bars(start_buffer=date(2021, 9, 1), end=date.today()):
             continue
         df = df[['date', 'open', 'high', 'low', 'close', 'volume']].copy()
         df['date'] = pd.to_datetime(df['date']).dt.date
-        # 先过滤日期再追加，大幅减少内存
         df = df[(df['date'] >= start_buffer) & (df['date'] <= end)]
         if len(df) == 0:
             continue
@@ -252,7 +209,6 @@ def load_daily_bars(start_buffer=date(2021, 9, 1), end=date.today()):
     if not chunks:
         return pd.DataFrame(columns=['date', 'open', 'high', 'low', 'close', 'volume', 'code'])
     bars = pd.concat(chunks, ignore_index=True)
-    # 附加股票名称（用于 ST 过滤等）
     try:
         from database.duckdb_manager import db
         stock_df = db.get_all_stocks()
@@ -290,7 +246,6 @@ def load_index_data(start_date: date = None):
             df['close'] = pd.to_numeric(df['close'], errors='coerce')
             df = df.dropna(subset=['close']).sort_values('date')
             if not df.empty:
-                # 基准：优先用 start_date 最近交易日的收盘价
                 if start_date:
                     base_rows = df[df['date'] >= start_date]
                     if not base_rows.empty:
@@ -300,7 +255,6 @@ def load_index_data(start_date: date = None):
                 else:
                     base = float(df['close'].iloc[0])
                 df['norm'] = df['close'] / base
-                # 只保留回测起点之后的数据
                 if start_date:
                     df = df[df['date'] >= start_date]
                 result[name] = [
@@ -312,14 +266,339 @@ def load_index_data(start_date: date = None):
     return result
 
 
+# ═══════════════════════════════════════════════════════
+# 日内回测（5分钟 / 1分钟）
+# ═══════════════════════════════════════════════════════
+
+def _run_intraday_backtest(
+    bars: pd.DataFrame, signals_df: pd.DataFrame,
+    start: date, end: date, params: dict,
+    progress_cb=None, stop_event=None, stock_names=None,
+    period: str = "5m",
+) -> dict:
+    """日内逐Bar回测：对每只有信号的股票，用分钟线逐Bar检查止盈止损"""
+    from app.backtest.exit_rules import exit_rule_engine
+
+    intraday_dir = ROOT / "data" / "parquet" / period
+
+    # 预处理信号
+    signals_df = signals_df[(signals_df['date'] >= start) & (signals_df['date'] <= end)].copy()
+    signals_df['date'] = pd.to_datetime(signals_df['date']).dt.date
+    sbd = defaultdict(list)
+    for _, r in signals_df.iterrows():
+        sbd[r['date']].append((r['code'], float(r['close'])))
+
+    # 预加载日线 close/high
+    bt = bars[(bars['date'] >= start) & (bars['date'] <= end)]
+    closes, highs = {}, {}
+    for d, g in bt.groupby('date'):
+        closes[d] = dict(zip(g['code'], g['close']))
+        highs[d] = dict(zip(g['code'], g['high']))
+    td = sorted(closes.keys())
+
+    # 预加载日内数据
+    intraday_cache = {}
+    signal_codes = set(signals_df['code'].unique())
+
+    def _load_intraday(code):
+        if code in intraday_cache:
+            return intraday_cache[code]
+        fp = intraday_dir / f"{code}.parquet"
+        if not fp.exists():
+            intraday_cache[code] = None
+            return None
+        try:
+            df = pd.read_parquet(str(fp))
+            if 'datetime' in df.columns:
+                df['datetime'] = pd.to_datetime(df['datetime'])
+            elif 'date' in df.columns:
+                df['datetime'] = pd.to_datetime(df['date'])
+            else:
+                return None
+            for c in ['open', 'high', 'low', 'close']:
+                if c in df.columns:
+                    df[c] = pd.to_numeric(df[c], errors='coerce')
+            df = df.dropna(subset=['close'])
+            intraday_cache[code] = df
+            return df
+        except Exception:
+            intraday_cache[code] = None
+            return None
+
+    # 预加载有信号的股票
+    loaded = 0
+    for code in signal_codes:
+        if _load_intraday(code) is not None:
+            loaded += 1
+    log.info(f"日内回测: {loaded}/{len(signal_codes)}只有{period}数据")
+
+    if progress_cb:
+        progress_cb(0, 4, f"日内逐Bar回放 ({period}, {loaded}只)...")
+
+    # 引擎状态
+    cash = params['initial_capital']
+    positions = {}
+    trades_all = []
+    equity_curve = []
+    cooldown = {}
+    sell_reasons = Counter()
+    total_buy_signals = 0
+    position_ratio = params.get('position_size', 50000) / params['initial_capital']
+
+    # 逐日循环
+    prev_snap = {}
+    for d_idx, d in enumerate(td):
+        if stop_event and stop_event.is_set():
+            return {'status': 'stopped'}
+
+        d_str = str(d)
+
+        # 当日快照
+        day_snap = {code: {'close': closes[d].get(code, 0),
+                            'high': highs[d].get(code, closes[d].get(code, 0)),
+                            'low': closes[d].get(code, 0),
+                            'open': closes[d].get(code, 0)}
+                    for code in list(positions.keys()) + [c for c, _ in sbd.get(d, [])]
+                    if code in closes[d]}
+
+        # 先检查持仓
+        for code, pos in list(positions.items()):
+            if not pos.active or pos.remaining <= 0:
+                continue
+            intra_df = _load_intraday(code)
+            if intra_df is None:
+                # 无日内数据：用日线OHLC检查一次
+                bar = day_snap.get(code, {})
+                if bar:
+                    cp, hp = bar.get('close', 0), bar.get('high', 0)
+                    if hp > pos.peak_price:
+                        pos.peak_price = hp
+                    hd = sum(1 for t in td if pos.entry_date <= t <= d)
+                    if prev_snap.get(code):
+                        from app.backtest.exit_rules import adjust_for_gap
+                        pos.entry_price, pos.peak_price = adjust_for_gap(
+                            code, pos.entry_price, pos.peak_price,
+                            cp, prev_snap[code].get('close', 0))
+                    ctx = exit_rule_engine.build_context(pos, bar, hd, params, use_high_for_tp=True)
+                    sig = exit_rule_engine.check(ctx)
+                    if sig:
+                        t = _execute_signal(pos, code, d, sig, cash, trades_all, sell_reasons, cooldown)
+                        if t:
+                            cash = t[0]
+            else:
+                # 有日内数据：逐Bar检查
+                day_bars = intra_df[intra_df['datetime'].dt.date == d]
+                if day_bars.empty:
+                    continue
+                for _, bar_row in day_bars.iterrows():
+                    bar = {'open': float(bar_row.get('open', 0)),
+                           'high': float(bar_row.get('high', 0)),
+                           'low': float(bar_row.get('low', 0)),
+                           'close': float(bar_row.get('close', 0))}
+                    if bar['high'] > pos.peak_price:
+                        pos.peak_price = bar['high']
+                    hd = sum(1 for t in td if pos.entry_date <= t <= d)
+                    ctx = exit_rule_engine.build_context(pos, bar, hd, params, use_high_for_tp=True)
+                    sig = exit_rule_engine.check(ctx)
+                    if sig:
+                        t = _execute_signal(pos, code, d, sig, cash, trades_all, sell_reasons, cooldown)
+                        if t:
+                            cash = t[0]
+                        break
+
+        # 清理已平仓
+        positions = {k: v for k, v in positions.items() if v.active}
+
+        # 买入
+        paused = False
+        # 连败保护
+        streak_pause = params.get('loss_streak_pause', 5)
+        if len([t for t in trades_all if t.ret <= 0]) >= streak_pause:
+            paused = True
+        if not paused and d in sbd:
+            dyn_size = cash * position_ratio
+            for code, px in sbd[d]:
+                if code in positions:
+                    continue
+                if code in cooldown and (d - cooldown[code]).days < params.get('same_stock_cooldown', 20):
+                    continue
+                if cash < dyn_size * 0.5:
+                    break
+                if px <= 0:
+                    continue
+                sh = int(dyn_size / px / 100) * 100
+                if sh < 100:
+                    continue
+                cost = sh * px
+                if cost > cash:
+                    continue
+                cash -= cost
+                positions[code] = Position(code, d, px, sh, cost)
+                total_buy_signals += 1
+
+        # 记录净值
+        pos_value = 0
+        for pc, p in positions.items():
+            pos_value += p.remaining * closes[d].get(pc, p.entry_price)
+        equity_curve.append({
+            'date': d_str, 'equity': round(cash + pos_value, 2),
+            'cash': round(cash, 2), 'pos': len(positions),
+        })
+        prev_snap = day_snap
+
+    # 最终清仓
+    for code, p in list(positions.items()):
+        if not p.active:
+            continue
+        px = closes.get(td[-1], {}).get(code, p.entry_price) if td else p.entry_price
+        ret = (px / p.entry_price - 1) * 100
+        profit = p.remaining * (px - p.entry_price)
+        cash += p.remaining * px
+        trades_all.append(Trade(code, p.entry_date, td[-1] if td else end,
+                                p.entry_price, px, p.remaining,
+                                round(ret, 2), round(profit, 0), "FE",
+                                sum(1 for t in td if p.entry_date <= t <= td[-1]) if td else 0))
+        sell_reasons["FE"] += 1
+
+    # 构建结果
+    indices = {}
+    try:
+        indices = load_index_data(start_date=start)
+    except Exception:
+        pass
+
+    n = len(trades_all)
+    wins = [t for t in trades_all if t.ret > 0]
+    losses = [t for t in trades_all if t.ret <= 0]
+    nw, nl = len(wins), len(losses)
+    wr = nw / n * 100 if n > 0 else 0
+    aw = np.mean([t.ret for t in wins]) if wins else 0
+    al = np.mean([t.ret for t in losses]) if losses else 0
+    gross_profit = sum(t.profit for t in wins)
+    gross_loss = abs(sum(t.profit for t in losses)) if losses else 1
+    pf = gross_profit / gross_loss if gross_loss > 0 else 0
+    best_trade = max(trades_all, key=lambda t: t.ret) if trades_all else None
+    worst_trade = min(trades_all, key=lambda t: t.ret) if trades_all else None
+    avg_hold_win = np.mean([t.hold for t in wins]) if wins else 0
+    avg_hold_loss = np.mean([t.hold for t in losses]) if losses else 0
+
+    trades_json = []
+    for t in trades_all:
+        trades_json.append({
+            'code': t.code, 'name': stock_names.get(t.code, '') if stock_names else '',
+            'entry_date': str(t.entry_date), 'entry_time': getattr(t, 'entry_time', '09:30'),
+            'exit_date': str(t.exit_date), 'exit_time': getattr(t, 'exit_time', '15:00'),
+            'entry_px': round(float(t.entry_px), 2), 'exit_px': round(float(t.exit_px), 2),
+            'shares': int(t.shares), 'ret_pct': round(float(t.ret), 2),
+            'profit': round(float(t.profit), 0), 'entry_total': round(float(t.shares * t.entry_px), 0),
+            'exit_total': round(float(t.shares * t.exit_px), 0), 'reason': t.reason,
+            'hold_days': int(t.hold),
+        })
+
+    eq_df = pd.DataFrame(equity_curve)
+    if not eq_df.empty:
+        initial = params['initial_capital']
+        eq_df['norm'] = eq_df['equity'] / initial
+        peak = eq_df['equity'].expanding().max()
+        eq_df['dd'] = ((peak - eq_df['equity']) / peak * 100)
+    else:
+        eq_df = pd.DataFrame()
+
+    final_equity = eq_df['equity'].iloc[-1] if not eq_df.empty else params['initial_capital']
+    total_ret = (final_equity / params['initial_capital'] - 1) * 100
+    max_dd = float(eq_df['dd'].min()) if not eq_df.empty else 0
+
+    returns = []
+    if not eq_df.empty:
+        eq_vals = eq_df['equity'].values
+        for i in range(1, len(eq_vals)):
+            if eq_vals[i-1] > 0:
+                returns.append(eq_vals[i] / eq_vals[i-1] - 1)
+    sharpe = np.mean(returns) / np.std(returns) * np.sqrt(252) if returns and np.std(returns) > 0 else 0
+    calmar = total_ret / max_dd if max_dd > 0 else 0
+    neg = [r for r in returns if r < 0]
+    sortino = np.mean(returns) / np.std(neg) * np.sqrt(252) if neg and np.std(neg) > 0 else 0
+    years = len(td) / 252 if td else 1
+    ann_ret = ((1 + total_ret/100) ** (1/years) - 1) * 100 if years > 0 else 0
+
+    monthly = {}
+    for _, r in eq_df.iterrows():
+        m = r['date'][:7]
+        monthly.setdefault(m, []).append(r['equity'])
+    pos_months = sum(1 for m, vals in monthly.items() if vals[-1] >= vals[0])
+
+    pos_counts = [e['pos'] for e in equity_curve]
+    max_pos_held = max(pos_counts) if pos_counts else 0
+    avg_pos_held = round(float(np.mean(pos_counts)), 1) if pos_counts else 0
+
+    rc = Counter(t.reason for t in trades_all)
+    trading_days_span = (end - start).days
+
+    equity_json = [
+        {'date': r['date'], 'equity': r['equity'], 'norm': round(float(r['norm']), 4),
+         'cash': r['cash'], 'pos': r['pos'], 'dd': round(float(r.get('dd', 0)), 2) if 'dd' in r else None}
+        for _, r in eq_df.iterrows()
+    ] if not eq_df.empty else []
+
+    summary = {
+        'total_return': round(total_ret, 2), 'max_drawdown': round(max_dd, 2),
+        'win_rate': round(wr, 1), 'initial_capital': params['initial_capital'],
+        'final_equity': round(float(final_equity), 0), 'trading_days': len(td),
+        'total_calendar_days': trading_days_span, 'start_date': str(start), 'end_date': str(end),
+        'sharpe': round(sharpe, 2), 'calmar': round(calmar, 2), 'sortino': round(sortino, 2),
+        'profit_ratio': round(float(pf), 2), 'ann_return': round(float(ann_ret), 2),
+        'signals': len(signals_df), 'buy_signals': total_buy_signals,
+        'sell_signals': n, 'trades': n, 'wins': nw, 'losses': nl,
+        'profit_factor': round(float(pf), 2), 'best_trade': round(float(best_trade.ret), 2) if best_trade else 0,
+        'worst_trade': round(float(worst_trade.ret), 2) if worst_trade else 0,
+        'avg_win': round(float(aw), 2), 'avg_loss': round(float(al), 2),
+        'avg_hold_win': round(float(avg_hold_win), 1), 'avg_hold_loss': round(float(avg_hold_loss), 1),
+        'positive_months': f"{pos_months}/{len(monthly)}" if monthly else "0/0",
+        'max_positions_held': max_pos_held, 'avg_positions_held': avg_pos_held,
+        'exit_reasons': dict(rc.most_common()), 'data_source': f"py_{period}",
+    }
+
+    return {
+        'status': 'ok', 'summary': summary,
+        'equity': equity_json, 'trades': trades_json,
+        'daily_trades': {}, 'indices': indices,
+        'params': {k: v for k, v in params.items() if not callable(v) and k != 'signal_params'},
+    }
+
+
+def _execute_signal(pos, code, d, sig, cash, trades_all, sell_reasons, cooldown):
+    """执行一个卖出信号，返回 (new_cash,) 或 None"""
+    import inspect
+    sell_shares = pos.shares
+    if sig.sell_ratio < 1.0:
+        ss = int(pos.shares * sig.sell_ratio / 100) * 100
+        if ss > pos.remaining: ss = int(pos.remaining // 100 * 100)
+        if ss < 100: ss = min(100, int(pos.remaining))
+        sell_shares = min(ss, pos.shares)
+    if sell_shares <= 0:
+        sell_shares = pos.shares
+    ret = (sig.sell_price / pos.entry_price - 1) * 100
+    profit = sell_shares * (sig.sell_price - pos.entry_price)
+    cash += sell_shares * sig.sell_price
+    pos.remaining -= sell_shares
+    if pos.remaining <= 0:
+        pos.active = False
+        pos.remaining = 0
+    trades_all.append(Trade(code, pos.entry_date, d,
+                            pos.entry_price, sig.sell_price, sell_shares,
+                            round(ret, 2), round(profit, 0), sig.reason,
+                            (d - pos.entry_date).days))
+    sell_reasons[sig.reason] += 1
+    cooldown[code] = d
+    return (cash,)
+
+
 def run_backtest(params: dict, progress_cb: Optional[Callable] = None,
                  stop_event=None, stock_names: Optional[dict] = None,
                  stock_pool: Optional[list] = None) -> dict:
     """
     执行回测，返回完整结果字典
-    params 包含所有回测参数
-    stock_names: {code: name} 可选的股票名称映射
-    stock_pool: 可选，限定回测的股票代码列表，不传则全市场
+    params 包含所有回测参数，支持 intraday_freq 选择精度
     """
     start = params.get('start_date', date(2023, 1, 1))
     end = params.get('end_date', date.today())
@@ -328,51 +607,52 @@ def run_backtest(params: dict, progress_cb: Optional[Callable] = None,
 
     if progress_cb: progress_cb(0, 4, "加载日线数据...")
 
-    # 加载
-    # buffer: 回测起点前推180天确保MA60有足够历史
     buffer_start = start - timedelta(days=180)
     bars = load_daily_bars(buffer_start, end)
     if stop_event and stop_event.is_set(): return {'status': 'stopped'}
 
-    # 如果指定了股票池，限制 bars 和 signals 的股票范围
     if stock_pool:
         bars = bars[bars['code'].isin(stock_pool)].copy()
 
     if progress_cb: progress_cb(1, 4, "生成交易信号...")
 
-    # 信号
-    # 根据配置动态加载策略
     strategy_name = params.get('strategy_name', STRATEGY_NAME)
     user_signal_params = params.get('signal_params', {})
-    # 策略名→文件映射
     strategy_files = {
         '盘整突破': 'panzheng_tupo',
         'MA5角度_原版': 'ma5_angle',
         'MA5角度_TDXv2': 'ma5_angle_tdx_v2',
+        'MA5金叉': 'ma5_angle_cross',
     }
     fname = strategy_files.get(strategy_name, strategy_name)
     mod = __import__(f'app.screener.strategies.{fname}', fromlist=['generate_signals', 'PARAMS'])
     fn = getattr(mod, 'generate_signals', None)
     if fn is None:
         raise ImportError(f'策略 {strategy_name} ({fname}) 缺少 generate_signals 函数')
-    # 策略自带的 PARAMS 作为默认值，STRATEGY_VARIANTS 按策略名覆盖
     import inspect as _inspect
     sig_param_names = set(_inspect.signature(fn).parameters.keys()) - {'df', 'bars'}
     default_params = getattr(mod, 'PARAMS', {})
     merged = {k: v for k, v in default_params.items() if k in sig_param_names}
-    # 策略变体覆盖（如同一文件支持"原版"/"改进版"）
     variants = getattr(mod, 'STRATEGY_VARIANTS', {})
     if strategy_name in variants:
         merged.update({k: v for k, v in variants[strategy_name].items() if k in sig_param_names})
-    # 用户传的 signal_params 最高优先级
     merged.update({k: v for k, v in user_signal_params.items() if k in sig_param_names})
     sig = fn(bars, **merged)
     sig = sig[(sig['date'] >= start) & (sig['date'] <= end)].copy()
     sig['date'] = pd.to_datetime(sig['date']).dt.date
 
+    # 精度选择
+    period = params.get('intraday_freq', 'daily')
+    if period in ('5m', '1m'):
+        if progress_cb: progress_cb(2, 4, f"日内逐Bar回放 ({period})...")
+        result = _run_intraday_backtest(
+            bars, sig, start, end, params, progress_cb, stop_event, stock_names, period)
+        if progress_cb: progress_cb(5, 5, "完成")
+        return result
+
+    # 日线回测（原有逻辑）
     bt = bars[(bars['date'] >= start) & (bars['date'] <= end)]
     closes, highs, atrs = {}, {}, {}
-    # 预计算 ATR(14) 映射
     use_atr = params.get('use_atr_trail', False)
     if use_atr and 'atr14' not in bt.columns:
         def _compute_atr(grp):
@@ -386,31 +666,26 @@ def run_backtest(params: dict, progress_cb: Optional[Callable] = None,
         highs[d] = dict(zip(g['code'], g['high']))
         if use_atr and 'atr14' in g.columns:
             atrs[d] = dict(zip(g['code'], g['atr14']))
-    td = sorted(closes.keys())
+    td_list = sorted(closes.keys())
     sbd = defaultdict(list)
     for _, r in sig.iterrows():
         sbd[r['date']].append((r['code'], float(r['close'])))
 
     if stop_event and stop_event.is_set(): return {'status': 'stopped'}
-    if progress_cb: progress_cb(2, 4, f"逐日回测 ({len(td)}个交易日)...")
+    if progress_cb: progress_cb(2, 4, f"逐日回测 ({len(td_list)}个交易日)...")
 
-    # 引擎
-    eng = FastEngine(td, params)
+    eng = FastEngine(td_list, params)
     cooldown = params.get('same_stock_cooldown', 20)
-
-    daily_trades = {}  # date -> {bought: [{code, price}], sold: [{code, price, reason, ret}]}
+    daily_trades = {}
     total_buy_signals = 0
-    total_sell_signals = 0
-    prev_snap = {}  # 前一日快照，用于除权跳空检测
-    max_positions_held = 0  # 最大同时持仓数
-    pos_counts = []  # 每日持仓数列表
+    prev_snap = {}
+    max_positions_held = 0
+    pos_counts = []
 
-    for i, d in enumerate(td):
+    for i, d in enumerate(td_list):
         if stop_event and stop_event.is_set(): return {'status': 'stopped'}
-
         day_info = {'bought': [], 'sold': []}
         prev_trade_count = len(eng.trades)
-
         snap = {}
         for code in eng.positions:
             if d in closes and code in closes[d]:
@@ -423,64 +698,46 @@ def run_backtest(params: dict, progress_cb: Optional[Callable] = None,
                 }
         eng.sell_phase(d, snap, prev_snap)
         prev_snap = {k: dict(v) for k, v in snap.items()}
-
-        # 记录当天卖出的
         new_trades = eng.trades[prev_trade_count:]
         for t in new_trades:
             day_info['sold'].append({
-                'code': t.code,
-                'name': stock_names.get(t.code, '') if stock_names else '',
-                'price': round(float(t.exit_px), 2),
-                'shares': int(t.shares),
+                'code': t.code, 'name': stock_names.get(t.code, '') if stock_names else '',
+                'price': round(float(t.exit_px), 2), 'shares': int(t.shares),
                 'reason': t.reason, 'ret': round(float(t.ret), 2),
             })
-        total_sell_signals += len(new_trades)
-
         paused = eng.pause is not None and d <= eng.pause
-        buys_today = 0
         if d in sbd and not paused:
             for code, px in sbd[d]:
                 if eng.cash < min(eng.max_pos(), params.get('min_buy_amt', 5000)):
                     break
-                if any(t.code == code and (d - t.entry_date).days <= cooldown
-                       for t in eng.trades):
+                if any(t.code == code and (d - t.entry_date).days <= cooldown for t in eng.trades):
                     continue
                 if eng.buy(d, code, px):
                     day_info['bought'].append({
-                        'code': code,
-                        'name': stock_names.get(code, '') if stock_names else '',
+                        'code': code, 'name': stock_names.get(code, '') if stock_names else '',
                         'price': round(float(px), 2),
                     })
-                    buys_today += 1
-                    # 将新买入股票的当日收盘价补入 prev_snap，确保次日除权检测生效
                     if code not in prev_snap and d in closes and code in closes[d]:
                         prev_snap[code] = {'close': closes[d][code]}
-        total_buy_signals += buys_today
-
         n_pos = eng.pos_n()
         pos_counts.append(n_pos)
         if n_pos > max_positions_held:
             max_positions_held = n_pos
-
         eng.record(d, snap)
-
         if day_info['bought'] or day_info['sold']:
             daily_trades[str(d)] = day_info
 
     if stop_event and stop_event.is_set(): return {'status': 'stopped'}
     if progress_cb: progress_cb(3, 4, "汇总结果...")
 
-    # 汇总
     eq = pd.DataFrame(eng.equity)
     if eq.empty or not eng.trades:
         return {'status': 'ok', 'trades': [], 'equity': [], 'summary': {}}
-
     fe = eq['equity'].iloc[-1]
     total_ret = (fe / params['initial_capital'] - 1) * 100
     eq['cmax'] = eq['equity'].cummax()
     eq['dd'] = (eq['equity'] - eq['cmax']) / eq['cmax'] * 100
     max_dd = float(eq['dd'].min())
-
     n = len(eng.trades)
     wins = [t for t in eng.trades if t.ret > 0]
     loses = [t for t in eng.trades if t.ret <= 0]
@@ -493,132 +750,71 @@ def run_backtest(params: dict, progress_cb: Optional[Callable] = None,
     total_wins_profit = sum(profit_wins) if profit_wins else 0
     total_loses_loss = abs(sum(profit_loses)) if profit_loses else 1
     pf = total_wins_profit / total_loses_loss if total_loses_loss != 0 else 0
-
-    # 最佳/最差交易
     best_trade = max(eng.trades, key=lambda t: t.ret) if eng.trades else None
     worst_trade = min(eng.trades, key=lambda t: t.ret) if eng.trades else None
-
-    # 平均持仓时长
     avg_hold_win = np.mean([t.hold for t in wins]) if wins else 0
     avg_hold_loss = np.mean([t.hold for t in loses]) if loses else 0
-
-    # 盈亏比率
     profit_ratio = aw / abs(al) if al != 0 else 0
-
-    # 归一化净值曲线
     initial = params['initial_capital']
     eq['norm'] = eq['equity'] / initial
-
-    # 日收益率（用于风险指标计算）
     eq['daily_ret'] = eq['equity'].pct_change()
     daily_rets = eq['daily_ret'].dropna()
-
-    # 夏普比率（无风险利率假设为0.02/252）
     rf_daily = 0.02 / 252
     excess = daily_rets - rf_daily
     sharpe = float(np.sqrt(252) * excess.mean() / excess.std()) if excess.std() > 0 else 0
-
-    # 年化收益率
-    trading_days_span = (td[-1] - td[0]).days
+    trading_days_span = (td_list[-1] - td_list[0]).days
     ann_ret = (1 + total_ret/100) ** (365/max(trading_days_span, 1)) - 1
-
-    # 卡玛比率
     calmar = ann_ret / abs(max_dd/100) if max_dd != 0 else 0
-
-    # 索提诺比率（下行标准差）
     downside = daily_rets[daily_rets < 0]
     downside_std = downside.std() if len(downside) > 0 else 0
     sortino = float(np.sqrt(252) * excess.mean() / downside_std) if downside_std > 0 else 0
-
-    # 退出原因
     rc = Counter(t.reason for t in eng.trades)
-
-    # 月度统计
     eq['month'] = eq['date'].apply(lambda d: d[:7])
     monthly = eq.groupby('month').agg(s=('equity', 'first'), e=('equity', 'last'))
     monthly['ret'] = (monthly['e'] / monthly['s'] - 1) * 100
     pos_months = int((monthly['ret'] > 0).sum())
-
     trades_json = []
     for t in eng.trades:
         trades_json.append({
-            'code': t.code,
-            'name': stock_names.get(t.code, '') if stock_names else '',
-            'entry_date': str(t.entry_date),
-            'entry_time': getattr(t, 'entry_time', '09:30'),
-            'exit_date': str(t.exit_date),
-            'exit_time': getattr(t, 'exit_time', '15:00'),
-            'entry_px': round(float(t.entry_px), 2),
-            'exit_px': round(float(t.exit_px), 2),
-            'shares': int(t.shares),
-            'ret_pct': round(float(t.ret), 2),
-            'profit': round(float(t.profit), 0),
-            'entry_total': round(float(t.shares * t.entry_px), 0),
-            'exit_total': round(float(t.shares * t.exit_px), 0),
-            'reason': t.reason,
+            'code': t.code, 'name': stock_names.get(t.code, '') if stock_names else '',
+            'entry_date': str(t.entry_date), 'entry_time': getattr(t, 'entry_time', '09:30'),
+            'exit_date': str(t.exit_date), 'exit_time': getattr(t, 'exit_time', '15:00'),
+            'entry_px': round(float(t.entry_px), 2), 'exit_px': round(float(t.exit_px), 2),
+            'shares': int(t.shares), 'ret_pct': round(float(t.ret), 2),
+            'profit': round(float(t.profit), 0), 'entry_total': round(float(t.shares * t.entry_px), 0),
+            'exit_total': round(float(t.shares * t.exit_px), 0), 'reason': t.reason,
             'hold_days': int(t.hold),
         })
-
     equity_json = [
         {'date': r['date'], 'equity': r['equity'], 'norm': round(r['norm'], 4),
          'cash': r['cash'], 'pos': r['pos'], 'dd': round(float(r.get('dd', 0)), 2) if 'dd' in r else None}
         for _, r in eq.iterrows()
     ]
-    # 补充回撤
     for i, item in enumerate(equity_json):
         item['dd'] = round(float(eq['dd'].iloc[i]), 2)
-
-    # 指数数据
     if progress_cb: progress_cb(4, 4, "加载指数对比数据...")
     indices = load_index_data(start_date=start)
-
     summary = {
-        # 核心结果
-        'total_return': round(total_ret, 2),
-        'max_drawdown': round(max_dd, 2),
-        'win_rate': round(wr, 1),
-        'initial_capital': params['initial_capital'],
-        'final_equity': round(float(fe), 0),
-        'trading_days': len(td),
-        'total_calendar_days': trading_days_span,
-        'start_date': str(start),
-        'end_date': str(end),
-        # 风险收益指标
-        'sharpe': round(sharpe, 2),
-        'calmar': round(calmar, 2),
-        'sortino': round(sortino, 2),
-        'profit_ratio': round(float(profit_ratio), 2),
-        'ann_return': round(float(ann_ret * 100), 2),
-        # 交易统计
-        'signals': len(sig),
-        'buy_signals': total_buy_signals,
-        'sell_signals': total_sell_signals,
-        'trades': n,
-        'wins': nw,
-        'losses': nl,
-        'profit_factor': round(float(pf), 2),
-        # 收益分析
-        'best_trade': round(float(best_trade.ret), 2) if best_trade else 0,
+        'total_return': round(total_ret, 2), 'max_drawdown': round(max_dd, 2),
+        'win_rate': round(wr, 1), 'initial_capital': params['initial_capital'],
+        'final_equity': round(float(fe), 0), 'trading_days': len(td_list),
+        'total_calendar_days': trading_days_span, 'start_date': str(start), 'end_date': str(end),
+        'sharpe': round(sharpe, 2), 'calmar': round(calmar, 2), 'sortino': round(sortino, 2),
+        'profit_ratio': round(float(profit_ratio), 2), 'ann_return': round(float(ann_ret * 100), 2),
+        'signals': len(sig), 'buy_signals': sum(1 for _ in eng.trades if _.ret != 0 or _.profit != 0),
+        'sell_signals': n, 'trades': n, 'wins': nw, 'losses': nl,
+        'profit_factor': round(float(pf), 2), 'best_trade': round(float(best_trade.ret), 2) if best_trade else 0,
         'worst_trade': round(float(worst_trade.ret), 2) if worst_trade else 0,
-        'avg_win': round(float(aw), 2),
-        'avg_loss': round(float(al), 2),
-        'avg_hold_win': round(float(avg_hold_win), 1),
-        'avg_hold_loss': round(float(avg_hold_loss), 1),
-        'positive_months': f"{pos_months}/{len(monthly)}",
-        'max_positions_held': max_positions_held,
+        'avg_win': round(float(aw), 2), 'avg_loss': round(float(al), 2),
+        'avg_hold_win': round(float(avg_hold_win), 1), 'avg_hold_loss': round(float(avg_hold_loss), 1),
+        'positive_months': f"{pos_months}/{len(monthly)}", 'max_positions_held': max_positions_held,
         'avg_positions_held': round(float(np.mean(pos_counts)), 1) if pos_counts else 0,
         'exit_reasons': dict(rc.most_common()),
     }
-
     if progress_cb: progress_cb(5, 5, "完成")
-
     return {
-        'status': 'ok',
-        'summary': summary,
-        'equity': equity_json,
-        'trades': trades_json,
-        'daily_trades': daily_trades,
+        'status': 'ok', 'summary': summary, 'equity': equity_json,
+        'trades': trades_json, 'daily_trades': daily_trades,
         'indices': indices,
-        'params': {k: v for k, v in params.items()
-                   if not callable(v) and k != 'signal_params'},
+        'params': {k: v for k, v in params.items() if not callable(v) and k != 'signal_params'},
     }

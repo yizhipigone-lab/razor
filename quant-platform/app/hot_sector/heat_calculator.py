@@ -94,8 +94,10 @@ class HeatCalculator:
                     declines += 1
 
         avg_change = float(np.mean(changes)) if changes else 0.0
+        total = advances + declines
+        advance_ratio = advances / total if total > 0 else 0.0
         return {
-            "hotness": round(avg_change, 2),
+            "hotness": round(advance_ratio * 100, 1),  # 上涨比例 ×100，范围 0-100
             "constituent_count": len(changes),
             "advance_count": advances,
             "decline_count": declines,
@@ -103,7 +105,7 @@ class HeatCalculator:
         }
 
     def calc_sector_heat(self, sector_name: str, bars_dict: dict) -> dict:
-        """计算单个行业板块的热度（成分股涨跌幅均值）"""
+        """计算单个行业板块的热度（上涨比例 ×100）"""
         df_stocks = db.conn.execute(
             "SELECT code FROM stocks WHERE sector = ? AND status = 'active'",
             [sector_name]
@@ -127,8 +129,10 @@ class HeatCalculator:
                     declines += 1
 
         avg_change = float(np.mean(changes)) if changes else 0.0
+        total = advances + declines
+        advance_ratio = advances / total if total > 0 else 0.0
         return {
-            "hotness": round(avg_change, 2),
+            "hotness": round(advance_ratio * 100, 1),  # 上涨比例 ×100，范围 0-100
             "constituent_count": len(changes),
             "advance_count": advances,
             "decline_count": declines,

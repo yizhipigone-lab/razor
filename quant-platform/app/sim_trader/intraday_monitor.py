@@ -84,6 +84,15 @@ class IntradayMonitor:
         reason, partial_qty = result
         if self.engine.auto_sell and self.mode == "intraday":
             self._execute_sell(pos, price, reason, partial_qty)
+            # 卖出后更新一次净值快照（同一天只记一次，防重复）
+            if not getattr(self, '_recorded_today', False):
+                try:
+                    from datetime import date as _d
+                    if not hasattr(self, '_last_record_date') or self._last_record_date != _d.today():
+                        self.engine.record(_d.today(), self.engine._prev_snap or {})
+                        self._last_record_date = _d.today()
+                except Exception:
+                    pass
         else:
             sync_broadcast({
                 "type": "risk_alert",
@@ -99,53 +108,54 @@ class IntradayMonitor:
     def _check_position(self, pos, current_price: float, session_peak: float,
                         daily_atr: float = 0.0):
         """
-        优先级：HS → TF → 多档止盈 → TR → TC
-        返回 (reason, partial_qty) 或 None
+        用统一规则引擎检查止盈止损，返回 (reason, partial_qty) 或 None
         """
+        from app.backtest.exit_rules import exit_rule_engine
         from app.sim_trader.config import (
             HARD_STOP, TAKE_PROFIT_TIERS,
             TRAIL_ACTIVATE, TRAIL_DD,
             TIME_EXIT_DAYS, TIME_EXIT_PROFIT, TIME_FORCE_DAYS,
+            FIRST_DAY_EXIT_MIN_PROFIT, FIRST_DAY_EXIT_DAYS,
             USE_ATR_TRAIL, ATR_TRAIL_MULTIPLIER,
         )
 
-        entry = pos.entry_price
-        current_pct = current_price / entry - 1
-
-        # 1. 硬止损 HS: -6.0%
-        if current_pct <= HARD_STOP:
-            return (f"HS({current_pct*100:.1f}%)", None)
-
-        # 2. 时间强制 TF: 持仓 > 9天
-        hold_days = (date.today() - pos.entry_date).days
-        if hold_days > TIME_FORCE_DAYS:
-            return (f"TF({hold_days}天)", None)
-
-        # 3. 多档阶梯止盈
-        for idx, tier in enumerate(TAKE_PROFIT_TIERS):
-            if not pos.is_tier_triggered(idx) and current_pct >= tier['profit_pct']:
-                ss = int(pos.remaining_shares * tier['sell_ratio'] / 100) * 100
-                if ss >= 100:
-                    pos.mark_tier_triggered(idx)
-                    return (f"TP{idx+1}({current_pct*100:.1f}%)", ss)
-
-        # 4. 移动止盈 TR: 峰≥+3% 且 回撤≥1%（支持 ATR 动态回撤）
         overall_peak = max(pos.peak_price, session_peak)
-        peak_pct = overall_peak / entry - 1
-        if peak_pct >= TRAIL_ACTIVATE:
-            dd = current_price / overall_peak - 1
-            eff_trail_dd = TRAIL_DD
-            if USE_ATR_TRAIL and daily_atr > 0:
-                atr_pct = ATR_TRAIL_MULTIPLIER * daily_atr / entry
-                eff_trail_dd = max(TRAIL_DD, atr_pct)
-            if dd <= -eff_trail_dd:
-                return (f"TR(峰{peak_pct*100:.1f}%回{dd*100:.1f}%)", None)
+        hold_days = (date.today() - pos.entry_date).days + 1  # +1 统一为含首日计数
 
-        # 5. 时间条件 TC: >3天 且 >3%
-        if hold_days > TIME_EXIT_DAYS and current_pct > TIME_EXIT_PROFIT:
-            return (f"TC({hold_days}天+{current_pct*100:.1f}%)", None)
+        ctx = exit_rule_engine.build_context(
+            pos,
+            {"close": current_price, "high": current_price, "low": current_price, "open": current_price, "atr": daily_atr},
+            hold_days,
+            {
+                "hard_stop": HARD_STOP,
+                "take_profit_tiers": TAKE_PROFIT_TIERS,
+                "trail_activate": TRAIL_ACTIVATE,
+                "trail_dd": TRAIL_DD,
+                "time_exit_days": TIME_EXIT_DAYS,
+                "time_exit_profit": TIME_EXIT_PROFIT,
+                "time_force_days": TIME_FORCE_DAYS,
+                "first_day_exit_min_profit": FIRST_DAY_EXIT_MIN_PROFIT,
+                "first_day_exit_days": FIRST_DAY_EXIT_DAYS,
+                "use_atr_trail": USE_ATR_TRAIL,
+                "atr_trail_multiplier": ATR_TRAIL_MULTIPLIER,
+            },
+        )
+        # 覆盖峰值：盘中使用 session_peak
+        ctx.peak_price = overall_peak
 
-        return None
+        signal = exit_rule_engine.check(ctx)
+        if signal is None:
+            return None
+
+        if signal.reason.startswith('TP'):
+            idx = int(signal.reason[2]) - 1
+            pos.mark_tier_triggered(idx)
+            ss = int(pos.remaining_shares * signal.sell_ratio / 100) * 100
+            if ss >= 100:
+                return (signal.reason, ss)
+            return None
+
+        return (signal.reason, None)
 
     def _execute_sell(self, pos, price: float, reason: str, partial_qty: Optional[int]):
         """执行卖出并广播"""

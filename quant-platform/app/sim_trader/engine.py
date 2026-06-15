@@ -238,6 +238,8 @@ class SimTraderEngine:
         readonly=True 时不修改持仓状态（用于告警模式）。
         返回: [(pos, exit_price, reason, partial_shares_or_None), ...]
         """
+        from app.backtest.exit_rules import exit_rule_engine
+
         sells = []
         for code, pos in list(self.positions.items()):
             if not pos.is_active or pos.remaining_shares <= 0:
@@ -248,87 +250,53 @@ class SimTraderEngine:
                 continue
 
             close_p = bar['close']
-            high_p  = bar['high']
-
-            current_pct = close_p / pos.entry_price - 1
+            high_p  = bar.get('high', close_p)
             hold_days = sum(1 for td in trading_dates if pos.entry_date <= td <= today)
 
-            # 0. 除权跳空保护（readonly 模式跳过，不修改持仓状态）
+            # 0. 除权跳空保护（readonly 模式跳过）
             if not readonly and prev_snap:
                 prev_bar = prev_snap.get(code)
-                if prev_bar and prev_bar.get('close', 0) > 0:
-                    overnight_gap = close_p / prev_bar['close'] - 1
-                    prefix = code[:3] if len(code) >= 3 else code
-                    if prefix in ('300', '301', '688'):
-                        gap_limit = -0.20
-                    elif prefix[0] == '8':
-                        gap_limit = -0.30
-                    else:
-                        gap_limit = -0.10
-                    if overnight_gap <= gap_limit:
-                        ratio = close_p / prev_bar['close']
-                        pos.entry_price *= ratio
-                        pos.peak_price *= ratio
-                        current_pct = close_p / pos.entry_price - 1
+                if prev_bar:
+                    from app.backtest.exit_rules import adjust_for_gap
+                    pos.entry_price, pos.peak_price = adjust_for_gap(
+                        code, pos.entry_price, pos.peak_price,
+                        close_p, prev_bar.get('close', 0)
+                    )
 
-            # 0.5 强制首日弱势离场（买入后前N个交易日检测当日最高价是否达标）
-            if FIRST_DAY_EXIT_MIN_PROFIT > 0 and 2 <= hold_days <= FIRST_DAY_EXIT_DAYS + 1:
-                day_high_pct = high_p / pos.entry_price - 1
-                if day_high_pct < FIRST_DAY_EXIT_MIN_PROFIT:
-                    sells.append((pos, close_p,
-                        f"首日未达标(最高+{day_high_pct*100:.1f}%)", None))
-                    continue
-
-            # 1. 硬止损
-            if current_pct <= HARD_STOP:
-                day_high_pct = high_p / pos.entry_price - 1
-                if day_high_pct < FIRST_DAY_EXIT_MIN_PROFIT:
-                    sells.append((pos, close_p,
-                        f"首日未达标(最高+{day_high_pct*100:.1f}%)", None))
-                    continue
-
-            # 2. 时间强制
-            if hold_days > TIME_FORCE_DAYS:
-                sells.append((pos, close_p, f"时间强制({hold_days}天)", None))
-                continue
-
-            # 3. 多档阶梯止盈
-            tp_triggered_local = set()
-            for idx, tier in enumerate(TAKE_PROFIT_TIERS):
-                triggered = pos.is_tier_triggered(idx) if not readonly else (idx in tp_triggered_local)
-                if not triggered and current_pct >= tier['profit_pct']:
-                    ss = int(pos.remaining_shares * tier['sell_ratio'] / 100) * 100
-                    if ss >= 100:
-                        if readonly:
-                            tp_triggered_local.add(idx)
-                        else:
-                            pos.mark_tier_triggered(idx)
-                        sells.append((pos, close_p,
-                            f"TP{idx+1} +{tier['profit_pct']*100:.0f}%({current_pct*100:.1f}%)", ss))
-                        break
-
-            # 更新峰值（在 TP 之后；readonly 模式跳过）
+            # 更新峰值
             if not readonly and high_p > pos.peak_price:
                 pos.peak_price = high_p
-            peak_pct = pos.peak_price / pos.entry_price - 1
 
-            # 4. 移动止盈（支持 ATR 动态回撤）
-            if peak_pct >= TRAIL_ACTIVATE:
-                dd = close_p / pos.peak_price - 1
-                eff_trail_dd = TRAIL_DD
-                if USE_ATR_TRAIL and bar.get('atr', 0) > 0:
-                    atr_pct = ATR_TRAIL_MULTIPLIER * bar['atr'] / pos.entry_price
-                    eff_trail_dd = max(TRAIL_DD, atr_pct)
-                if dd <= -eff_trail_dd:
-                    sells.append((pos, close_p,
-                        f"移动止盈(峰{peak_pct*100:.1f}%回{dd*100:.1f}%)", None))
-                    continue
+            # 构建参数
+            sim_params = {
+                "hard_stop": HARD_STOP,
+                "take_profit_tiers": TAKE_PROFIT_TIERS,
+                "trail_activate": TRAIL_ACTIVATE,
+                "trail_dd": TRAIL_DD,
+                "time_exit_days": TIME_EXIT_DAYS,
+                "time_exit_profit": TIME_EXIT_PROFIT,
+                "time_force_days": TIME_FORCE_DAYS,
+                "first_day_exit_min_profit": FIRST_DAY_EXIT_MIN_PROFIT,
+                "first_day_exit_days": FIRST_DAY_EXIT_DAYS,
+                "use_atr_trail": USE_ATR_TRAIL,
+                "atr_trail_multiplier": ATR_TRAIL_MULTIPLIER,
+            }
+            ctx = exit_rule_engine.build_context(pos, bar, hold_days, sim_params, use_high_for_tp=True)
+            signal = exit_rule_engine.check(ctx)
 
-            # 5. 时间条件
-            if hold_days > TIME_EXIT_DAYS and current_pct > TIME_EXIT_PROFIT:
-                sells.append((pos, close_p,
-                    f"时间条件({hold_days}天+{current_pct*100:.1f}%)", None))
-                continue
+            if signal:
+                # 标记TP档位
+                if signal.reason.startswith('TP') and not readonly:
+                    idx = int(signal.reason[2]) - 1
+                    pos.mark_tier_triggered(idx)
+
+                if signal.sell_ratio < 1.0:
+                    ss = int(pos.remaining_shares * signal.sell_ratio / 100) * 100
+                    if ss < 100:
+                        ss = min(100, int(pos.remaining_shares))
+                    sells.append((pos, signal.sell_price, signal.reason, ss))
+                else:
+                    sells.append((pos, signal.sell_price, signal.reason, None))
 
         return sells
 
@@ -422,12 +390,17 @@ class SimTraderEngine:
         eq = self.total_equity(snapshot)
         log.info(f"[快照] 日期={today} 权益={eq:,.0f} 现金={self.cash:,.0f} 持仓={self.position_count}")
         _safe_broadcast({"type":"sim_trader_log","action":"snapshot","date":str(today),"time":datetime.now().strftime('%H:%M:%S'),"equity":round(eq,0),"cash":round(self.cash,0),"positions":self.position_count})
-        self.equity_curve.append({
+        # 同一天只保留最新一条，防止重复
+        entry = {
             'date': today,
             'equity': eq,
             'cash': self.cash,
             'positions': self.position_count,
-        })
+        }
+        if self.equity_curve and str(self.equity_curve[-1].get('date')) == str(today):
+            self.equity_curve[-1] = entry
+        else:
+            self.equity_curve.append(entry)
         if self._store:
             self._store.save_equity_point(today, eq, self.cash, self.position_count)
             self._store.save_state(

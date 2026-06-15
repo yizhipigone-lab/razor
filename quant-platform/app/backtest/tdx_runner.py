@@ -67,35 +67,72 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
     if stop_event and stop_event.is_set():
         return {"status": "stopped"}
 
-    # ── 5 分钟线回测（优先），失败降级日线 ──────────
-    is_5m = False
-    stocks_with_5m = set()
+    # ── 日内K线回测（优先），失败降级日线 ──────────
+    period = params.get("intraday_freq", "5m")
+    # 选什么精度就严格按照什么精度：daily 直接走日线路径
+    if period == "daily":
+        if progress_cb:
+            progress_cb(0, 5, "使用日线回测...")
+        sig_result = bridge.execute_screen_range(
+            end_time=end_time, kline_count=kline_count, start_time=formula_start)
+        if sig_result.get("status") != "ok":
+            return {"status": "error", "message": sig_result.get("message", "TDX 信号获取失败")}
+        return _run_daily_backtest(
+            sig_result, params, start, end, progress_cb, stop_event, stock_names or {})
+    # 日内精度: 5m 或 1m
+    period = params.get("intraday_freq", "5m")
+    if period not in ("1m", "5m"):
+        period = "5m"
+    is_intraday = False
+    stocks_with_intraday = set()
 
     try:
         if progress_cb:
-            progress_cb(0, 5, "尝试获取5分钟线数据...")
-        sig_result = bridge.execute_screen_range_5m(
+            progress_cb(0, 5, f"尝试获取{period}线数据...")
+        sig_result = bridge.execute_screen_range_intraday(
             end_time=end_time,
             kline_count=kline_count,
             start_time=formula_start,
             signal_start=start_time_str,
+            period=period,
         )
         if sig_result.get("status") == "ok":
-            bars_5m = sig_result.get("bars_5m", [])
-            # 检查是否有有效K线（至少要有 close/high/low）
-            valid_bars = [b for b in (bars_5m or []) if b.get("close", 0) > 0]
+            bars_intra = sig_result.get("bars_intraday", sig_result.get("bars_intra", []))
+            valid_bars = [b for b in (bars_intra or []) if b.get("close", 0) > 0]
             if valid_bars:
-                is_5m = True
+                is_intraday = True
                 for b in valid_bars:
                     code = b.get("code", "")
                     if code:
-                        stocks_with_5m.add(code.split(".")[0] if "." in code else code)
+                        stocks_with_intraday.add(code.split(".")[0] if "." in code else code)
     except Exception as e:
-        log.warning(f"5分钟线获取失败: {e}，降级日线")
+        log.warning(f"{period}线获取失败: {e}，降级日线")
 
-    if not is_5m:
+    if not is_intraday and period == "1m":
+        # 1m失败→尝试5m
         if progress_cb:
-            progress_cb(0, 5, f"5分钟线不可用，降级日线回测...")
+            progress_cb(0, 5, "1分钟线不可用，降级尝试5分钟线...")
+        try:
+            sig_result = bridge.execute_screen_range_intraday(
+                end_time=end_time, kline_count=kline_count,
+                start_time=formula_start, signal_start=start_time_str, period="5m")
+            if sig_result.get("status") == "ok":
+                bars_5m = sig_result.get("bars_intraday", sig_result.get("bars_5m", []))
+                valid_bars = [b for b in (bars_5m or []) if b.get("close", 0) > 0]
+                if valid_bars:
+                    is_intraday = True
+                    period = "5m"
+                    stocks_with_intraday = set()
+                    for b in valid_bars:
+                        code = b.get("code", "")
+                        if code:
+                            stocks_with_intraday.add(code.split(".")[0] if "." in code else code)
+        except Exception:
+            pass
+
+    if not is_intraday:
+        if progress_cb:
+            progress_cb(0, 5, "日内数据不可用，降级日线回测...")
         sig_result = bridge.execute_screen_range(
             end_time=end_time,
             kline_count=kline_count,
@@ -109,73 +146,53 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
         )
 
     if progress_cb:
-        progress_cb(0, 5, f"5分钟逐K线回放 ({len(stocks_with_5m)}只有5m数据)...")
+        progress_cb(0, 5, f"{period}逐K线回放 ({len(stocks_with_intraday)}只)...")
 
-    return _run_5m_backtest(
+    return _run_intraday_backtest(
         sig_result, params, start, end, progress_cb,
-        stop_event, stock_names or {}, stocks_with_5m,
+        stop_event, stock_names or {}, stocks_with_intraday, period,
     )
 
 
-def _check_stops_daily(pos, close_p, high_p, hold_days, params, bar=None):
-    """单日止盈止损检查（用于无5m数据的股票），返回 (reason, sell_px, partial_shares) 或 None"""
-    entry = pos.entry_price
-    cur = close_p / entry - 1
+def _check_stops_daily(pos, close_p, high_p, hold_days, params):
+    """单日止盈止损检查（委托给统一规则引擎）"""
+    from app.backtest.exit_rules import exit_rule_engine
 
-    # 更新峰值
     if high_p > pos.peak_price:
         pos.peak_price = high_p
-    peak_pct = pos.peak_price / entry - 1
 
-    # 1. 硬止损
-    hs = params["hard_stop"]
-    if cur <= hs:
-        return ("HS", close_p, None)
+    bar = {"close": close_p, "high": high_p, "low": close_p, "open": close_p}
+    ctx = exit_rule_engine.build_context(pos, bar, hold_days, params,
+                                          first_day_hold_value=1)
+    signal = exit_rule_engine.check(ctx)
 
-    # 2. 阶梯止盈
-    tp_tiers = params.get("take_profit_tiers", [])
-    for idx, tier in enumerate(tp_tiers):
-        if idx not in pos.tp_triggered and cur >= tier["profit_pct"]:
-            pos.tp_triggered.add(idx)
-            ss = int(pos.shares * tier.get("sell_ratio", 1.0) / 100) * 100
-            if ss < 100:
-                ss = 100
-            ss = min(ss, int(pos.shares))
-            return (f"TP{idx+1}", close_p, ss)
+    if signal is None:
+        return None
 
-    # 3. 移动止盈
-    trail_act = params["trail_activate"]
-    trail_dd = params["trail_dd"]
-    if peak_pct >= trail_act:
-        dd_from_peak = close_p / pos.peak_price - 1
-        if dd_from_peak <= -trail_dd:
-            return ("TR", close_p, None)
+    if signal.reason.startswith('TP'):
+        idx = int(signal.reason[2]) - 1
+        pos.tp_triggered.add(idx)
+        ss = int(pos.shares * signal.sell_ratio / 100) * 100
+        if ss < 100:
+            ss = 100
+        ss = min(ss, int(pos.shares))
+        return (signal.reason, signal.sell_price, ss)
 
-    # 4. 时间条件
-    time_exit = params["time_exit_days"]
-    time_profit = params["time_exit_profit"]
-    if hold_days > time_exit and cur > time_profit:
-        return ("TC", close_p, None)
-
-    # 5. 时间强制
-    time_force = params["time_force_days"]
-    if hold_days > time_force:
-        return ("TF", close_p, None)
-
-    return None
+    return (signal.reason, signal.sell_price, None) if signal.sell_ratio >= 1.0 else None
 
 
-def _run_5m_backtest(sig_result: dict, params: dict, start: date, end: date,
-                      progress_cb, stop_event, stock_names: dict,
-                      stocks_with_5m: set) -> dict | None:
-    """5 分钟线回测引擎：有5m数据的股票逐K线检查，无5m数据的每日收盘检查"""
+def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: date,
+                            progress_cb, stop_event, stock_names: dict,
+                            stocks_with_intraday: set, period: str = "5m") -> dict | None:
+    """日内K线回测引擎：有日内数据的逐K线检查，无数据的每日收盘检查"""
+    from app.backtest.exit_rules import exit_rule_engine
     try:
         raw_signals = sig_result.get("signals", {})
-        bars_5m = sig_result.get("bars_5m", [])
+        bars_intra = sig_result.get("bars_intraday", sig_result.get("bars_intra", []))
         raw_prices = sig_result.get("prices", {})
 
         # 过滤有效K线
-        bars_5m = [b for b in (bars_5m or []) if b.get("close", 0) > 0]
+        bars_intra = [b for b in (bars_intra or []) if b.get("close", 0) > 0]
 
         # 解析信号
         sig_by_code = {}
@@ -224,19 +241,19 @@ def _run_5m_backtest(sig_result: dict, params: dict, start: date, end: date,
                     except (ValueError, TypeError):
                         pass
 
-        # 按5m数据有无分组
-        no_5m_codes = all_signal_codes - stocks_with_5m
-        log.info(f"5m回测: {len(stocks_with_5m)}只有5m数据, {len(no_5m_codes)}只降级日线")
+        # 按日内数据有无分组
+        no_intraday_codes = all_signal_codes - stocks_with_intraday
+        log.info(f"日内回测: {len(stocks_with_intraday)}只有{period}数据, {len(no_intraday_codes)}只降级日线")
 
         if progress_cb:
-            progress_cb(1, 4, f"5分钟逐K线回放 ({len(bars_5m)}根K线, {len(stocks_with_5m)}只5m + {len(no_5m_codes)}只日线)...")
+            progress_cb(1, 4, f"{period}逐K线回放 ({len(bars_intra)}根K线, {len(stocks_with_intraday)}只{period} + {len(no_intraday_codes)}只日线)...")
 
         if stop_event and stop_event.is_set():
             return {"status": "stopped"}
 
         # 按时间排序5m bars
-        bars_5m.sort(key=lambda x: x.get("datetime", ""))
-        for b in bars_5m:
+        bars_intra.sort(key=lambda x: x.get("datetime", ""))
+        for b in bars_intra:
             dt_str = b.get("datetime", "")
             if len(dt_str) >= 10:
                 b["date"] = date.fromisoformat(dt_str[:10])
@@ -263,7 +280,7 @@ def _run_5m_backtest(sig_result: dict, params: dict, start: date, end: date,
 
         # 收集所有交易日（5m bars 的日期 + prices 的日期）
         all_dates = set()
-        for b in bars_5m:
+        for b in bars_intra:
             all_dates.add(str(b["date"]))
         for d_str in prices_by_date.keys():
             all_dates.add(d_str)
@@ -290,8 +307,8 @@ def _run_5m_backtest(sig_result: dict, params: dict, start: date, end: date,
                     mkt_value = 0
                     for pc, pp in positions.items():
                         if not pp.active: continue
-                        if pc in stocks_with_5m:
-                            bar_px = next((b["close"] for b in bars_5m[max(0,bar_idx-50):bar_idx]
+                        if pc in stocks_with_intraday:
+                            bar_px = next((b["close"] for b in bars_intra[max(0,bar_idx-50):bar_idx]
                                           if b["code"] == pc and str(b["date"]) == d_str), pp.entry_price)
                         else:
                             bar_px = prices_by_date.get(d_str, {}).get(pc, {}).get("close", pp.entry_price)
@@ -301,10 +318,10 @@ def _run_5m_backtest(sig_result: dict, params: dict, start: date, end: date,
                     if cash < dyn_size * 0.5:
                         break
 
-                    if code in stocks_with_5m:
+                    if code in stocks_with_intraday:
                         # 有5m数据：用当天第一根bar的close买入
                         bar_for_code = next(
-                            (b for b in bars_5m[bar_idx:] if b["code"] == code and str(b["date"]) == d_str), None
+                            (b for b in bars_intra[bar_idx:] if b["code"] == code and str(b["date"]) == d_str), None
                         )
                         if bar_for_code is None:
                             continue
@@ -329,13 +346,13 @@ def _run_5m_backtest(sig_result: dict, params: dict, start: date, end: date,
                     total_buy_signals += 1
 
             # ── 处理当天的5分钟K线（有5m数据的股票） ──
-            while bar_idx < len(bars_5m) and str(bars_5m[bar_idx]["date"]) == d_str:
-                bar = bars_5m[bar_idx]
+            while bar_idx < len(bars_intra) and str(bars_intra[bar_idx]["date"]) == d_str:
+                bar = bars_intra[bar_idx]
                 code = bar["code"]
                 code_num = code.split(".")[0] if "." in code else code
 
                 pos = positions.get(code_num)
-                if pos and pos.active and code_num in stocks_with_5m:
+                if pos and pos.active and code_num in stocks_with_intraday:
                     h = bar["high"]
                     l = bar["low"]
                     c = bar["close"]
@@ -344,51 +361,28 @@ def _run_5m_backtest(sig_result: dict, params: dict, start: date, end: date,
 
                     entry = pos.entry_price
                     hold_days = (d - pos.entry_date).days
+
+                    # 用统一规则引擎
+                    ctx = exit_rule_engine.build_context(
+                        pos, bar, hold_days, params, use_high_for_tp=True,
+                        first_day_hold_value=1
+                    )
+                    signal = exit_rule_engine.check(ctx)
+
                     reason = None
                     sell_px = None
                     partial_sell = None
 
-                    # 1. 硬止损
-                    hs_pct = params["hard_stop"]
-                    stop_price = entry * (1 + hs_pct)
-                    if l <= stop_price:
-                        sell_px = max(stop_price, bar["open"])
-                        reason = "HS"
-                    # 2. 阶梯止盈
-                    elif reason is None:
-                        tp_tiers = params.get("take_profit_tiers", [])
-                        for idx, tier in enumerate(tp_tiers):
-                            if idx not in pos.tp_triggered and h >= entry * (1 + tier["profit_pct"]):
-                                pos.tp_triggered.add(idx)
-                                sell_px = entry * (1 + tier["profit_pct"])
-                                reason = f"TP{idx + 1}"
-                                ss = int(pos.shares * tier.get("sell_ratio", 1.0) / 100) * 100
-                                if ss < 100:
-                                    ss = 100
-                                partial_sell = min(ss, int(pos.shares))
-                                break
-                    # 3. 移动止盈
-                    if reason is None:
-                        trail_act = params["trail_activate"]
-                        trail_dd = params["trail_dd"]
-                        if pos.peak_price / entry - 1 >= trail_act:
-                            trail_price = pos.peak_price * (1 - trail_dd)
-                            if l <= trail_price:
-                                sell_px = max(trail_price, bar["open"])
-                                reason = "TR"
-                    # 4. 时间退出
-                    if reason is None:
-                        time_exit = params["time_exit_days"]
-                        time_profit = params["time_exit_profit"]
-                        if hold_days > time_exit and c / entry - 1 > time_profit:
-                            sell_px = c
-                            reason = "TC"
-                    # 5. 强制时间退出
-                    if reason is None:
-                        time_force = params["time_force_days"]
-                        if hold_days > time_force:
-                            sell_px = c
-                            reason = "TF"
+                    if signal:
+                        reason = signal.reason
+                        sell_px = signal.sell_price
+                        if signal.reason.startswith('TP'):
+                            idx = int(signal.reason[2]) - 1
+                            pos.tp_triggered.add(idx)
+                            ss = int(pos.shares * signal.sell_ratio / 100) * 100
+                            if ss < 100:
+                                ss = 100
+                            partial_sell = min(ss, int(pos.shares))
 
                     if reason and sell_px and sell_px > 0:
                         sell_shares = partial_sell if (reason and reason.startswith("TP")) else pos.shares
@@ -414,7 +408,7 @@ def _run_5m_backtest(sig_result: dict, params: dict, start: date, end: date,
 
             # ── 当天结束后：检查无5m数据的持仓 ────────
             for code_num in list(positions.keys()):
-                if code_num in stocks_with_5m:
+                if code_num in stocks_with_intraday:
                     continue  # 已在逐K线中处理
                 pos = positions[code_num]
                 if not pos.active:
@@ -455,8 +449,8 @@ def _run_5m_backtest(sig_result: dict, params: dict, start: date, end: date,
             # 记录净值
             pos_value = 0
             for pc, p in positions.items():
-                if pc in stocks_with_5m:
-                    px = next((b["close"] for b in reversed(bars_5m[:bar_idx])
+                if pc in stocks_with_intraday:
+                    px = next((b["close"] for b in reversed(bars_intra[:bar_idx])
                               if b["code"] == pc and str(b["date"]) == d_str), p.entry_price)
                 else:
                     px = prices_by_date.get(d_str, {}).get(pc, {}).get("close", p.entry_price)
@@ -470,8 +464,8 @@ def _run_5m_backtest(sig_result: dict, params: dict, start: date, end: date,
         for code, p in list(positions.items()):
             if not p.active:
                 continue
-            if code in stocks_with_5m:
-                code_bars = [b for b in bars_5m if b["code"] == code]
+            if code in stocks_with_intraday:
+                code_bars = [b for b in bars_intra if b["code"] == code]
                 px = code_bars[-1]["close"] if code_bars else p.entry_price
             else:
                 last_snap = prices_by_date.get(str(sorted_dates[-1]), {})
@@ -515,17 +509,17 @@ def _run_5m_backtest(sig_result: dict, params: dict, start: date, end: date,
             pass
 
         # ── 构建结果 ──────────────────────────────────
-        trading_days = sorted(set(b["date"] for b in bars_5m))
+        trading_days = sorted(set(b["date"] for b in bars_intra))
         if not trading_days:
             trading_days = [date.fromisoformat(d) for d in sorted_dates]
         eng = _FakeEngine(trades_all, equity_curve, params)
         result = _build_result(eng, stock_names, params, trading_days,
                                total_buy_signals, start, end, indices)
         result["summary"]["exit_reasons"] = dict(sell_reasons)
-        result["summary"]["data_source"] = f"hybrid(5m:{len(stocks_with_5m)}/dl:{len(no_5m_codes)})"
+        result["summary"]["data_source"] = f"hybrid({period}:{len(stocks_with_intraday)}/dl:{len(no_intraday_codes)})"
 
         if progress_cb:
-            progress_cb(3, 4, "混合回测完成")
+            progress_cb(3, 4, f"{period}回测完成")
         return result
 
     except Exception as e:
