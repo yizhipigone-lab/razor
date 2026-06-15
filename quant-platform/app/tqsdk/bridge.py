@@ -72,19 +72,22 @@ class TdxBridge:
         }
         return self._run_worker(task, timeout_multiplier=max(2, kline_count // 50))
 
-    def execute_screen_range_5m(self, end_time: str, kline_count: int,
-                                 start_date: str = None,
-                                 return_count: int = None,
-                                 stock_list_override: list = None,
-                                 start_time: str = "",
-                                 signal_start: str = ""):
+    def execute_screen_range_intraday(self, end_time: str, kline_count: int,
+                                       start_date: str = None,
+                                       return_count: int = None,
+                                       stock_list_override: list = None,
+                                       start_time: str = "",
+                                       signal_start: str = "",
+                                       period: str = "5m"):
         """
-        区间选股 5分钟增强版：两步调用 worker
+        区间选股 + 日内K线增强版：两步调用 worker
         Step 1: range → 信号 + 日线收盘价 (快)
-        Step 2: fetch_5m → 仅对信号股获取 5 分钟 OHLC (限 300 只)
-        失败自动降级，bars_5m 为 None 时走日线回退
+        Step 2: fetch_intraday → 仅对信号股获取日内 OHLC (限 300 只)
+        失败自动降级，bars_intraday 为 None 时走日线回退
+        period: '5m' 或 '1m'
         """
-        MAX_5M_BARS = 5_000_000  # 最多500万根5分钟K线
+        bars_per_day = 48 if period == "5m" else 241
+        MAX_5M_BARS = 50_000_000  # 最多5000万根K线（写到磁盘，不限内存）
 
         if return_count is None:
             return_count = kline_count
@@ -102,7 +105,7 @@ class TdxBridge:
             "return_count": return_count,
         }
         result = self._run_worker(task1, timeout_multiplier=min(10, max(2, kline_count // 50)))
-        result["bars_5m"] = None
+        result["bars_intraday"] = None
 
         if result.get("status") != "ok":
             return result
@@ -136,38 +139,52 @@ class TdxBridge:
             est_days = max(1, (end_dt - start_dt).days * 0.7)
         except Exception:
             est_days = 60
-        est_bars = len(signal_codes) * est_days * 48
-        log.info(f"5m fetch: {len(signal_codes)} stocks x {est_days:.0f} days = {est_bars/1e3:.0f}K bars (limit {MAX_5M_BARS/1e6:.1f}M)")
+        est_bars = len(signal_codes) * est_days * bars_per_day
+        log.info(f"{period} fetch: {len(signal_codes)} stocks x {est_days:.0f} days = {est_bars/1e3:.0f}K bars (limit {MAX_5M_BARS/1e6:.1f}M)")
         if est_bars > MAX_5M_BARS:
-            log.warning(f"5m data estimate {est_bars/1e6:.1f}M > limit {MAX_5M_BARS/1e6:.1f}M, fallback daily")
+            log.warning(f"{period} data estimate {est_bars/1e6:.1f}M > limit {MAX_5M_BARS/1e6:.1f}M, fallback daily")
             return result
 
         try:
             task2 = {
-                "task_type": "fetch_5m",
+                "task_type": "fetch_intraday",
+                "period": period,
                 "stock_list_override": signal_codes,
                 "start_date": start_date,
                 "end_time": end_time,
             }
-            log.info(f"5m fetch worker starting for {len(signal_codes)} stocks...")
-            result_5m = self._run_worker(task2, timeout_multiplier=min(5, max(2, len(signal_codes) // 50)))
+            log.info(f"{period} fetch worker starting for {len(signal_codes)} stocks...")
+            result_intraday = self._run_worker(task2, timeout_multiplier=min(5, max(2, len(signal_codes) // 50)))
 
-            bars_5m_path = result_5m.get("bars_5m_path")
-            if bars_5m_path and os.path.exists(bars_5m_path):
+            bars_path = result_intraday.get("bars_path")
+            if bars_path and os.path.exists(bars_path):
                 try:
                     import pandas as pd
-                    df = pd.read_parquet(bars_5m_path)
-                    result["bars_5m"] = df.to_dict(orient="records")
-                    result["bars_5m_count"] = len(df)
-                    log.info(f"5m data loaded: {len(df)} bars, {df['code'].nunique()} stocks, {df['datetime'].str[:10].nunique()} days")
+                    df = pd.read_parquet(bars_path)
+                    result["bars_intraday"] = df.to_dict(orient="records")
+                    result["bars_intraday_count"] = len(df)
+                    log.info(f"{period} data loaded: {len(df)} bars, {df['code'].nunique()} stocks, {df['datetime'].str[:10].nunique()} days")
                 except Exception as e:
-                    log.warning(f"5m parquet read failed: {e}")
+                    log.warning(f"{period} parquet read failed: {e}")
                 finally:
-                    Path(bars_5m_path).unlink(missing_ok=True)
+                    Path(bars_path).unlink(missing_ok=True)
         except Exception as e:
-            log.warning(f"5分钟数据获取失败，降级日线: {e}")
+            log.warning(f"{period}数据获取失败，降级日线: {e}")
 
         return result
+
+    def execute_screen_range_5m(self, end_time: str, kline_count: int,
+                                 start_date: str = None, return_count: int = None,
+                                 stock_list_override: list = None, start_time: str = "",
+                                 signal_start: str = ""):
+        """[兼容] 等价于 execute_screen_range_intraday(period='5m')"""
+        r = self.execute_screen_range_intraday(
+            end_time=end_time, kline_count=kline_count, start_date=start_date,
+            return_count=return_count, stock_list_override=stock_list_override,
+            start_time=start_time, signal_start=signal_start, period="5m")
+        if "bars_intraday" in r:
+            r["bars_5m"] = r.pop("bars_intraday")
+        return r
 
     def _run_worker(self, task: dict, timeout_multiplier: int = 1):
         """执行 worker 脚本并解析结果"""

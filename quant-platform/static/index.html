@@ -269,6 +269,13 @@
                     <option value="">加载中...</option>
                   </select>
                 </div>
+                <div class="bt-cfg-item"><label>数据精度</label>
+                  <select id="sbt-precision" style="width:90px;height:28px;font-size:12px">
+                    <option value="5m">5分钟</option>
+                    <option value="1m">1分钟</option>
+                    <option value="daily">日线</option>
+                  </select>
+                </div>
               </div>
             </div>
             <!-- 资金管理 -->
@@ -294,9 +301,9 @@
                   <input type="number" id="sbt-atr-mul" step="0.25" value="1.0" style="width:50px;height:22px;font-size:10px">
                 </div>
               </div>
-              <!-- 首日弱势离场 -->
+              <!-- 首日弱势离场（设0即关闭） -->
               <div class="bt-cfg-grid" style="margin-top:6px">
-                <div class="bt-cfg-item fd"><label><span class="reason-tag" style="color:#f59e0b">FD</span> 目标涨幅%</label><input type="number" id="sbt-fd-profit" step="0.5" value="3.0"></div>
+                <div class="bt-cfg-item fd"><label><span class="reason-tag" style="color:#f59e0b">FD</span> 目标涨幅% <span style="font-size:9px;color:var(--text2)">0=关闭</span></label><input type="number" id="sbt-fd-profit" step="0.5" value="3.0"></div>
                 <div class="bt-cfg-item fd"><label><span class="reason-tag" style="color:#f59e0b">FD</span> 有效天数</label><input type="number" id="sbt-fd-days" step="1" value="1"></div>
               </div>
               <div style="margin-top:8px;font-size:11px;color:var(--text2)">阶梯止盈（按顺序触发，每档只触发一次，剩余仓位最终由 TR 保护）</div>
@@ -956,7 +963,7 @@
                 <div><label style="font-size:11px">目标涨幅%</label><input type="number" id="set-fd-profit" step="0.5" value="3.0" style="width:100%"></div>
                 <div><label style="font-size:11px">有效天数</label><input type="number" id="set-fd-days" step="1" value="1" style="width:100%"></div>
               </div>
-              <div style="font-size:10px;color:var(--text2);margin-top:2px">买入后前N天，当日最高价未达目标则14:52强制卖出</div>
+              <div style="font-size:10px;color:var(--text2);margin-top:2px">买入后前N天，当日最高价未达目标则14:52强制卖出。<b>设为0即关闭此规则</b></div>
             </div>
             <div style="margin-top:6px">
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">

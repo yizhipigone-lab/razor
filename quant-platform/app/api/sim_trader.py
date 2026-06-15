@@ -628,3 +628,36 @@ async def sim_trader_monitor_control(data: dict):
         "monitor_enabled": engine.monitor_enabled if engine else False,
         "monitor_mode": engine.monitor.mode if engine and engine.monitor else _cfg.MONITOR_MODE,
     }
+
+
+@router.post("/api/quotes/live")
+async def get_live_quotes(body: dict):
+    """批量获取实时行情（自选股+持仓轮询用）"""
+    codes = body.get("codes", [])
+    if not codes:
+        return {"status": "ok", "data": {}}
+
+    try:
+        from app.data_manager.engine import get_realtime_quote
+        df = get_realtime_quote(codes)
+        if df is None or df.empty:
+            return {"status": "ok", "data": {}}
+
+        result = {}
+        for _, row in df.iterrows():
+            code = str(row.get("code", ""))
+            price = float(row.get("price", 0))
+            if not code or price <= 0:
+                continue
+            last_close = float(row.get("last_close", 0))
+            result[code] = {
+                "price": round(price, 2),
+                "last_close": round(last_close, 2),
+                "change_pct": round((price - last_close) / last_close * 100, 2) if last_close > 0 else 0,
+                "high": round(float(row.get("high", price)), 2),
+                "low": round(float(row.get("low", price)), 2),
+            }
+        return {"status": "ok", "data": result}
+    except Exception as e:
+        log.warning(f"实时行情批量获取失败: {e}")
+        return {"status": "ok", "data": {}}

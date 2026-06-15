@@ -555,15 +555,10 @@ async def get_simple_bt_config():
     cfg = _load_bt_config()
     sys_cfg = _default_bt_config()
     # 核心参数强制从系统配置刷新，不读缓存
-    LIVE_KEYS = ['hard_stop', 'take_profit_tiers', 'trail_activate', 'trail_dd',
-                 'time_exit_days', 'time_exit_profit', 'time_force_days',
-                 'loss_streak_halve', 'loss_streak_pause', 'pause_days',
-                 'same_stock_cooldown', 'use_atr_trail', 'atr_trail_multiplier',
-                 'first_day_exit_min_profit', 'first_day_exit_days',
-                 'signal_params', 'position_size', 'min_buy_amt']
-    for k in LIVE_KEYS:
+    # 回测配置独立，不从系统配置覆写（用户保存的值优先）
+    for k in ['end_date']:
         if k in sys_cfg:
-            cfg[k] = copy.deepcopy(sys_cfg[k])
+            cfg[k] = sys_cfg[k]
     cfg['end_date'] = str(date.today())
     return {"status": "ok", "config": cfg, "system_config": sys_cfg}
 

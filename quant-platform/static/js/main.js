@@ -282,8 +282,8 @@ async function renderSimEquityChart() {
 }
 
 var _simCalData = {};
-var _simCalMonth = 1;
-var _simCalYear = 2026;
+var _simCalMonth = new Date().getMonth() + 1;
+var _simCalYear = new Date().getFullYear();
 
 async function renderSimCalendar() {
   try {
@@ -1103,6 +1103,58 @@ function _startAIPoll() {
   if (_aiPollTimer) clearInterval(_aiPollTimer);
   _aiPollTimer = setInterval(_pollAIStatus, 1500);
 }
+
+// ── 实时行情轮询兜底（WebSocket 不通时也能更新自选股+持仓价格）──
+var _quotePollTimer = null;
+function startQuotePolling() {
+  if (_quotePollTimer) return;
+  _quotePollTimer = setInterval(pollLiveQuotes, 5000);
+}
+async function pollLiveQuotes() {
+  try {
+    var codes = [];
+    document.querySelectorAll('#watchlist-tbody tr.wl-row, #sim-pos-tbody tr.pos-row').forEach(function(tr) {
+      var c = tr.getAttribute('data-code');
+      if (c) codes.push(c);
+    });
+    // 加入指数
+    ['000001.SH','399001.SZ','399006.SZ'].forEach(function(c) { codes.push(c); });
+    codes = [...new Set(codes)];
+    if (codes.length === 0) return;
+
+    var r = await fetch('/api/quotes/live', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({codes: codes})
+    }).then(function(r) { return r.json(); });
+    if (r.status !== 'ok' || !r.data) return;
+    var d = r.data;
+    window._lastQuotes = d;
+
+    // 更新指数
+    if (d['000001.SH']) setIndex('sh', d['000001.SH']);
+    if (d['399001.SZ']) setIndex('sz', d['399001.SZ']);
+    if (d['399006.SZ']) setIndex('cy', d['399006.SZ']);
+
+    // 更新自选股和持仓行
+    document.querySelectorAll('#watchlist-tbody tr.wl-row, #sim-pos-tbody tr.pos-row').forEach(function(tr) {
+      var c = tr.getAttribute('data-code');
+      if (!c || !d[c]) return;
+      var q = d[c];
+      var pEl = tr.querySelector('.live-price') || tr.querySelector('.pos-price');
+      var pctEl = tr.querySelector('.live-pct') || tr.querySelector('.pos-pct');
+      if (pEl && q.price > 0) {
+        pEl.textContent = q.price.toFixed(2);
+        pEl.style.color = q.change_pct >= 0 ? '#ef232a' : '#14b143';
+      }
+      if (pctEl) {
+        pctEl.textContent = (q.change_pct >= 0 ? '+' : '') + q.change_pct.toFixed(2) + '%';
+        pctEl.style.color = q.change_pct >= 0 ? '#ef232a' : '#14b143';
+      }
+    });
+  } catch(e) {}
+}
+// 页面加载后自动启动
+startQuotePolling();
 
 async function _pollAIStatus() {
   try {
@@ -3605,6 +3657,8 @@ async function loadBtSimpleConfig() {
     document.getElementById('sbt-end').value = new Date().toISOString().slice(0, 10);
     const stratSel = document.getElementById('sbt-strategy');
     if (stratSel && cfg.strategy_name) stratSel.value = cfg.strategy_name;
+    const precSel = document.getElementById('sbt-precision');
+    if (precSel && cfg.intraday_freq) precSel.value = cfg.intraday_freq;
     const sp = cfg.signal_params || {};
     document.getElementById('sbt-qs').checked = !sp.disable_quality_sort;
     addLog('ok', '已加载回测配置');
@@ -3656,6 +3710,7 @@ function _collectBtConfig() {
   cfg.strategy_name = document.getElementById('sbt-strategy')?.value || '盘整突破';
   var stratOpt = document.getElementById('sbt-strategy')?.selectedOptions?.[0];
   cfg.strategy_type = (stratOpt && stratOpt.dataset.strategyType) || 'python';
+  cfg.intraday_freq = document.getElementById('sbt-precision')?.value || '5m';
   // signal_params 由后端从策略文件 PARAMS 自动读取，前端只传策略名
   cfg.signal_params = {};
   return cfg;
@@ -3884,6 +3939,8 @@ switchTab = function(name) {
       if (document.getElementById('sbt-capital') && !document.getElementById('sbt-capital').value) {
         loadBtSimpleConfig();
       }
+      // 切到回测tab后强制重绘图表
+      if (_simpleBtChart) _simpleBtChart.resize();
     }, 300);
   }
 };

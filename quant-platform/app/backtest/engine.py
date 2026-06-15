@@ -268,7 +268,7 @@ class BacktestEngine:
                     continue
 
             # 日线OHLC仿真
-            stock_daily = full_daily[full_daily["code"] == code]
+            stock_daily = bars[bars["code"] == code]
             bars_daily = stock_daily[stock_daily["date"] >= signal_date]
             trade = self._simulate_trade_daily_fallback(code, name, entry_price, signal_date, bars_daily, params_override=params_override, time_exit_min_pnl=time_exit_min_pnl)
 
@@ -628,6 +628,18 @@ class BacktestEngine:
                 return ((cost_sell / cost_entry) - 1) * 100 * ratio
             return ((raw_sell_price / entry_price) - 1) * 100 * ratio
 
+        from app.backtest.exit_rules import exit_rule_engine, _pct
+        from dataclasses import dataclass
+
+        @dataclass
+        class _MirrorPos:
+            entry_price: float = 0
+            peak_price: float = 0
+            tp_triggered: set = None
+            def __post_init__(self):
+                if self.tp_triggered is None:
+                    self.tp_triggered = set()
+
         for i, (_, row) in enumerate(bars_5m.iterrows()):
             curr_dt = row[time_col]
             curr_date = curr_dt.date() if hasattr(curr_dt, 'date') else curr_dt
@@ -639,27 +651,36 @@ class BacktestEngine:
                 prev_date = prev_date.date() if hasattr(prev_date, 'date') else prev_date
                 if curr_date != prev_date:
                     hold_days += 1
-                    # 首日弱势离场：检查前N个完整交易日（hold_days=2对应第1个完整日）
-                    if 2 <= hold_days <= fd_days + 1 and fd_min_profit > 0:
-                        day_high_pct = _day_high / entry_price - 1
-                        if day_high_pct < fd_min_profit:
+                    # 日边界：用统一规则引擎检查首日弱势离场 + 成交量高潮
+                    if fd_min_profit > 0 or _climax_avg_vol is not None:
+                        mp = _MirrorPos(entry_price, highest, staged_done)
+                        ctx_p = {
+                            "hard_stop": -0.99, "take_profit_tiers": [],
+                            "trail_activate": 0.99, "trail_dd": 0.99,
+                            "time_exit_days": 999, "time_exit_profit": 0.99,
+                            "time_force_days": 999,
+                            "first_day_exit_min_profit": fd_min_profit,
+                            "first_day_exit_days": fd_days,
+                        }
+                        ctx = exit_rule_engine.build_context(
+                            mp, {"close": _day_close, "high": _day_high, "low": _day_low, "open": _day_close},
+                            hold_days, ctx_p, first_day_hold_value=2
+                        )
+                        if _climax_avg_vol is not None and _day_vol > 0:
+                            ctx.vol_climax_enabled = True
+                            ctx.vol_climax_avg = _climax_avg_vol
+                            ctx.vol_climax_day_vol = _day_vol
+                            ctx.vol_climax_day_high = _day_high
+                            ctx.vol_climax_day_low = _day_low
+                            ctx.vol_climax_day_close = _day_close
+                        sig = exit_rule_engine.check(ctx)
+                        if sig:
                             realized_pnl += _cost_pnl(_day_close, remaining_ratio)
                             sell_events.append({"type": "sell", "date": str(prev_date),
-                                                "price": _day_close, "ratio": remaining_ratio,
-                                                "reason": f"首日未达标(最高+{day_high_pct*100:.1f}%)"})
-                            remaining_ratio, exit_price, exit_date = 0, _day_close, prev_date
+                                                "price": sig.sell_price, "ratio": remaining_ratio,
+                                                "reason": sig.reason})
+                            remaining_ratio, exit_price, exit_date = 0, sig.sell_price, prev_date
                             break
-                    # 成交量高潮离场：检查刚完成的那天
-                    if _climax_avg_vol is not None and _day_vol > 0 and hold_days >= 1:
-                        if _day_vol > _climax_avg_vol * 3.0:
-                            _day_close_pos = (_day_close - _day_low) / max(_day_high - _day_low, 0.01)
-                            if _day_close_pos < 0.4:
-                                realized_pnl += _cost_pnl(_day_close, remaining_ratio)
-                                sell_events.append({"type": "sell", "date": str(prev_date),
-                                                    "price": _day_close, "ratio": remaining_ratio,
-                                                    "reason": f"高潮出货离场(量{_day_vol/_climax_avg_vol:.1f}x,位{_day_close_pos:.2f})"})
-                                remaining_ratio, exit_price, exit_date = 0, _day_close, prev_date
-                                break
                     # 重置日累积
                     _day_vol, _day_high, _day_low, _day_close = 0.0, 0.0, 1e9, 0.0
 
@@ -673,80 +694,58 @@ class BacktestEngine:
             _day_close = price_c
             highest = max(highest, price_h)
 
-            close_pnl = (price_c / entry_price - 1) * 100
-            highest_pnl = (highest / entry_price - 1) * 100
-
-            # ① 分档止盈（用 High 检测，先涨先触发）
-            tp_triggered = False
-            for s_idx, stage in enumerate(active_tp_plan):
-                if s_idx in staged_done:
-                    continue
-                tp_pct = stage.get("profit_pct", 999.0)
-                high_tp_pnl = (price_h / entry_price - 1) * 100
-                if high_tp_pnl >= tp_pct:
-                    staged_done.add(s_idx)
-                    sell_ratio = remaining_ratio if stage.get("sell_all") else stage.get("sell_ratio", 0.0)
-                    actual_sell = min(sell_ratio, remaining_ratio)
-                    if actual_sell > 0:
-                        tp_price = entry_price * (1 + tp_pct / 100)
-                        realized_pnl += _cost_pnl(tp_price, actual_sell)
-                        sell_events.append({"type": "sell", "date": str(curr_dt),
-                                            "price": tp_price,
-                                            "ratio": actual_sell,
-                                            "reason": stage.get("label", "分阶止盈")})
-                        remaining_ratio -= actual_sell
-                    tp_triggered = True
+            # 用统一规则引擎逐bar检查
+            mp = _MirrorPos(entry_price, highest, staged_done)
+            ctx_p2 = {
+                "hard_stop": _pct(hard_sl),
+                "take_profit_tiers": active_tp_plan,
+                "trail_activate": _pct(trail_act),
+                "trail_dd": _pct(trail_dd),
+                "time_exit_days": max_hold,
+                "time_exit_profit": _pct(time_exit_min_pnl) if time_exit_min_pnl is not None else 0.01,
+                "time_force_days": force_hold,
+                "first_day_exit_min_profit": 0.0,
+                "first_day_exit_days": 1,
+                "breakeven_threshold_pct": be_thresh,
+                "breakeven_stop_pnl_pct": be_stop,
+            }
+            ctx2 = exit_rule_engine.build_context(
+                mp, {"open": float(row.get("open", price_c)), "high": price_h, "low": price_l, "close": price_c},
+                hold_days, ctx_p2, use_high_for_tp=True, first_day_hold_value=1
+            )
+            sig2 = exit_rule_engine.check(ctx2)
+            if sig2:
+                reason = sig2.reason
+                if reason.startswith("TP"):
+                    idx = int(reason[2]) - 1
+                    staged_done.add(idx)
+                    for si, stage in enumerate(active_tp_plan):
+                        if si == idx:
+                            sell_ratio = remaining_ratio if stage.get("sell_all") else stage.get("sell_ratio", 0.0)
+                            actual_sell = min(sell_ratio, remaining_ratio)
+                            if actual_sell > 0:
+                                tp_pct = stage.get("profit_pct", 999.0)
+                                tp_price = entry_price * (1 + tp_pct / 100)
+                                realized_pnl += _cost_pnl(tp_price, actual_sell)
+                                sell_events.append({"type": "sell", "date": str(curr_dt),
+                                                    "price": tp_price, "ratio": actual_sell,
+                                                    "reason": stage.get("label", reason)})
+                                remaining_ratio -= actual_sell
+                            if remaining_ratio <= 0:
+                                exit_price, exit_date = tp_price, curr_dt
+                                break
                     if remaining_ratio <= 0:
-                        exit_price, exit_date = entry_price * (1 + tp_pct / 100), curr_dt
                         break
-            if remaining_ratio <= 0:
-                break
-
-            # ② 动态硬止损（用 Low 检测，止盈已触发的当天不再检查止损）
-            if not tp_triggered:
-                current_stop = hard_sl
-                if highest_pnl >= be_thresh:
-                    current_stop = be_stop
-                low_sl_pnl = (price_l / entry_price - 1) * 100
-                if low_sl_pnl <= current_stop:
-                    sl_price = entry_price * (1 + current_stop / 100)
-                    realized_pnl += _cost_pnl(sl_price, remaining_ratio)
-                    reason = "利润保卫离场" if current_stop > 0 else "硬止损"
+                else:
+                    sell_px = sig2.sell_price
+                    realized_pnl += _cost_pnl(sell_px, remaining_ratio)
                     sell_events.append({"type": "sell", "date": str(curr_dt),
-                                        "price": entry_price * (1 + current_stop / 100),
-                                        "ratio": remaining_ratio, "reason": reason})
-                    remaining_ratio, exit_price, exit_date = 0, entry_price * (1 + current_stop / 100), curr_dt
+                                        "price": sell_px, "ratio": remaining_ratio,
+                                        "reason": reason})
+                    remaining_ratio = 0
+                    exit_price = sell_px
+                    exit_date = curr_dt
                     break
-
-            # ③ 回落止盈（用 High 判断激活，Close 判断回落）
-            if highest_pnl >= trail_act:
-                trailing_active = True
-            if trailing_active:
-                dd_from_peak = (highest - price_c) / highest * 100
-                if dd_from_peak >= trail_dd:
-                    realized_pnl += _cost_pnl(price_c, remaining_ratio)
-                    sell_events.append({"type": "sell", "date": str(curr_dt), "price": price_c,
-                                        "ratio": remaining_ratio,
-                                        "reason": f"移动止盈(回撤{dd_from_peak:.1f}%)"})
-                    remaining_ratio, exit_price, exit_date = 0, price_c, curr_dt
-                    break
-
-            # ④ 条件时间到期（超过 max_hold 天，盈利达标才清仓；否则继续持有）
-            if hold_days >= max_hold and remaining_ratio > 0:
-                if time_exit_min_pnl is None or close_pnl >= time_exit_min_pnl:
-                    realized_pnl += _cost_pnl(price_c, remaining_ratio)
-                    sell_events.append({"type": "sell", "date": str(curr_dt), "price": price_c,
-                                        "ratio": remaining_ratio,
-                                        "reason": f"时间止盈({max_hold}天)"})
-                    remaining_ratio, exit_price, exit_date = 0, price_c, curr_dt
-                    break
-
-            # ④b 强制时间到期（超过 force_hold 天，无条件清仓）
-            if hold_days >= force_hold and remaining_ratio > 0:
-                realized_pnl += _cost_pnl(price_c, remaining_ratio)
-                sell_events.append({"type": "sell", "date": str(curr_dt), "price": price_c,
-                                    "ratio": remaining_ratio,
-                                    "reason": f"强制时间止盈({force_hold}天)"})
                 remaining_ratio, exit_price, exit_date = 0, price_c, curr_dt
                 break
 
@@ -812,6 +811,18 @@ class BacktestEngine:
         sell_events = [{"type": "buy", "date": str(signal_date), "price": entry_price,
                         "ratio": 1.0, "reason": "买入(日线)"}]
 
+        from app.backtest.exit_rules import exit_rule_engine, _pct
+        from dataclasses import dataclass
+
+        # 镜像持仓，适配 build_context
+        @dataclass
+        class _MirrorPos:
+            entry_price: float = 0
+            peak_price: float = 0
+            tp_triggered: set = None
+            def __post_init__(self):
+                self.tp_triggered = self.tp_triggered or set()
+
         for _, row in bars_daily.iterrows():
             d = row["date"]
             if d <= signal_date:
@@ -823,89 +834,68 @@ class BacktestEngine:
             highest = max(highest, price_h)
 
             close_pnl = (price_c / entry_price - 1) * 100
-            highest_pnl = (highest / entry_price - 1) * 100
 
-            # 首日弱势离场：前N个交易日最高价未达目标则强制卖出
-            if 1 <= hold_days <= fd_days and fd_min_profit > 0:
-                day_high_pct = price_h / entry_price - 1
-                if day_high_pct < fd_min_profit:
-                    realized_pnl += close_pnl * remaining_ratio
-                    sell_events.append({"type": "sell", "date": str(d), "price": price_c,
-                                        "ratio": remaining_ratio,
-                                        "reason": f"首日未达标(最高+{day_high_pct*100:.1f}%)"})
-                    remaining_ratio, exit_price, exit_date = 0, price_c, d
+            # 构建上下文
+            ctx_params = {
+                "hard_stop": _pct(hard_sl),
+                "take_profit_tiers": active_tp_plan,
+                "trail_activate": _pct(trail_act),
+                "trail_dd": _pct(trail_dd),
+                "time_exit_days": max_hold,
+                "time_exit_profit": _pct(time_exit_min_pnl) if time_exit_min_pnl is not None else 0.01,
+                "time_force_days": force_hold,
+                "first_day_exit_min_profit": fd_min_profit,
+                "first_day_exit_days": fd_days,
+                "breakeven_threshold_pct": be_thresh,
+                "breakeven_stop_pnl_pct": be_stop,
+            }
+            pct_pos = _MirrorPos(entry_price, highest, staged_done)
+            bar_dict = {"open": float(row.get("open", price_c)),
+                        "high": price_h, "low": price_l, "close": price_c}
+            ctx = exit_rule_engine.build_context(
+                pct_pos, bar_dict, hold_days, ctx_params,
+                use_high_for_tp=True, first_day_hold_value=1
+            )
+
+            signal = exit_rule_engine.check(ctx)
+            if signal is None:
+                continue
+
+            reason = signal.reason
+
+            # TP → 处理部分卖出 + sell_all
+            if reason.startswith("TP"):
+                idx = int(reason[2]) - 1
+                staged_done.add(idx)
+                s_idx = idx
+                for si, stage in enumerate(active_tp_plan):
+                    if si == s_idx:
+                        sell_ratio = remaining_ratio if stage.get("sell_all") else stage.get("sell_ratio", 0.0)
+                        actual_sell = min(sell_ratio, remaining_ratio)
+                        if actual_sell > 0:
+                            tp_pct = stage.get("profit_pct", 999.0)
+                            realized_pnl += tp_pct * actual_sell
+                            sell_events.append({"type": "sell", "date": str(d),
+                                                "price": entry_price * (1 + tp_pct / 100),
+                                                "ratio": actual_sell,
+                                                "reason": stage.get("label", reason)})
+                            remaining_ratio -= actual_sell
+                        if remaining_ratio <= 0:
+                            exit_price = entry_price * (1 + tp_pct / 100)
+                            exit_date = d
+                            break
+                if remaining_ratio <= 0:
                     break
-
-            # ① 分档止盈（用 High 检测，先涨先触发）
-            tp_triggered = False
-            for s_idx, stage in enumerate(active_tp_plan):
-                if s_idx in staged_done:
-                    continue
-                tp_pct = stage.get("profit_pct", 999.0)
-                high_tp_pnl = (price_h / entry_price - 1) * 100
-                if high_tp_pnl >= tp_pct:
-                    staged_done.add(s_idx)
-                    sell_ratio = remaining_ratio if stage.get("sell_all") else stage.get("sell_ratio", 0.0)
-                    actual_sell = min(sell_ratio, remaining_ratio)
-                    if actual_sell > 0:
-                        realized_pnl += tp_pct * actual_sell
-                        sell_events.append({"type": "sell", "date": str(d),
-                                            "price": entry_price * (1 + tp_pct / 100),
-                                            "ratio": actual_sell,
-                                            "reason": stage.get("label", "分阶止盈")})
-                        remaining_ratio -= actual_sell
-                    tp_triggered = True
-                    if remaining_ratio <= 0:
-                        exit_price, exit_date = entry_price * (1 + tp_pct / 100), d
-                        break
-            if remaining_ratio <= 0:
-                break
-
-            # ② 动态硬止损（用 Low 检测，止盈已触发的当天不再检查止损）
-            if not tp_triggered:
-                current_stop = hard_sl
-                if highest_pnl >= be_thresh:
-                    current_stop = be_stop
-                low_sl_pnl = (price_l / entry_price - 1) * 100
-                if low_sl_pnl <= current_stop:
-                    realized_pnl += current_stop * remaining_ratio
-                    reason = "利润保卫离场" if current_stop > 0 else "硬止损"
-                    sell_events.append({"type": "sell", "date": str(d),
-                                        "price": entry_price * (1 + current_stop / 100),
-                                        "ratio": remaining_ratio, "reason": reason})
-                    remaining_ratio, exit_price, exit_date = 0, entry_price * (1 + current_stop / 100), d
-                    break
-
-            # ③ 回落止盈（用 High 判断激活，Close 判断回落）
-            if highest_pnl >= trail_act:
-                trailing_active = True
-            if trailing_active:
-                dd_from_peak = (highest - price_c) / highest * 100
-                if dd_from_peak >= trail_dd:
-                    realized_pnl += close_pnl * remaining_ratio
-                    sell_events.append({"type": "sell", "date": str(d), "price": price_c,
-                                        "ratio": remaining_ratio,
-                                        "reason": f"移动止盈(回撤{dd_from_peak:.1f}%)"})
-                    remaining_ratio, exit_price, exit_date = 0, price_c, d
-                    break
-
-            # ④ 条件时间到期
-            if hold_days >= max_hold and remaining_ratio > 0:
-                if time_exit_min_pnl is None or close_pnl >= time_exit_min_pnl:
-                    realized_pnl += close_pnl * remaining_ratio
-                    sell_events.append({"type": "sell", "date": str(d), "price": price_c,
-                                        "ratio": remaining_ratio,
-                                        "reason": f"时间止盈({max_hold}天)"})
-                    remaining_ratio, exit_price, exit_date = 0, price_c, d
-                    break
-
-            # ④b 强制时间到期
-            if hold_days >= force_hold and remaining_ratio > 0:
+            else:
+                # 非TP → 全卖
                 realized_pnl += close_pnl * remaining_ratio
-                sell_events.append({"type": "sell", "date": str(d), "price": price_c,
+                sell_events.append({"type": "sell", "date": str(d),
+                                    "price": signal.sell_price,
                                     "ratio": remaining_ratio,
-                                    "reason": f"强制时间止盈({force_hold}天)"})
-                remaining_ratio, exit_price, exit_date = 0, price_c, d
+                                    "reason": reason})
+                remaining_ratio = 0
+                exit_price = signal.sell_price
+                exit_date = d
                 break
 
         if remaining_ratio > 0:
@@ -936,7 +926,7 @@ class BacktestEngine:
             "code": code, "name": name, "entry_price": entry, "exit_price": exit_p,
             "buy_date": bd, "buy_time": bt, "sell_date": ed, "sell_time": et,
             "hold_days": days,
-            "pnl_pct": pnl, "exit_reason": "+".join(sorted(list(set(reasons)))), "sell_events": events,
+            "pnl_pct": pnl, "ret_pct": pnl, "exit_reason": "+".join(sorted(list(set(reasons)))), "sell_events": events,
         }
 
 backtest_engine = BacktestEngine()

@@ -48,6 +48,18 @@ class DatabaseManager:
         self._connections: dict = {}
         self._conn_lock = threading.Lock()
         self._create_tables()
+        # 清理残留的 .parquet.tmp 文件（上次写入中断产生的）
+        try:
+            from pathlib import Path as _P
+            daily_dir = _P(__file__).resolve().parent.parent / "data" / "parquet" / "daily"
+            if daily_dir.exists():
+                for f in daily_dir.rglob("*.parquet.tmp"):
+                    try:
+                        f.unlink()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
         log.info(f"DuckDB 核心就绪: {DB_PATH}")
 
     @property
@@ -796,13 +808,17 @@ class DatabaseManager:
             merged = merged.drop_duplicates(subset=[date_col], keep='last').sort_values(date_col)
             # 计算技术指标
             merged = enrich_with_indicators(merged)
-            merged.to_parquet(path, index=False)
+            tmp_path = path.with_suffix(".tmp")
+            merged.to_parquet(tmp_path, index=False)
+            tmp_path.replace(path)
         else:
             date_col = "date" if "date" in df.columns else "datetime"
             df = df.drop_duplicates(subset=[date_col], keep='last').sort_values(date_col)
             # 计算技术指标
             df = enrich_with_indicators(df)
-            df.to_parquet(path, index=False)
+            tmp_path = path.with_suffix(".tmp")
+            df.to_parquet(tmp_path, index=False)
+            tmp_path.replace(path)
 
     def batch_save_bars(self, stocks_data: dict, freq: str = "daily"):
         """批量写入多只股票的 K 线数据 —— 先攒后写避免逐日 I/O 风暴
