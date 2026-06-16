@@ -66,7 +66,17 @@ class IntradayMonitor:
 
         self._check_and_act(code, float(price))
 
+    @staticmethod
+    def _is_market_hours() -> bool:
+        """盘中监控仅在 9:25-15:00 之间生效"""
+        from datetime import datetime
+        now = datetime.now()
+        t = now.hour * 100 + now.minute
+        return 925 <= t <= 1500
+
     def _check_and_act(self, code: str, price: float):
+        if not self._is_market_hours():
+            return
         pos = self.engine.positions.get(code)
         if not pos or not pos.is_active or pos.remaining_shares <= 0:
             return
@@ -111,13 +121,16 @@ class IntradayMonitor:
         用统一规则引擎检查止盈止损，返回 (reason, partial_qty) 或 None
         """
         from app.backtest.exit_rules import exit_rule_engine
-        from app.sim_trader.config import (
-            HARD_STOP, TAKE_PROFIT_TIERS,
-            TRAIL_ACTIVATE, TRAIL_DD,
-            TIME_EXIT_DAYS, TIME_EXIT_PROFIT, TIME_FORCE_DAYS,
-            FIRST_DAY_EXIT_MIN_PROFIT, FIRST_DAY_EXIT_DAYS,
-            USE_ATR_TRAIL, ATR_TRAIL_MULTIPLIER,
-        )
+        from core.settings import settings
+
+        # 从持久化配置读取（重启不丢失），config.py 只在首次启动时作为兜底
+        def _cfg(key, default):
+            val = settings.get("risk", key)
+            if val is None:
+                # 兜底：读 config.py
+                import app.sim_trader.config as sc
+                return getattr(sc, key.upper(), default)
+            return val
 
         overall_peak = max(pos.peak_price, session_peak)
         hold_days = (date.today() - pos.entry_date).days + 1  # +1 统一为含首日计数
@@ -127,23 +140,23 @@ class IntradayMonitor:
             {"close": current_price, "high": current_price, "low": current_price, "open": current_price, "atr": daily_atr},
             hold_days,
             {
-                "hard_stop": HARD_STOP,
-                "take_profit_tiers": TAKE_PROFIT_TIERS,
-                "trail_activate": TRAIL_ACTIVATE,
-                "trail_dd": TRAIL_DD,
-                "time_exit_days": TIME_EXIT_DAYS,
-                "time_exit_profit": TIME_EXIT_PROFIT,
-                "time_force_days": TIME_FORCE_DAYS,
-                "first_day_exit_min_profit": FIRST_DAY_EXIT_MIN_PROFIT,
-                "first_day_exit_days": FIRST_DAY_EXIT_DAYS,
-                "use_atr_trail": USE_ATR_TRAIL,
-                "atr_trail_multiplier": ATR_TRAIL_MULTIPLIER,
+                "hard_stop": _cfg("hard_stop_loss_pct", -6.0) / 100.0,  # settings用百分比→转小数
+                "take_profit_tiers": _cfg("take_profit_tiers", [{"profit_pct": 0.03, "sell_ratio": 0.30}]),
+                "trail_activate": _cfg("trailing_stop_activate_pct", 5.0) / 100.0,
+                "trail_dd": _cfg("trailing_stop_drawdown_pct", 2.0) / 100.0,
+                "time_exit_days": _cfg("time_exit_days", 7),
+                "time_exit_profit": _cfg("time_exit_min_profit_pct", 3.0) / 100.0,
+                "time_force_days": _cfg("time_exit_force_days", 12),
+                "first_day_exit_min_profit": _cfg("first_day_exit_min_profit", 0.0),
+                "first_day_exit_days": _cfg("first_day_exit_days", 1),
+                "use_atr_trail": _cfg("use_atr_stop", False),
+                "atr_trail_multiplier": _cfg("atr_stop_multiplier", 1.0),
             },
         )
         # 覆盖峰值：盘中使用 session_peak
         ctx.peak_price = overall_peak
 
-        signal = exit_rule_engine.check(ctx)
+        signal = exit_rule_engine.check(ctx, skip_eod_only=True)
         if signal is None:
             return None
 
@@ -166,16 +179,6 @@ class IntradayMonitor:
                 exit_timing="intraday",
             )
         if trade:
-            # 连败计数
-            if trade.return_pct <= 0:
-                self.engine.consecutive_losses += 1
-            else:
-                self.engine.consecutive_losses = 0
-                self.engine.pause_until = None
-            from app.sim_trader.config import LOSS_STREAK_PAUSE, PAUSE_DAYS
-            if self.engine.consecutive_losses >= LOSS_STREAK_PAUSE:
-                self.engine.pause_until = date.today() + timedelta(days=PAUSE_DAYS)
-
             self.engine.trades.append(trade)
             self.engine.positions = {
                 k: v for k, v in self.engine.positions.items() if v.is_active

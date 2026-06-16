@@ -238,10 +238,16 @@ async def sim_trader_status():
             'strategy_name': p.strategy_name,
         })
 
+    total_unrealized_pnl = sum(
+        (p['current_price'] - p['entry_price']) * p['remaining']
+        for p in positions
+    )
+
     return {
         'status': 'ok',
         'cash': round(engine.cash, 2),
         'equity': round(engine.total_equity(snapshot), 2),
+        'total_unrealized_pnl': round(total_unrealized_pnl, 2),
         'positions': positions,
         'position_count': engine.position_count,
         'trade_count': len(engine.trades),
