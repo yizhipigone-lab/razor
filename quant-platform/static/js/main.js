@@ -193,15 +193,40 @@ async function loadSimTrades() {
       tbody.innerHTML = r.trades.length > 0
         ? r.trades.sort(function(a, b) { return (b.entry || '').localeCompare(a.entry || ''); }).map(t => {
             const isHolding = t.status === '持仓中';
+            const shares = t.shares || 0;
+            const exitPx = Number(t.exit_px || 0).toFixed(2);
+            const entryPx = Number(t.entry_px || 0).toFixed(2);
+            const mktVal = Math.round(shares * t.exit_px);  // 市值 = 数量 × 当前价/卖出价
             const statusColor = isHolding ? 'var(--accent)' : 'var(--text2)';
             const rowClass = isHolding ? ' class="pos-row"' : '';
-            const rowData = isHolding ? ' data-code="' + t.code + '" data-entry="' + (t.entry_px || 0) + '" data-shares="' + (t.shares || 0) + '" data-type="trade"' : '';
-            const pxClass = isHolding ? ' class="pos-price"' : '';
-            const pctClass = isHolding ? ' class="pos-pct"' : '';
-            const mvClass = isHolding ? ' class="pos-mv"' : '';
-            const shares = t.shares || 0;
-            const entryAmt = Math.round(shares * (t.entry_px || 0));
-            return '<tr' + rowClass + rowData + '><td>' + t.code + '</td><td>' + (t.name || '') + '</td><td>' + t.entry + ' ' + (t.entry_time||'') + '</td><td>' + (t.exit || (isHolding ? '持仓中' : '--')) + ' ' + (isHolding ? '' : (t.exit_time||'')) + '</td><td>' + t.entry_px + '</td><td' + pxClass + '>' + t.exit_px + '</td><td>' + shares + '</td><td>' + entryAmt.toLocaleString() + '</td><td' + pctClass + ' style="color:' + (t.ret_pct >= 0 ? 'var(--up)' : 'var(--down)') + '">' + (t.ret_pct >= 0 ? '+' : '') + t.ret_pct.toFixed(2) + '%</td><td' + mvClass + '>' + Math.round(t.profit).toLocaleString() + '</td><td>' + t.hold_days + '</td><td>' + (t.entry_reason || '') + '</td><td style="color:' + statusColor + '">' + (t.status || '') + '</td></tr>';
+            const rowData = isHolding ? ' data-code="' + t.code + '" data-entry="' + (t.entry_px || 0) + '" data-shares="' + shares + '" data-type="trade"' : '';
+            const pctColor = t.ret_pct >= 0 ? 'var(--up)' : 'var(--down)';
+            // 买入列：日期+时间 / 价格
+            var buyCell = '<span style="font-size:11px">' + (t.entry || '') + '</span><br><span style="color:var(--text2);font-size:10px">' + (t.entry_time||'') + ' @</span> <b>' + entryPx + '</b>';
+            // 卖出列
+            var sellCell;
+            if (isHolding) {
+              sellCell = '<span style="color:var(--accent);font-size:12px">持仓中</span><br><span class="pos-price" style="font-size:11px">' + exitPx + '</span>';
+            } else {
+              sellCell = '<span style="font-size:11px">' + (t.exit || '') + '</span><br><span style="color:var(--text2);font-size:10px">' + (t.exit_time||'') + ' @</span> <b>' + exitPx + '</b>';
+            }
+            // 盈亏列
+            var pnlCell = '<span class="' + (isHolding ? 'pos-pct' : '') + '" style="color:' + pctColor + ';font-size:12px">' + (t.ret_pct >= 0 ? '+' : '') + Number(t.ret_pct).toFixed(2) + '%</span><br><span class="' + (isHolding ? 'pos-mv' : '') + '" style="color:' + pctColor + ';font-size:10px">' + (t.profit >= 0 ? '+' : '') + Math.round(t.profit).toLocaleString() + '</span>';
+            // 市值列（持仓时实时更新）
+            var mvCell = '<span class="' + (isHolding ? 'pos-mv2' : '') + '" style="font-size:11px">' + mktVal.toLocaleString() + '</span>';
+            return '<tr' + rowClass + rowData + '>' +
+              '<td>' + t.code + '</td>' +
+              '<td>' + (t.name || '') + '</td>' +
+              '<td>' + buyCell + '</td>' +
+              '<td>' + sellCell + '</td>' +
+              '<td>' + shares + '</td>' +
+              '<td>' + pnlCell + '</td>' +
+              '<td>' + mvCell + '</td>' +
+              '<td>' + (t.hold_days || 0) + '</td>' +
+              '<td style="font-size:10px">' + (t.entry_reason || '') + '</td>' +
+              '<td style="font-size:10px">' + (t.reason || '') + '</td>' +
+              '<td style="color:' + statusColor + ';font-size:11px">' + (t.status || '') + '</td>' +
+              '</tr>';
           }).join('')
         : '<tr><td colspan="11" style="text-align:center;color:var(--text2)">暂无记录</td></tr>';
     }
@@ -295,12 +320,12 @@ async function renderSimCalendar() {
     r.equity.forEach(function(e) { eqMap[e.date] = e.equity; });
     var dates = Object.keys(eqMap).sort();
 
-    // 前向填充：补全从第一天到最后一天的所有日期
+    // 前向填充：补全从第一天到今天的日期（含尚未有净值快照的交易日）
     _simCalData = {};
     var maxAbs = 0;
     var lastEq = eqMap[dates[0]];
     var startD = new Date(dates[0]);
-    var endD = new Date(dates[dates.length-1]);
+    var endD = new Date();  // 扩展到今天，而非 equity_curve 的最后日期
     for (var d = new Date(startD); d <= endD; d.setDate(d.getDate()+1)) {
       var ds = d.toISOString().substring(0,10);
       if (eqMap.hasOwnProperty(ds)) lastEq = eqMap[ds];
@@ -374,27 +399,32 @@ function drawSimCalendar() {
     var dateStr = _simCalYear + '-' + String(_simCalMonth).padStart(2,'0') + '-' + String(day).padStart(2,'0');
     var info = _simCalData[dateStr];
     var isWeekend = (dow === 0 || dow === 6);
-    var bg = isWeekend ? '#111' : '#1a1a2e', color = isWeekend ? '#444' : '#555', pnlText = '', titleText = '';
+    var bg = isWeekend ? '#111' : '#1a1a2e', color = info ? '#ccc' : '#444', pnlText = '', titleText = '';
 
     if (info) {
       var pnl = info.pnl;
       var equity = info.equity;
       var pct = equity > 0 ? (pnl / (equity - pnl) * 100) : 0;
-      if (!isWeekend && pnl !== 0) {
-        var ratio = Math.min(1, Math.abs(pnl) / (_simCalData._maxAbs || 1));
-        if (pnl > 0) {
-          bg = 'rgb(' + Math.round(200+55*ratio) + ',' + Math.round(60-30*ratio) + ',' + Math.round(60-30*ratio) + ')';
-          color = '#fff';
+      if (!isWeekend) {
+        if (pnl !== 0) {
+          var ratio = Math.min(1, Math.abs(pnl) / (_simCalData._maxAbs || 1));
+          if (pnl > 0) {
+            bg = 'rgb(' + Math.round(200+55*ratio) + ',' + Math.round(60-30*ratio) + ',' + Math.round(60-30*ratio) + ')';
+            color = '#fff';
+          } else {
+            bg = 'rgb(' + Math.round(30+20*ratio) + ',' + Math.round(170-50*ratio) + ',' + Math.round(80-30*ratio) + ')';
+            color = '#fff';
+          }
+          pnlText = '<span style="font-size:10px">' + (pnl>=0?'+':'') + (Math.abs(pnl)>=10000?(pnl/10000).toFixed(1)+'万':pnl) + '<br><span style="font-size:9px;opacity:0.8">' + (pct>=0?'+':'') + pct.toFixed(1) + '%</span></span>';
         } else {
-          bg = 'rgb(' + Math.round(30+20*ratio) + ',' + Math.round(170-50*ratio) + ',' + Math.round(80-30*ratio) + ')';
-          color = '#fff';
+          color = '#777';
+          pnlText = '<span style="font-size:9px;opacity:0.5">0<br>0.0%</span>';
         }
-        pnlText = '<span style=\"font-size:10px\">' + (pnl>=0?'+':'') + (Math.abs(pnl)>=10000?(pnl/10000).toFixed(1)+'万':pnl) + '<br><span style=\"font-size:9px;opacity:0.8\">' + (pct>=0?'+':'') + pct.toFixed(1) + '%</span></span>';
       }
       titleText = dateStr + (isWeekend ? ' [周末]' : '') + ' | 资产: ' + Math.round(equity).toLocaleString() + ' 元';
       if (!isWeekend) titleText += ' | 盈亏: ' + (pnl>=0?'+':'') + pnl.toLocaleString() + ' 元 (' + (pct>=0?'+':'') + pct.toFixed(1) + '%)';
     }
-    html += '<td title=\"' + titleText + '\" style=\"padding:4px 2px; text-align:center; background:' + bg + '; color:' + color + '; border-radius:3px; cursor:default; line-height:1.3;' + (isWeekend ? ' opacity:0.5' : '') + '\"><div style=\"font-weight:bold\">' + day + '</div>' + pnlText + '</td>';
+    html += '<td class=\"sim-cal-cell\" data-date=\"' + dateStr + '\" title=\"' + titleText + '\" style=\"padding:4px 2px; text-align:center; background:' + bg + '; color:' + color + '; border-radius:3px; cursor:default; line-height:1.3;' + (isWeekend ? ' opacity:0.5' : '') + '\"><div style=\"font-weight:bold\">' + day + '</div>' + pnlText + '</td>';
 
     if (dow === 0) { html += '</tr><tr>'; } // 周日换行
     d.setDate(d.getDate() + 1);
@@ -411,11 +441,13 @@ function simCalPrevMonth() {
   _simCalMonth--;
   if (_simCalMonth < 1) { _simCalMonth = 12; _simCalYear--; }
   drawSimCalendar();
+  renderSimStockAnalysis();  // 联动更新股票盈亏图
 }
 function simCalNextMonth() {
   _simCalMonth++;
   if (_simCalMonth > 12) { _simCalMonth = 1; _simCalYear++; }
   drawSimCalendar();
+  renderSimStockAnalysis();  // 联动更新股票盈亏图
 }
 
 var _simTreeChart = null;
@@ -426,8 +458,16 @@ async function renderSimStockAnalysis() {
     var r = await fetch('/api/sim-trader/trades?limit=600').then(function(resp) { return resp.json(); });
     if (!r.trades || r.trades.length === 0) return;
 
-    var closed = r.trades.filter(function(t) { return t.status === '已平仓'; });
-    if (closed.length === 0) return;
+    // 所有记录都是已平仓，按月份筛选
+    var ym = String(_simCalYear) + '-' + String(_simCalMonth).padStart(2, '0');
+    var closed = r.trades.filter(function(t) {
+      var ed = t.exit || t.exit_date || '';
+      return String(ed).substring(0, 7) === ym;
+    });
+    if (closed.length === 0) {
+      dom.innerHTML = '<div style=\"color:var(--text2);text-align:center;padding:60px\">' + ym + ' 无平仓记录</div>';
+      return;
+    }
 
     var stockMap = {};
     closed.forEach(function(t) {
@@ -1151,6 +1191,49 @@ async function pollLiveQuotes() {
         pctEl.style.color = q.change_pct >= 0 ? '#ef232a' : '#14b143';
       }
     });
+    // 更新总净值和持仓盈亏汇总
+    var totalMv = 0; var totalPnl = 0; var totalCost = 0;
+    document.querySelectorAll('#sim-pos-tbody tr.pos-row').forEach(function(tr) {
+      var px = parseFloat((tr.querySelector('.pos-price') || {}).textContent) || 0;
+      var entry = parseFloat(tr.getAttribute('data-entry')) || 0;
+      var shares = parseInt(tr.getAttribute('data-shares')) || 0;
+      if (px > 0 && shares > 0) {
+        totalMv += px * shares;
+        totalPnl += (px - entry) * shares;
+        totalCost += entry * shares;
+      }
+      var mvEl = tr.querySelector('.pos-mv');
+      if (mvEl) mvEl.textContent = Math.round(px * shares).toLocaleString();
+    });
+    var cashEl = document.getElementById('sim-cash');
+    var eqEl = document.getElementById('sim-equity');
+    var pnlEl = document.getElementById('sim-total-pnl-val');
+    if (cashEl && eqEl) {
+      var cash = parseFloat(cashEl.textContent.replace(/,/g,'')) || 0;
+      var liveEq = cash + totalMv;
+      eqEl.textContent = Math.round(liveEq).toLocaleString();
+      // 仅更新当天tooltip，盈亏数字以14:52快照为准
+      if (typeof _simCalData !== "undefined" && _simCalData) {
+        var today = new Date().toISOString().substring(0, 10);
+        var cell = document.querySelector('.sim-cal-cell[data-date=\"' + today + '\"]');
+        if (cell) {
+          cell.title = today + " | 实时资产: " + Math.round(liveEq).toLocaleString() + " 元";
+        }
+      }
+    }
+    if (pnlEl) {
+      pnlEl.textContent = (totalPnl >= 0 ? '+' : '') + Math.round(totalPnl).toLocaleString();
+      pnlEl.style.color = totalPnl >= 0 ? 'var(--red)' : 'var(--green)';
+    }
+    // 同步刷新状态指标
+    try {
+      var sr = await fetch('/api/sim-trader/status').then(function(r) { return r.json(); });
+      if (sr.status === 'ok') {
+        document.getElementById('sim-losses').textContent = sr.consecutive_losses || 0;
+        document.getElementById('sim-counts').textContent = (sr.position_count || 0) + ' / ' + ((sr.trade_count || 0) + (sr.position_count || 0));
+        document.getElementById('sim-paused').textContent = sr.paused ? '暂停中' : '正常';
+      }
+    } catch(e) {}
   } catch(e) {}
 }
 // 页面加载后自动启动
@@ -1998,6 +2081,11 @@ function updatePositionRow(tr, info, entryPrice, shares) {
     if (mvEl) {
         mvEl.textContent = Math.round(thirdVal).toLocaleString();
         mvEl.style.color = color;
+    }
+    // 交易记录表的市值列（pos-mv2）：price × shares
+    const mv2El = tr.querySelector('.pos-mv2');
+    if (mv2El) {
+        mv2El.textContent = Math.round(price * shares).toLocaleString();
     }
 }
 

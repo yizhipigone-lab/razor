@@ -80,22 +80,17 @@ def _run_async():
             return
 
         # ── P2: 1 分钟线（QMT 仅在本地可用时执行）─────────
-        info("[P2/3] 尝试检查 1 分钟线数据（需 QMT 在线）...")
+        info("[P2/3] 尝试检查 1 分钟线数据...")
         try:
             from xtquant import xtdata
-
-            try:
-                sectors = xtdata.get_sector_list()
-                if not sectors:
-                    warn("[P2/3] QMT 未登录或不可用，跳过 1 分钟线同步")
-                else:
-                    from app.data_manager.sync_min5 import sync_qmt_intraday
-                    sync_qmt_intraday(freq="1m", days=5)
-                    ok("[P2/3] 1 分钟线数据补齐完成")
-            except Exception as qmt_err:
-                warn(f"[P2/3] QMT 不可用，跳过 1 分钟线: {qmt_err}")
+            from app.data_manager.sync_min5 import sync_qmt_intraday
+            info("[P2/3] QMT 在线，开始同步 1 分钟线（最近5天）...")
+            sync_qmt_intraday(freq="1m", days=5)
+            ok("[P2/3] 1 分钟线数据补齐完成")
         except ImportError:
             warn("[P2/3] 未安装 xtquant 库，跳过 1 分钟线同步")
+        except Exception as e:
+            warn(f"[P2/3] 跳过 1 分钟线: {e}")
 
         info("=== 自动数据补齐全部完成 ===")
 

@@ -163,7 +163,7 @@ class DataPipelineScheduler:
     async def _catch_up_daily(self):
         """启动时检查：如果当前是交易日且已过14:52，补执行尾盘交易"""
         import asyncio as _asyncio
-        await _asyncio.sleep(5)  # 等 5 秒让系统完全初始化
+        await _asyncio.sleep(1)  # 等 1 秒让系统初始化完成
         try:
             from datetime import datetime, date
             now = datetime.now()
@@ -422,7 +422,7 @@ class DataPipelineScheduler:
                     log.warning(f'CronScheduler | [模拟盘] TDX选股失败: {e}')
 
             if not engine.auto_sell and not engine.auto_buy:
-                # 全部告警：检查但不执行
+                # 全部告警：检查但不执行（但仍记录快照，防止净值曲线断档）
                 sell_list = engine.check_stops(today, snapshot, trading_dates, readonly=True) if signals or engine.positions else []
                 sync_broadcast({
                     'type': 'risk_alert',
@@ -431,9 +431,10 @@ class DataPipelineScheduler:
                     'sell_count': len(sell_list), 'buy_count': len(signals),
                 })
                 log.info(f"CronScheduler | [模拟盘] 全部告警（应卖{len(sell_list)}笔 应买{len(signals)}笔）")
-                return
+                # 不 return，继续执行后面的 record() 保存当日净值快照
 
             # ── 卖出 ──
+            sell_count = 0
             if engine.auto_sell:
                 engine.sell_phase(today, snapshot, trading_dates)
                 sell_count = len([t for t in engine.trades if t.exit_date == today])
@@ -468,6 +469,7 @@ class DataPipelineScheduler:
                     'buy_count': len(signals),
                 })
 
+            # ── 净值快照：始终执行，保证曲线不断档 ──
             engine.record(today, snapshot)
             eq = engine.total_equity(snapshot)
 

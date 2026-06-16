@@ -18,13 +18,13 @@
     ]
   },
   "risk": {
-    "trailing_stop_activate_pct": 3.0,
-    "trailing_stop_drawdown_pct": 1.5,
+    "trailing_stop_activate_pct": 5.0,
+    "trailing_stop_drawdown_pct": 2.0,
     "hard_stop_loss_pct": -6.0,
     "take_profit_tiers": [
       {
-        "profit_pct": 0.15,
-        "sell_ratio": 1
+        "profit_pct": 0.03,
+        "sell_ratio": 0.3
       }
     ],
     "time_exit_days": 7,
@@ -142,12 +142,12 @@
     "hard_stop": -0.06,
     "take_profit_tiers": [
       {
-        "profit_pct": 0.15,
-        "sell_ratio": 1
+        "profit_pct": 0.03,
+        "sell_ratio": 0.3
       }
     ],
-    "trail_activate": 0.03,
-    "trail_dd": 0.015,
+    "trail_activate": 0.05,
+    "trail_dd": 0.02,
     "time_exit_days": 7,
     "time_exit_profit": 0.03,
     "time_force_days": 12,
@@ -173,7 +173,7 @@
     "redis_ttl_seconds": 600,
     "enable_ths_concepts": true,
     "enable_tushare_concepts": true,
-    "last_updated": "06/12 15:40"
+    "last_updated": "06/16 15:33"
   },
   "风险": {
     "hard_stop_loss_pct": -6.0,

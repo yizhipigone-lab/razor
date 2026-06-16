@@ -226,14 +226,14 @@ def rule_vol_climax_exit(ctx: RuleContext) -> Optional[ExitSignal]:
 
 # 全局规则注册表（按优先级从高到低）
 ALL_RULES: List[tuple] = [
-    (100, rule_hard_stop,       "硬止损"),
-    (95,  rule_breakeven_stop,  "保本止损"),
-    (90,  rule_first_day_exit,  "首日弱势离场"),
-    (80,  rule_time_force,      "强制时间退出"),
-    (60,  rule_take_profit,     "多档阶梯止盈"),
-    (40,  rule_trailing_stop,   "移动止盈"),
-    (20,  rule_time_condition,  "时间条件退出"),
-    (10,  rule_vol_climax_exit, "成交量高潮离场"),
+    (100, rule_hard_stop,       "硬止损",          False),
+    (95,  rule_breakeven_stop,  "保本止损",         False),
+    (90,  rule_first_day_exit,  "首日弱势离场",     True),   # 仅14:52生效
+    (80,  rule_time_force,      "强制时间退出",     False),
+    (60,  rule_take_profit,     "多档阶梯止盈",     False),
+    (40,  rule_trailing_stop,   "移动止盈",         False),
+    (20,  rule_time_condition,  "时间条件退出",     False),
+    (10,  rule_vol_climax_exit, "成交量高潮离场",   False),
 ]
 
 
@@ -245,15 +245,16 @@ class ExitRuleEngine:
         # 按优先级降序排列
         self._rules.sort(key=lambda r: r[0], reverse=True)
 
-    def check(self, ctx: RuleContext) -> Optional[ExitSignal]:
-        """按优先级依次检查，返回第一个触发的 ExitSignal"""
-        for priority, rule_fn, _name in self._rules:
+    def check(self, ctx: RuleContext, skip_eod_only: bool = False) -> Optional[ExitSignal]:
+        """按优先级依次检查。skip_eod_only=True 时跳过"仅尾盘"规则（盘前盘中不触发FD等）"""
+        for priority, rule_fn, _name, eod_only in self._rules:
+            if skip_eod_only and eod_only:
+                continue
             try:
                 signal = rule_fn(ctx)
                 if signal is not None:
                     return signal
             except Exception:
-                # 单条规则失败不影响其他规则
                 continue
         return None
 

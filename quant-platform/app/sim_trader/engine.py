@@ -140,8 +140,81 @@ class SimTraderEngine:
 
         self._prev_snap: dict = {}  # 前一日快照，用于除权跳空保护
 
+        # 启动时补齐缺失的交易日净值快照（防止曲线断档）
+        if store is not None:
+            self._fill_missing_snapshots()
+
         # 盘中监控器（延迟初始化，避免循环导入）
         self._monitor = None
+
+    def _fill_missing_snapshots(self):
+        """补齐 equity_curve 中缺失的交易日快照。
+        从最后一个快照日到昨天，逐日查 parquet 收盘价计算净值。"""
+        if not self.equity_curve:
+            return
+        try:
+            from datetime import date as _d, timedelta
+            last_date = _d.fromisoformat(str(self.equity_curve[-1]['date']))
+            yesterday = _d.today() - timedelta(days=1)
+
+            # 获取交易日列表
+            trading_dates = set()
+            try:
+                from app.api.sim_trader import _load_trading_calendar
+                trading_dates = _load_trading_calendar()
+            except Exception:
+                pass
+
+            # 逐日检查到昨天
+            d = last_date + timedelta(days=1)
+            while d <= yesterday:
+                if d.weekday() >= 5:  # 跳过周末
+                    d += timedelta(days=1)
+                    continue
+                if trading_dates and d not in trading_dates:
+                    d += timedelta(days=1)
+                    continue
+
+                # 查 parquet 收盘价，计算持仓市值
+                total_mv = 0.0
+                daily_dir = None
+                try:
+                    from pathlib import Path as _Path
+                    import pandas as pd
+                    root = _Path(__file__).resolve().parent.parent.parent
+                    daily_dir = root / "data" / "parquet" / "daily"
+                except Exception:
+                    pass
+
+                for code, pos in self.positions.items():
+                    if not pos.is_active or pos.remaining_shares <= 0:
+                        continue
+                    close_px = pos.entry_price  # 兜底用买入价
+                    if daily_dir:
+                        f = daily_dir / f"{code}.parquet"
+                        if f.exists():
+                            try:
+                                df = pd.read_parquet(str(f), columns=['date', 'close'])
+                                df['date'] = pd.to_datetime(df['date']).dt.date
+                                row = df[df['date'] == d]
+                                if not row.empty:
+                                    close_px = float(row.iloc[0]['close'])
+                            except Exception:
+                                pass
+                    total_mv += pos.remaining_shares * close_px
+
+                equity = self.cash + total_mv
+                self.equity_curve.append({
+                    'date': str(d), 'equity': equity,
+                    'cash': self.cash, 'positions': self.position_count,
+                })
+                # 持久化
+                if self._store:
+                    self._store.save_equity_point(d, equity, self.cash, self.position_count)
+                log.info(f"[快照补录] {d} 净值={equity:,.0f}（启动时自动补齐）")
+                d += timedelta(days=1)
+        except Exception as e:
+            log.warning(f"[快照补录] 跳过: {e}")
 
     @property
     def monitor(self):
@@ -267,19 +340,28 @@ class SimTraderEngine:
             if not readonly and high_p > pos.peak_price:
                 pos.peak_price = high_p
 
-            # 构建参数
+            # 构建参数 — 优先从 settings（app_setting.json）读取，config.py 兜底
+            # 与 intraday_monitor._check_position 保持完全一致的取值逻辑
+            from core.settings import settings as _settings
+            def _cfg(key, default):
+                val = _settings.get("risk", key)
+                if val is None:
+                    import app.sim_trader.config as _sc
+                    return getattr(_sc, key.upper(), default)
+                return val
+
             sim_params = {
-                "hard_stop": HARD_STOP,
-                "take_profit_tiers": TAKE_PROFIT_TIERS,
-                "trail_activate": TRAIL_ACTIVATE,
-                "trail_dd": TRAIL_DD,
-                "time_exit_days": TIME_EXIT_DAYS,
-                "time_exit_profit": TIME_EXIT_PROFIT,
-                "time_force_days": TIME_FORCE_DAYS,
-                "first_day_exit_min_profit": FIRST_DAY_EXIT_MIN_PROFIT,
-                "first_day_exit_days": FIRST_DAY_EXIT_DAYS,
-                "use_atr_trail": USE_ATR_TRAIL,
-                "atr_trail_multiplier": ATR_TRAIL_MULTIPLIER,
+                "hard_stop": _cfg("hard_stop_loss_pct", -6.0) / 100.0,
+                "take_profit_tiers": _cfg("take_profit_tiers", [{"profit_pct": 0.03, "sell_ratio": 0.30}]),
+                "trail_activate": _cfg("trailing_stop_activate_pct", 5.0) / 100.0,
+                "trail_dd": _cfg("trailing_stop_drawdown_pct", 2.0) / 100.0,
+                "time_exit_days": _cfg("time_exit_days", 7),
+                "time_exit_profit": _cfg("time_exit_min_profit_pct", 3.0) / 100.0,
+                "time_force_days": _cfg("time_exit_force_days", 12),
+                "first_day_exit_min_profit": _cfg("first_day_exit_min_profit", 0.0),
+                "first_day_exit_days": _cfg("first_day_exit_days", 1),
+                "use_atr_trail": _cfg("use_atr_stop", False),
+                "atr_trail_multiplier": _cfg("atr_stop_multiplier", 1.0),
             }
             ctx = exit_rule_engine.build_context(pos, bar, hold_days, sim_params, use_high_for_tp=True)
             signal = exit_rule_engine.check(ctx)
@@ -323,7 +405,17 @@ class SimTraderEngine:
         log.info(f"[卖出] {pos.code} 价格={exit_price:.2f} 数量={ss} 收益={rp:.1f}% 利润={profit:.0f} 原因={reason} 剩余现金={self.cash:.0f}")
         _safe_broadcast({"type":"sim_trader_log","action":"sell","code":pos.code,"name":_get_stock_name(pos.code),"price":round(exit_price,2),"shares":ss,"ret_pct":round(rp,1),"profit":round(profit,0),"reason":reason,"cash":round(self.cash,0),"date":str(exit_date or date.today()),"time":datetime.now().strftime('%H:%M:%S')})
 
-        return Trade(
+        # 连亏计数（盘中/尾盘卖出统一在此更新）
+        if rp <= 0:
+            self.consecutive_losses += 1
+        else:
+            self.consecutive_losses = 0
+            self.pause_until = None
+        if self.consecutive_losses >= LOSS_STREAK_PAUSE:
+            self.pause_until = (exit_date or date.today()) + timedelta(days=PAUSE_DAYS)
+
+        # 立即持久化（盘中/尾盘卖出统一保存，防止状态丢失）
+        trade = Trade(
             code=pos.code, entry_date=pos.entry_date,
             exit_date=exit_date or date.today(),
             entry_price=pos.entry_price, exit_price=exit_price,
@@ -334,9 +426,25 @@ class SimTraderEngine:
             exit_time=datetime.now().strftime('%H:%M:%S'),
         )
 
+        if self._store:
+            self._store.save_trade(trade)
+            self._store.save_positions(self.positions)
+            self._store.save_state(
+                self.cash, self.consecutive_losses,
+                self.pause_until, self._trade_count)
+
+        return trade
+
     def sell_phase(self, today: date, snapshot: dict,
                    trading_dates: List[date]):
-        """卖出阶段（先卖后买，回收现金）"""
+        """卖出阶段（先卖后买，回收现金）。仅交易时段内执行。"""
+        from datetime import datetime
+        now = datetime.now()
+        t = now.hour * 100 + now.minute
+        if t < 925 or t > 1505:
+            log.warning(f"[卖出阶段] 非交易时段({now.strftime('%H:%M')})，跳过执行")
+            return
+
         sells = self.check_stops(today, snapshot, trading_dates,
                                  prev_snap=self._prev_snap)
 
@@ -347,18 +455,7 @@ class SimTraderEngine:
                 trade.hold_days = sum(1 for td in trading_dates
                                       if pos.entry_date <= td <= today)
                 self.trades.append(trade)
-
-                if trade.return_pct <= 0:
-                    self.consecutive_losses += 1
-                else:
-                    self.consecutive_losses = 0
-                    self.pause_until = None
-
-                if self.consecutive_losses >= LOSS_STREAK_PAUSE:
-                    self.pause_until = today + timedelta(days=PAUSE_DAYS)
-
-                if self._store:
-                    self._store.save_trade(trade)
+                # 注意：execute_sell 已调用 _store.save_trade(trade)，这里不再重复保存
 
                 # 真实券商委托（需 BROKER_ENABLED=True 且 gateway 可用）
                 from app.sim_trader.config import BROKER_ENABLED
