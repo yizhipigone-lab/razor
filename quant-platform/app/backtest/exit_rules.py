@@ -289,6 +289,7 @@ class ExitRuleEngine:
             atr=float(bar.get("atr", 0)),
             hold_days=hold_days,
             first_day_hold_value=first_day_hold_value,
+            hard_stop=params.get("hard_stop", -0.06),
             take_profit_tiers=tp_tiers,
             trail_activate=params.get("trail_activate", 0.05),
             trail_dd=params.get("trail_dd", 0.02),
