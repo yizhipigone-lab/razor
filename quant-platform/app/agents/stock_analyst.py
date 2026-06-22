@@ -44,7 +44,7 @@ class StockAnalystAgent:
         try:
             log.info(f"Calling DeepSeek API for {stock_code} ...")
             response = self.client.chat.completions.create(
-                model="deepseek-v4-pro",
+                model="deepseek-chat",
                 messages=messages,
                 stream=False
             )
