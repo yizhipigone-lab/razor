@@ -437,7 +437,7 @@ class DataPipelineScheduler:
             sell_count = 0
             if engine.auto_sell:
                 engine.sell_phase(today, snapshot, trading_dates)
-                sell_count = len([t for t in engine.trades if t.exit_date == today])
+                sell_count = len([t for t in engine._today_trades if t.exit_date == today])
             else:
                 sell_list = engine.check_stops(today, snapshot, trading_dates, readonly=True)
                 sell_count = len(sell_list)

@@ -250,7 +250,7 @@ async def sim_trader_status():
         'total_unrealized_pnl': round(total_unrealized_pnl, 2),
         'positions': positions,
         'position_count': engine.position_count,
-        'trade_count': len(engine.trades),
+        'trade_count': len(engine._today_trades),
         'consecutive_losses': engine.consecutive_losses,
         'paused': engine.pause_until is not None and today <= engine.pause_until,
         'today': str(today),
@@ -303,7 +303,7 @@ async def sim_trader_execute():
             sell_count = 0
             if engine.auto_sell:
                 engine.sell_phase(today, snapshot, trading_dates)
-                sell_count = len([t for t in engine.trades if t.exit_date == today])
+                sell_count = len([t for t in engine._today_trades if t.exit_date == today])
 
             # 买入：通过 TDX 桥接获取 QUANTQQ 信号
             buy_count = 0
