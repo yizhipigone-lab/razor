@@ -175,24 +175,6 @@
     "enable_tushare_concepts": true,
     "last_updated": "06/16 15:33"
   },
-  "风险": {
-    "hard_stop_loss_pct": -6.0,
-    "trailing_stop_activate_pct": 3.0,
-    "trailing_stop_drawdown_pct": 1.0,
-    "time_exit_days": 7,
-    "breakeven_threshold_pct": 99,
-    "breakeven_stop_pnl_pct": -9,
-    "take_profit_tiers": [
-      {
-        "profit_pct": 0.04,
-        "sell_ratio": 0.15
-      },
-      {
-        "profit_pct": 0.07,
-        "sell_ratio": 0.25
-      }
-    ]
-  },
   "tqsdk": {
     "formula_name": "QUANTQQ"
   },
