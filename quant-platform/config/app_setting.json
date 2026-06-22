@@ -18,17 +18,17 @@
     ]
   },
   "risk": {
-    "trailing_stop_activate_pct": 5.0,
-    "trailing_stop_drawdown_pct": 2.0,
-    "hard_stop_loss_pct": -6.0,
+    "trailing_stop_activate_pct": 3.0,
+    "trailing_stop_drawdown_pct": 1.0,
+    "hard_stop_loss_pct": -5.0,
     "take_profit_tiers": [
       {
-        "profit_pct": 0.03,
-        "sell_ratio": 0.3
+        "profit_pct": 0.15,
+        "sell_ratio": 1
       }
     ],
     "time_exit_days": 7,
-    "time_exit_min_profit_pct": 3.0,
+    "time_exit_min_profit_pct": 2.0,
     "time_exit_force_days": 12,
     "first_day_exit_min_profit": 0.0,
     "first_day_exit_days": 1,
@@ -139,17 +139,17 @@
     "initial_capital": 1000000,
     "position_size": 50000,
     "min_buy_amt": 5000,
-    "hard_stop": -0.06,
+    "hard_stop": -0.05,
     "take_profit_tiers": [
       {
-        "profit_pct": 0.03,
-        "sell_ratio": 0.3
+        "profit_pct": 0.15,
+        "sell_ratio": 1
       }
     ],
-    "trail_activate": 0.05,
-    "trail_dd": 0.02,
+    "trail_activate": 0.03,
+    "trail_dd": 0.01,
     "time_exit_days": 7,
-    "time_exit_profit": 0.03,
+    "time_exit_profit": 0.02,
     "time_force_days": 12,
     "first_day_exit_min_profit": 0.0,
     "first_day_exit_days": 1,
@@ -173,25 +173,7 @@
     "redis_ttl_seconds": 600,
     "enable_ths_concepts": true,
     "enable_tushare_concepts": true,
-    "last_updated": "06/16 15:33"
-  },
-  "风险": {
-    "hard_stop_loss_pct": -6.0,
-    "trailing_stop_activate_pct": 3.0,
-    "trailing_stop_drawdown_pct": 1.0,
-    "time_exit_days": 7,
-    "breakeven_threshold_pct": 99,
-    "breakeven_stop_pnl_pct": -9,
-    "take_profit_tiers": [
-      {
-        "profit_pct": 0.04,
-        "sell_ratio": 0.15
-      },
-      {
-        "profit_pct": 0.07,
-        "sell_ratio": 0.25
-      }
-    ]
+    "last_updated": "06/19 15:42"
   },
   "tqsdk": {
     "formula_name": "QUANTQQ"
