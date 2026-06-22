@@ -142,6 +142,10 @@ class SimTraderEngine:
             self.pause_until: Optional[date] = None
             self._trade_count = 0
 
+        # L3 修复: 当日新增 trades(供 API/cron 算"今日交易数")
+        # 区别于 self.trades(全部历史),启动时为空,execute_sell 时 append,日切时清空
+        self._today_trades: List[Trade] = []
+
         self._prev_snap: dict = {}  # 前一日快照，用于除权跳空保护
         # #9 修复: 昨日完整 OHLC(今日 sell_phase 14:52 时调用的"昨日"快照)
         # 与 _prev_snap 的区别:
@@ -442,6 +446,10 @@ class SimTraderEngine:
                 self.cash, self.consecutive_losses,
                 self.pause_until, self._trade_count)
 
+        # L3 修复: 维护当日 trades 列表(供 API/cron 算"今日交易数")
+        # 无论有无 store 都维护(纯回测时 store=None 也需要)
+        self._today_trades.append(trade)
+
         return trade
 
     def sell_phase(self, today: date, snapshot: dict,
@@ -505,6 +513,12 @@ class SimTraderEngine:
                 close_raw = bar.get('close')
                 close_val = float(close_raw) if close_raw else 0.0
                 pos.current_price = close_val if close_val > 0 else (pos.current_price or pos.entry_price)
+
+        # L3 修复: 日切时清空 _today_trades(避免跨日累积)
+        # 条件: 已累积且最后一笔的 exit_date < today(说明跨日了)
+        if self._today_trades and self._today_trades[-1].exit_date < today:
+            self._today_trades = []
+
         eq = self.total_equity(snapshot)
         log.info(f"[快照] 日期={today} 权益={eq:,.0f} 现金={self.cash:,.0f} 持仓={self.position_count}")
         _safe_broadcast({"type":"sim_trader_log","action":"snapshot","date":str(today),"time":datetime.now().strftime('%H:%M:%S'),"equity":round(eq,0),"cash":round(self.cash,0),"positions":self.position_count})
