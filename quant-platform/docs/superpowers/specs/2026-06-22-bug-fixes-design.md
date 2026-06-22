@@ -244,7 +244,7 @@ if trade:
 
 **新问题预演**(必须):
 - ❓ `len(self.trades)` 在别处被读的地方会少算吗? → grep 全部 `len(self.trades)` 验证
-- ❓ "今日交易数" 前端字段会少算吗? → 如果有,需要额外维护 `self._today_trades` 列表
+- ❓ "今日交易数" 前端字段会少算吗? → grep 全部 `len(self.trades)` 用法。**实施时若发现前端/报告读 `self.trades` 算"今日交易",需要额外维护 `self._today_trades` 列表;否则不补**
 - ❓ 冷启动时 `self.trades = self._store.load_trades()` 加载完全部历史 → 后续 append 删了,运行中卖出后 `len(self.trades)` 不变 → **这是预期行为**(内存与 DB 一致,UI 应从 DB 读)
 - ❓ reporter.py / main.py 用了 `self.trades` 吗? → grep 验证
 
@@ -393,7 +393,7 @@ self._prev_snap = {k: dict(v) for k, v in snapshot.items()}
 - ❓ `_prev_day_snap` **首次启动时是空**,第一天不触发保护 → 可接受(本来就无"昨日")
 - ❓ 改 `_prev_snap` → `_prev_day_snap` 后,某处依赖旧名 → grep 全部 `_prev_snap` 使用,**intraday_monitor 那一处 read**保留(它需要兜底)
 - ❓ `adjust_for_gap` 函数契约不变,只改 caller,影响面小
-- ❓ `store.py` 是否需要持久化 `_prev_day_snap`? → 可选,简化起见**不持久化**(重启当天不触发保护,文档说明)
+- ❓ `store.py` 是否需要持久化 `_prev_day_snap`? → **不持久化**(`store.py` 不加新方法)。重启当天不触发保护可接受,文档说明。
 
 **测试**:`scripts/test_fix_09.py`
 - 模拟 2 个连续交易日的 sell_phase 调用
