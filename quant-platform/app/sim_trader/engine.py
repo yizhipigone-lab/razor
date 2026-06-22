@@ -74,6 +74,7 @@ class Position:
     is_active: bool = True
     strategy_name: str = ""
     entry_time: str = "15:00"
+    current_price: float = 0.0  # #8 修复:由 record() 阶段从 snapshot 写入
 
     def __post_init__(self):
         self.peak_price = self.entry_price
@@ -81,11 +82,13 @@ class Position:
 
     @property
     def market_value(self) -> float:
-        return self.remaining_shares * self.entry_price  # 用成本价，由外部更新
+        return self.remaining_shares * self.current_price  # #8 修复:用当前价
 
     @property
-    def profit_pct(self, current_price: float) -> float:
-        return (current_price / self.entry_price - 1) * 100
+    def profit_pct(self) -> float:  # #8 修复:从方法变 property
+        if self.current_price <= 0:
+            return 0.0
+        return (self.current_price / self.entry_price - 1) * 100
 
     def is_tier_triggered(self, idx: int) -> bool:
         return self.tp1_triggered if idx == 0 else self.tp2_triggered
@@ -485,6 +488,14 @@ class SimTraderEngine:
     # ── 记录 ──────────────────────────────────
 
     def record(self, today: date, snapshot: dict):
+        # #8 修复:增量更新所有持仓的 current_price,让 market_value/profit_pct property 反映实时行情
+        # 边界保护: bar['close'] 缺失/停牌(为 0)时,保持原值或 fallback 到 entry_price,避免突然归零
+        for code, pos in self.positions.items():
+            bar = snapshot.get(code)
+            if bar:
+                close_raw = bar.get('close')
+                close_val = float(close_raw) if close_raw else 0.0
+                pos.current_price = close_val if close_val > 0 else (pos.current_price or pos.entry_price)
         eq = self.total_equity(snapshot)
         log.info(f"[快照] 日期={today} 权益={eq:,.0f} 现金={self.cash:,.0f} 持仓={self.position_count}")
         _safe_broadcast({"type":"sim_trader_log","action":"snapshot","date":str(today),"time":datetime.now().strftime('%H:%M:%S'),"equity":round(eq,0),"cash":round(self.cash,0),"positions":self.position_count})
