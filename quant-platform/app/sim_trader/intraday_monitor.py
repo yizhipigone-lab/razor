@@ -133,7 +133,13 @@ class IntradayMonitor:
             return val
 
         overall_peak = max(pos.peak_price, session_peak)
-        hold_days = (date.today() - pos.entry_date).days + 1  # +1 统一为含首日计数
+        # 与 sim_trader.engine.check_stops 公式保持一致（#13 修复）
+        # 用交易日计数（自然日会受周末/假期干扰，触发时机与尾盘不同步）
+        from app.api.sim_trader import _load_trading_calendar
+        _cal = _load_trading_calendar() or set()
+        _today = date.today()
+        trading_dates_window = sorted(d for d in _cal if pos.entry_date <= d <= _today)
+        hold_days = max(1, len(trading_dates_window))  # 至少 1,防空日历误触
 
         ctx = exit_rule_engine.build_context(
             pos,
