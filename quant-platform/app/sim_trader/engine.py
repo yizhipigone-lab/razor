@@ -153,6 +153,9 @@ class SimTraderEngine:
         #   _prev_snap 在 sell_phase 末尾被覆盖为"今日 snapshot"(line 481+1)
         #   _prev_day_snap 始终是"昨日收盘快照",供次日除权跳空保护使用
         self._prev_day_snap: dict = {}
+        # L5 修复: 冷启动时从 store 加载 _prev_day_snap(否则次日 sell_phase 跳空保护失效)
+        if store is not None:
+            self._prev_day_snap = self._store.load_prev_day_snap() or {}
 
         # 启动时补齐缺失的交易日净值快照（防止曲线断档）
         if store is not None:
@@ -505,7 +508,9 @@ class SimTraderEngine:
         # #9 修复: 同步更新 _prev_day_snap(今日尾盘 = 次日开盘的"昨日")
         # 用 deep copy 避免后续就地修改 _prev_snap 内层 dict 时污染 prev_day
         self._prev_day_snap = copy.deepcopy(self._prev_snap)
+        # L5 修复: 持久化 _prev_day_snap 到 store,供下次冷启动加载
         if self._store:
+            self._store.save_prev_day_snap(self._prev_day_snap)
             self._store.save_positions(self.positions)
             self._store.save_state(
                 self.cash, self.consecutive_losses,
