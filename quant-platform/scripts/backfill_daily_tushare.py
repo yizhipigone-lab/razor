@@ -52,8 +52,7 @@ for i, code in enumerate(codes):
         df['date'] = pd.to_datetime(df['date'])
         for c in ['open','high','low','close','volume']:
             df[c] = pd.to_numeric(df[c], errors='coerce')
-        # Tushare amount 字段单位是元(与 #7 同根因,L1 修复)
-        df['amount'] = df['amount'].fillna(df['close'] * df['volume'] * 100)
+        df['amount'] = (df['amount'] * 1000).fillna(df['close'] * df['volume'] * 100)
         df = df[['date','open','high','low','close','volume','amount']].dropna(subset=['close'])
 
         if len(df) == 0:
