@@ -454,8 +454,9 @@ class SimTraderEngine:
             if trade:
                 trade.hold_days = sum(1 for td in trading_dates
                                       if pos.entry_date <= td <= today)
-                self.trades.append(trade)
-                # 注意：execute_sell 已调用 _store.save_trade(trade)，这里不再重复保存
+                # 不再 append:execute_sell 已写 DB;冷启动时 load_trades 一次性加载
+                # 这样能避免盘中 sell + 尾盘 sell 时,内存与 DB 不一致
+                # 注意:execute_sell 已调用 _store.save_trade(trade),这里不再重复保存
 
                 # 真实券商委托（需 BROKER_ENABLED=True 且 gateway 可用）
                 from app.sim_trader.config import BROKER_ENABLED

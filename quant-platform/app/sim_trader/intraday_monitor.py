@@ -179,7 +179,7 @@ class IntradayMonitor:
                 exit_timing="intraday",
             )
         if trade:
-            self.engine.trades.append(trade)
+            # 不再 append:self.engine.execute_sell 已写 DB
             self.engine.positions = {
                 k: v for k, v in self.engine.positions.items() if v.is_active
             }
