@@ -97,7 +97,7 @@ class ConceptMinerAgent:
 """
         try:
             resp = self.client.chat.completions.create(
-                model="deepseek-v4-pro",
+                model="deepseek-chat",
                 messages=[
                     {"role": "system", "content": sys_prompt},
                     {"role": "user", "content": f"以下是最新的焦点快讯：\n{news_text}"}

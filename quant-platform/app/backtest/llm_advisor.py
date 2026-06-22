@@ -141,7 +141,7 @@ class LLMAdvisor:
     def __init__(
         self,
         use_llm: bool = True,
-        model: str = "deepseek-v4-pro",
+        model: str = "deepseek-chat",
         timeout: int = 30,
     ):
         self.use_llm = use_llm
