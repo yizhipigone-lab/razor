@@ -45,7 +45,7 @@ class StrategyCoderAgent:
         try:
             log.info("Calling DeepSeek for strategy generation...")
             response = self.client.chat.completions.create(
-                model="deepseek-v4-pro",
+                model="deepseek-chat",
                 messages=messages,
                 stream=False
             )
