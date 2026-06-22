@@ -90,7 +90,7 @@ def download_daily_bars(code: str, years: int = 1) -> pd.DataFrame:
                 df = df.head(years * 250)
                 df = df.rename(columns={'trade_date': 'date', 'vol': 'volume'})
                 df['date'] = pd.to_datetime(df['date'])
-                df['amount'] = df['amount'] * 1000  # tushare 金额单位为千元，需转元
+                # Tushare amount 字段单位是元，无需转换（#7 修复）
                 df = df[['date','open','high','low','close','volume','amount']].sort_values('date')
                 return df
     except Exception as e:
@@ -148,7 +148,7 @@ def download_min5_bars(code: str, count: int = 800) -> pd.DataFrame:
                 if 'datetime' not in df.columns and 'date' in df.columns:
                     df['datetime'] = df['date']
                 df['date'] = pd.to_datetime(df['datetime'])
-                df['amount'] = df['amount'] * 1000
+                # Tushare amount 字段单位是元，无需转换
                 df = df[['date','open','high','low','close','volume','amount']].sort_values('date')
                 return df
     except Exception as e:
