@@ -123,8 +123,9 @@ class SimTraderEngine:
     """尾盘模拟交易引擎（含盘中实时监控）"""
 
     def __init__(self, store=None):
+        # L4 修复: 总是初始化 _store, 便于 refresh_trades_from_store 统一判断
+        self._store = store
         if store is not None:
-            self._store = store
             state = self._store.load_state()
             self.cash = state['cash']
             self.consecutive_losses = state['consecutive_losses']
@@ -159,6 +160,14 @@ class SimTraderEngine:
 
         # 盘中监控器（延迟初始化，避免循环导入）
         self._monitor = None
+
+    def refresh_trades_from_store(self):
+        """从 store 重新加载 trades/positions/equity (L4 修复)
+        用于回测/手动模式: store 仍持有完整数据, 入口 reporter 调此方法确保读到最新"""
+        if self._store:
+            self.trades = self._store.load_trades()
+            self.positions = self._store.load_positions()
+            self.equity_curve = self._store.load_equity_curve()
 
     def _fill_missing_snapshots(self):
         """补齐 equity_curve 中缺失的交易日快照。
