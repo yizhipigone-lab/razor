@@ -25,6 +25,9 @@ def daily_report(today: date, engine: SimTraderEngine, snapshot: dict):
 
 def final_report(engine: SimTraderEngine, trading_dates: List[date]):
     """回测结束后的完整统计报告"""
+    # L4 修复: 从 store 重新加载 trades (回测模式 store=None 时此调用为 no-op;
+    # 有 store 时则把内存漏掉的部分从 DB 补齐, 避免仅依赖运行期 in-memory 累加)
+    engine.refresh_trades_from_store()
     eq_df = pd.DataFrame(engine.equity_curve)
     if eq_df.empty:
         print("无交易记录")

@@ -17,6 +17,7 @@ from app.sim_trader.data_loader import (
 )
 from app.sim_trader.engine import SimTraderEngine
 from app.sim_trader.reporter import final_report
+from app.sim_trader.store import SimTraderStore
 
 
 def run():
@@ -58,7 +59,7 @@ def run():
 
     # ── 4. 逐日模拟 ──────────────────────────
     print(f"\n[3/4] 逐日模拟 ...")
-    engine = SimTraderEngine(persist=False)
+    engine = SimTraderEngine(store=SimTraderStore())
 
     for i, today in enumerate(trading_dates):
         snapshot = get_daily_snapshot(bt_bars, today)
