@@ -99,7 +99,9 @@ class IntradayMonitor:
                 try:
                     from datetime import date as _d
                     if not hasattr(self, '_last_record_date') or self._last_record_date != _d.today():
-                        self.engine.record(_d.today(), self.engine._prev_snap or {})
+                        # #9 修复: 优先用 _prev_day_snap(稳定的"昨日"快照),兜底用 _prev_snap
+                        snap = self.engine._prev_day_snap or self.engine._prev_snap or {}
+                        self.engine.record(_d.today(), snap)
                         self._last_record_date = _d.today()
                 except Exception:
                     pass
