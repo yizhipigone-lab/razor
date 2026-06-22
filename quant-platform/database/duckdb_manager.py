@@ -365,6 +365,10 @@ class DatabaseManager:
         self.conn.commit()
         log.info(f"更新股票元数据: {len(df)} 条")
 
+    def update_stock_list(self, df: pd.DataFrame):
+        """兼容旧方法名(与 #2 修复保持一致)"""
+        return self.upsert_stocks(df)
+
     def update_stock_sectors(self, df: pd.DataFrame):
         """批量更新股票的行业信息"""
         try:

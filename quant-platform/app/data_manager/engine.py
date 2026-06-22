@@ -68,8 +68,9 @@ def get_all_stock_list() -> pd.DataFrame:
                 # 入库
                 db.update_stock_list(df)
                 return df
-    except: pass
-    
+    except Exception as e:
+        log.warning(f"TDX 股票列表扫描失败: {e},回退到 DB")
+
     # 兜底从 DB 取
     return db.get_all_stocks()
 
