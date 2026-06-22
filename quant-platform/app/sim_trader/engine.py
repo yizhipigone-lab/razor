@@ -8,6 +8,7 @@
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
+import copy
 import pandas as pd
 from datetime import date, datetime, timedelta
 from dataclasses import dataclass
@@ -142,6 +143,11 @@ class SimTraderEngine:
             self._trade_count = 0
 
         self._prev_snap: dict = {}  # 前一日快照，用于除权跳空保护
+        # #9 修复: 昨日完整 OHLC(今日 sell_phase 14:52 时调用的"昨日"快照)
+        # 与 _prev_snap 的区别:
+        #   _prev_snap 在 sell_phase 末尾被覆盖为"今日 snapshot"(line 481+1)
+        #   _prev_day_snap 始终是"昨日收盘快照",供次日除权跳空保护使用
+        self._prev_day_snap: dict = {}
 
         # 启动时补齐缺失的交易日净值快照（防止曲线断档）
         if store is not None:
@@ -449,7 +455,7 @@ class SimTraderEngine:
             return
 
         sells = self.check_stops(today, snapshot, trading_dates,
-                                 prev_snap=self._prev_snap)
+                                 prev_snap=self._prev_day_snap)  # #9 修复: 传"昨日"快照
 
         for pos, exit_price, reason, partial in sells:
             trade = self.execute_sell(pos, exit_price, reason, partial,
@@ -479,6 +485,9 @@ class SimTraderEngine:
         self.positions = {k: v for k, v in self.positions.items() if v.is_active}
         # 保存当日快照供次日除权跳空保护
         self._prev_snap = {k: dict(v) for k, v in snapshot.items()}
+        # #9 修复: 同步更新 _prev_day_snap(今日尾盘 = 次日开盘的"昨日")
+        # 用 deep copy 避免后续就地修改 _prev_snap 内层 dict 时污染 prev_day
+        self._prev_day_snap = copy.deepcopy(self._prev_snap)
         if self._store:
             self._store.save_positions(self.positions)
             self._store.save_state(
