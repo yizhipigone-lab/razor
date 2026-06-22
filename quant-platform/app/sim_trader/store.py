@@ -203,6 +203,28 @@ class SimTraderStore:
             'trade_count': int(state.get('trade_count', '0')),
         }
 
+    # ── 昨日快照(L5 修复) ────────────────────────
+
+    def save_prev_day_snap(self, snap: dict):
+        """持久化 _prev_day_snap(供下次启动后第一天使用),L5 修复"""
+        self.conn.execute(
+            "INSERT OR REPLACE INTO sim_state (key, value) VALUES (?, ?)",
+            ['prev_day_snap', json.dumps(snap, default=str)]
+        )
+        self.conn.commit()
+
+    def load_prev_day_snap(self) -> dict:
+        """加载 _prev_day_snap(冷启动后用)"""
+        try:
+            row = self.conn.execute(
+                "SELECT value FROM sim_state WHERE key = 'prev_day_snap'"
+            ).fetchone()
+            if row and row[0]:
+                return json.loads(row[0])
+        except Exception:
+            pass
+        return {}
+
 
 class JsonSimStore:
     """JSON 文件持久化（无 DuckDB 依赖，无锁）"""
@@ -238,6 +260,15 @@ class JsonSimStore:
             'trade_count': trade_count,
         }
         self._save()
+
+    # ── 昨日快照(L5 修复) ────────────────────────
+
+    def save_prev_day_snap(self, snap: dict):
+        self._data['prev_day_snap'] = snap
+        self._save()
+
+    def load_prev_day_snap(self) -> dict:
+        return self._data.get('prev_day_snap', {})
 
     def load_positions(self) -> Dict[str, "Position"]:
         from app.sim_trader.engine import Position
