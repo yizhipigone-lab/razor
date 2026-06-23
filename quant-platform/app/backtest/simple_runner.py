@@ -288,12 +288,13 @@ def _run_intraday_backtest(
     for _, r in signals_df.iterrows():
         sbd[r['date']].append((r['code'], float(r['close'])))
 
-    # 预加载日线 close/high
+    # 预加载日线 close/high/low
     bt = bars[(bars['date'] >= start) & (bars['date'] <= end)]
-    closes, highs = {}, {}
+    closes, highs, lows = {}, {}, {}
     for d, g in bt.groupby('date'):
         closes[d] = dict(zip(g['code'], g['close']))
         highs[d] = dict(zip(g['code'], g['high']))
+        lows[d] = dict(zip(g['code'], g['low']))
     td = sorted(closes.keys())
 
     # 预加载日内数据
@@ -356,7 +357,7 @@ def _run_intraday_backtest(
         # 当日快照
         day_snap = {code: {'close': closes[d].get(code, 0),
                             'high': highs[d].get(code, closes[d].get(code, 0)),
-                            'low': closes[d].get(code, 0),
+                            'low': lows[d].get(code, closes[d].get(code, 0)),
                             'open': closes[d].get(code, 0)}
                     for code in list(positions.keys()) + [c for c, _ in sbd.get(d, [])]
                     if code in closes[d]}
@@ -652,7 +653,7 @@ def run_backtest(params: dict, progress_cb: Optional[Callable] = None,
 
     # 日线回测（原有逻辑）
     bt = bars[(bars['date'] >= start) & (bars['date'] <= end)]
-    closes, highs, atrs = {}, {}, {}
+    closes, highs, lows, atrs = {}, {}, {}, {}
     use_atr = params.get('use_atr_trail', False)
     if use_atr and 'atr14' not in bt.columns:
         def _compute_atr(grp):
@@ -664,6 +665,7 @@ def run_backtest(params: dict, progress_cb: Optional[Callable] = None,
     for d, g in bt.groupby('date'):
         closes[d] = dict(zip(g['code'], g['close']))
         highs[d] = dict(zip(g['code'], g['high']))
+        lows[d] = dict(zip(g['code'], g['low']))
         if use_atr and 'atr14' in g.columns:
             atrs[d] = dict(zip(g['code'], g['atr14']))
     td_list = sorted(closes.keys())
@@ -692,7 +694,7 @@ def run_backtest(params: dict, progress_cb: Optional[Callable] = None,
                 snap[code] = {
                     'open': closes[d].get(code, 0),
                     'high': highs[d].get(code, closes[d].get(code, 0)),
-                    'low': closes[d].get(code, 0),
+                    'low': lows[d].get(code, closes[d].get(code, 0)),
                     'close': closes[d].get(code, 0),
                     'atr': atrs.get(d, {}).get(code, 0) if atrs else 0,
                 }

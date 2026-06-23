@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from datetime import date, timedelta
 from collections import defaultdict, Counter
+from pathlib import Path
 from typing import Callable, Optional
 
 from core.logger import get_logger
@@ -154,14 +155,16 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
     )
 
 
-def _check_stops_daily(pos, close_p, high_p, hold_days, params):
+def _check_stops_daily(pos, close_p, high_p, hold_days, params, low_p=None):
     """单日止盈止损检查（委托给统一规则引擎）"""
     from app.backtest.exit_rules import exit_rule_engine
 
     if high_p > pos.peak_price:
         pos.peak_price = high_p
 
-    bar = {"close": close_p, "high": high_p, "low": close_p, "open": close_p}
+    # 优先用真实盘中 low，否则 fallback 到 close
+    actual_low = low_p if low_p is not None else close_p
+    bar = {"close": close_p, "high": high_p, "low": actual_low, "open": close_p}
     ctx = exit_rule_engine.build_context(pos, bar, hold_days, params,
                                           first_day_hold_value=1)
     signal = exit_rule_engine.check(ctx)
@@ -222,7 +225,12 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
             return _empty_result(params, 0, "区间内无QUANTQQ信号")
 
         # 解析日线价格（用于无5m数据的股票）
+        # raw_prices 来自 TDX bridge，只有 Date 和 Close 字段，没有 low
+        # 所以从本地 parquet 补 low 字段，确保 _check_stops_daily 用真实盘中 low
         prices_by_date = defaultdict(dict)
+        daily_dir = Path(__file__).parent.parent.parent / "data" / "parquet" / "daily"
+        # 缓存 parquet 加载的 low 数据: {(date_str, code): low}
+        low_cache = {}
         for tdx_code, d in raw_prices.items():
             code_num = tdx_code.split(".")[0] if "." in tdx_code else tdx_code
             dates_list = d.get("Date", [])
@@ -235,8 +243,24 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
                 if start <= dt_date <= end:
                     try:
                         close_val = float(cl)
+                        # 从 parquet 读 low
+                        cache_key = (dt_str, code_num)
+                        if cache_key not in low_cache:
+                            low_val = close_val  # fallback
+                            pq = daily_dir / f"{code_num}.parquet"
+                            if pq.exists():
+                                try:
+                                    pdf = pd.read_parquet(str(pq), columns=['date', 'low'])
+                                    pdf['date'] = pd.to_datetime(pdf['date']).dt.strftime('%Y-%m-%d')
+                                    row = pdf[pdf['date'] == dt_str]
+                                    if not row.empty:
+                                        low_val = float(row.iloc[0]['low'])
+                                except Exception:
+                                    pass
+                            low_cache[cache_key] = low_val
+                        low_val = low_cache[cache_key]
                         prices_by_date[str(dt_date)][code_num] = {
-                            "close": close_val, "high": close_val,
+                            "close": close_val, "high": close_val, "low": low_val,
                         }
                     except (ValueError, TypeError):
                         pass
@@ -418,10 +442,12 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
                 if day_price is None:
                     continue
                 close_p = day_price["close"]
-                # 用close作为high/low的近似
+                # 用 parquet 真实 high/low(不再用 close 近似)
+                high_p = day_price.get("high", close_p)
+                low_p = day_price.get("low", close_p)
                 hold_days = (d - pos.entry_date).days
 
-                result = _check_stops_daily(pos, close_p, close_p, hold_days, params)
+                result = _check_stops_daily(pos, close_p, high_p, hold_days, params, low_p=low_p)
                 if result:
                     reason, sell_px, partial = result
                     sell_shares = partial if partial else pos.shares
@@ -570,7 +596,11 @@ def _run_daily_backtest(sig_result: dict, params: dict, start: date, end: date,
         return _empty_result(params, 0, "区间内无QUANTQQ信号")
 
     # 解析价格
+    # raw_prices 来自 TDX bridge，只有 Date 和 Close 字段，没有 low
+    # 所以从本地 parquet 补 low 字段，确保 _check_stops_daily 用真实盘中 low
     prices_by_date = defaultdict(dict)
+    daily_dir = Path(__file__).parent.parent.parent / "data" / "parquet" / "daily"
+    low_cache = {}
     for tdx_code, d in raw_prices.items():
         code_num = tdx_code.split(".")[0] if "." in tdx_code else tdx_code
         dates_list = d.get("Date", [])
@@ -583,8 +613,24 @@ def _run_daily_backtest(sig_result: dict, params: dict, start: date, end: date,
             if start <= dt_date <= end:
                 try:
                     close_val = float(cl)
+                    # 从 parquet 读 low
+                    cache_key = (dt_str, code_num)
+                    if cache_key not in low_cache:
+                        low_val = close_val  # fallback
+                        pq = daily_dir / f"{code_num}.parquet"
+                        if pq.exists():
+                            try:
+                                pdf = pd.read_parquet(str(pq), columns=['date', 'low'])
+                                pdf['date'] = pd.to_datetime(pdf['date']).dt.strftime('%Y-%m-%d')
+                                row = pdf[pdf['date'] == dt_str]
+                                if not row.empty:
+                                    low_val = float(row.iloc[0]['low'])
+                            except Exception:
+                                pass
+                        low_cache[cache_key] = low_val
+                    low_val = low_cache[cache_key]
                     prices_by_date[str(dt_date)][code_num] = {
-                        "close": close_val, "high": close_val,
+                        "close": close_val, "high": close_val, "low": low_val,
                     }
                 except (ValueError, TypeError):
                     pass
