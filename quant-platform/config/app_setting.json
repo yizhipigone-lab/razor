@@ -173,7 +173,7 @@
     "redis_ttl_seconds": 600,
     "enable_ths_concepts": true,
     "enable_tushare_concepts": true,
-    "last_updated": "06/16 15:33"
+    "last_updated": "06/23 15:41"
   },
   "tqsdk": {
     "formula_name": "QUANTQQ"

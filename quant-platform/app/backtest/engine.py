@@ -876,12 +876,12 @@ class BacktestEngine:
                             tp_pct = stage.get("profit_pct", 999.0)
                             realized_pnl += tp_pct * actual_sell
                             sell_events.append({"type": "sell", "date": str(d),
-                                                "price": entry_price * (1 + tp_pct / 100),
+                                                "price": signal.sell_price,
                                                 "ratio": actual_sell,
                                                 "reason": stage.get("label", reason)})
                             remaining_ratio -= actual_sell
                         if remaining_ratio <= 0:
-                            exit_price = entry_price * (1 + tp_pct / 100)
+                            exit_price = signal.sell_price
                             exit_date = d
                             break
                 if remaining_ratio <= 0:
