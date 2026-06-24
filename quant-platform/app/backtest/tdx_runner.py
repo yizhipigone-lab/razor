@@ -155,7 +155,7 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
     )
 
 
-def _check_stops_daily(pos, close_p, high_p, hold_days, params, low_p=None):
+def _check_stops_daily(pos, close_p, high_p, hold_days, params, low_p=None, open_p=None):
     """单日止盈止损检查（委托给统一规则引擎）"""
     from app.backtest.exit_rules import exit_rule_engine
 
@@ -164,7 +164,9 @@ def _check_stops_daily(pos, close_p, high_p, hold_days, params, low_p=None):
 
     # 优先用真实盘中 low，否则 fallback 到 close
     actual_low = low_p if low_p is not None else close_p
-    bar = {"close": close_p, "high": high_p, "low": actual_low, "open": close_p}
+    # 优先用真实 open，否则 fallback 到 close
+    actual_open = open_p if open_p is not None else close_p
+    bar = {"close": close_p, "high": high_p, "low": actual_low, "open": actual_open}
     ctx = exit_rule_engine.build_context(pos, bar, hold_days, params,
                                           first_day_hold_value=1)
     signal = exit_rule_engine.check(ctx)
@@ -225,8 +227,8 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
             return _empty_result(params, 0, "区间内无QUANTQQ信号")
 
         # 解析日线价格（用于无5m数据的股票）
-        # raw_prices 来自 TDX bridge，只有 Date 和 Close 字段，没有 low
-        # 所以从本地 parquet 补 low 字段，确保 _check_stops_daily 用真实盘中 low
+        # raw_prices 来自 TDX bridge,正常包含 Date/Open/High/Low/Close 5个字段
+        # 如果 TDX worker 老版本没传 Low 字段, fallback 从本地 parquet 补
         prices_by_date = defaultdict(dict)
         daily_dir = Path(__file__).parent.parent.parent / "data" / "parquet" / "daily"
         # 缓存 parquet 加载的 low 数据: {(date_str, code): low}
@@ -235,7 +237,12 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
             code_num = tdx_code.split(".")[0] if "." in tdx_code else tdx_code
             dates_list = d.get("Date", [])
             closes = d.get("Close", [])
-            for dt_str, cl in zip(dates_list, closes):
+            highs = d.get("High", [])
+            lows = d.get("Low", [])
+            opens = d.get("Open", [])
+            # TDX 老版本可能只返回 Close, 没有 High/Low/Open
+            has_ohlc = len(highs) > 0 and len(lows) > 0 and len(opens) > 0
+            for i, (dt_str, cl) in enumerate(zip(dates_list, closes)):
                 try:
                     dt_date = date(int(dt_str[:4]), int(dt_str[4:6]), int(dt_str[6:8]))
                 except (ValueError, TypeError):
@@ -243,24 +250,38 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
                 if start <= dt_date <= end:
                     try:
                         close_val = float(cl)
-                        # 从 parquet 读 low
-                        cache_key = (dt_str, code_num)
-                        if cache_key not in low_cache:
-                            low_val = close_val  # fallback
-                            pq = daily_dir / f"{code_num}.parquet"
-                            if pq.exists():
-                                try:
-                                    pdf = pd.read_parquet(str(pq), columns=['date', 'low'])
-                                    pdf['date'] = pd.to_datetime(pdf['date']).dt.strftime('%Y-%m-%d')
-                                    row = pdf[pdf['date'] == dt_str]
-                                    if not row.empty:
-                                        low_val = float(row.iloc[0]['low'])
-                                except Exception:
-                                    pass
-                            low_cache[cache_key] = low_val
-                        low_val = low_cache[cache_key]
+                        # 优先用 TDX 返回的 OHLC
+                        if has_ohlc and i < len(highs) and i < len(lows) and i < len(opens):
+                            try:
+                                high_val = float(highs[i])
+                                low_val = float(lows[i])
+                                open_val = float(opens[i])
+                                # 任何字段为 0/NaN 视为缺失, fallback 到 parquet
+                                if low_val <= 0 or high_val <= 0 or open_val <= 0:
+                                    raise ValueError("OHLC has zero, fallback to parquet")
+                            except (ValueError, TypeError):
+                                has_ohlc = False  # 老 TDX/部分字段缺失, 全用 parquet
+                        if not has_ohlc:
+                            # 从 parquet 读 low
+                            cache_key = (dt_str, code_num)
+                            if cache_key not in low_cache:
+                                low_val = close_val  # fallback
+                                pq = daily_dir / f"{code_num}.parquet"
+                                if pq.exists():
+                                    try:
+                                        pdf = pd.read_parquet(str(pq), columns=['date', 'low'])
+                                        pdf['date'] = pd.to_datetime(pdf['date']).dt.strftime('%Y-%m-%d')
+                                        row = pdf[pdf['date'] == dt_str]
+                                        if not row.empty:
+                                            low_val = float(row.iloc[0]['low'])
+                                    except Exception:
+                                        pass
+                                low_cache[cache_key] = low_val
+                            low_val = low_cache[cache_key]
+                            high_val = close_val  # 高没用但保留结构
+                            open_val = close_val
                         prices_by_date[str(dt_date)][code_num] = {
-                            "close": close_val, "high": close_val, "low": low_val,
+                            "close": close_val, "high": high_val, "low": low_val, "open": open_val,
                         }
                     except (ValueError, TypeError):
                         pass
@@ -442,12 +463,13 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
                 if day_price is None:
                     continue
                 close_p = day_price["close"]
-                # 用 parquet 真实 high/low(不再用 close 近似)
+                # 用 TDX 真实 high/low/open(不再用 close 近似)
                 high_p = day_price.get("high", close_p)
                 low_p = day_price.get("low", close_p)
+                open_p = day_price.get("open", close_p)
                 hold_days = (d - pos.entry_date).days
 
-                result = _check_stops_daily(pos, close_p, high_p, hold_days, params, low_p=low_p)
+                result = _check_stops_daily(pos, close_p, high_p, hold_days, params, low_p=low_p, open_p=open_p)
                 if result:
                     reason, sell_px, partial = result
                     sell_shares = partial if partial else pos.shares
@@ -605,7 +627,11 @@ def _run_daily_backtest(sig_result: dict, params: dict, start: date, end: date,
         code_num = tdx_code.split(".")[0] if "." in tdx_code else tdx_code
         dates_list = d.get("Date", [])
         closes = d.get("Close", [])
-        for dt_str, cl in zip(dates_list, closes):
+        highs = d.get("High", [])
+        lows = d.get("Low", [])
+        opens = d.get("Open", [])
+        has_ohlc = len(highs) > 0 and len(lows) > 0 and len(opens) > 0
+        for i, (dt_str, cl) in enumerate(zip(dates_list, closes)):
             try:
                 dt_date = date(int(dt_str[:4]), int(dt_str[4:6]), int(dt_str[6:8]))
             except (ValueError, TypeError):
@@ -613,24 +639,35 @@ def _run_daily_backtest(sig_result: dict, params: dict, start: date, end: date,
             if start <= dt_date <= end:
                 try:
                     close_val = float(cl)
-                    # 从 parquet 读 low
-                    cache_key = (dt_str, code_num)
-                    if cache_key not in low_cache:
-                        low_val = close_val  # fallback
-                        pq = daily_dir / f"{code_num}.parquet"
-                        if pq.exists():
-                            try:
-                                pdf = pd.read_parquet(str(pq), columns=['date', 'low'])
-                                pdf['date'] = pd.to_datetime(pdf['date']).dt.strftime('%Y-%m-%d')
-                                row = pdf[pdf['date'] == dt_str]
-                                if not row.empty:
-                                    low_val = float(row.iloc[0]['low'])
-                            except Exception:
-                                pass
-                        low_cache[cache_key] = low_val
-                    low_val = low_cache[cache_key]
+                    if has_ohlc and i < len(highs) and i < len(lows) and i < len(opens):
+                        try:
+                            high_val = float(highs[i])
+                            low_val = float(lows[i])
+                            open_val = float(opens[i])
+                            if low_val <= 0 or high_val <= 0 or open_val <= 0:
+                                raise ValueError("OHLC has zero, fallback to parquet")
+                        except (ValueError, TypeError):
+                            has_ohlc = False
+                    if not has_ohlc:
+                        cache_key = (dt_str, code_num)
+                        if cache_key not in low_cache:
+                            low_val = close_val
+                            pq = daily_dir / f"{code_num}.parquet"
+                            if pq.exists():
+                                try:
+                                    pdf = pd.read_parquet(str(pq), columns=['date', 'low'])
+                                    pdf['date'] = pd.to_datetime(pdf['date']).dt.strftime('%Y-%m-%d')
+                                    row = pdf[pdf['date'] == dt_str]
+                                    if not row.empty:
+                                        low_val = float(row.iloc[0]['low'])
+                                except Exception:
+                                    pass
+                            low_cache[cache_key] = low_val
+                        low_val = low_cache[cache_key]
+                        high_val = close_val
+                        open_val = close_val
                     prices_by_date[str(dt_date)][code_num] = {
-                        "close": close_val, "high": close_val, "low": low_val,
+                        "close": close_val, "high": high_val, "low": low_val, "open": open_val,
                     }
                 except (ValueError, TypeError):
                     pass
