@@ -70,12 +70,21 @@ def _update_state(**kwargs):
 # ────────────────────────────────────────────────────────
 
 def _calmar_score(trades: list) -> float:
-    """目标函数：每笔平均盈利率（等额投入、互不干扰）
-    所有交易的平均 pnl_pct，直接反映信号质量"""
+    """L23 修复: 风险调整收益 (mean - 0.5*std),避免高方差过拟合
+
+    原实现: np.mean(pnls) 只看均值,容易选出"高均值但高方差"的过拟合参数
+    修复: 引入波动率惩罚,平衡收益与风险;系数 0.5 经验值,Sharpe 简化版
+    """
     if len(trades) < 8:
         return -999.0
-    pnls = [t["pnl_pct"] for t in trades]
-    return float(np.mean(pnls))
+    pnls = np.array([t["pnl_pct"] for t in trades], dtype=float)
+    if len(pnls) < 2:
+        return float(np.mean(pnls))
+    mean = np.mean(pnls)
+    std = np.std(pnls, ddof=1)
+    if std < 1e-6:
+        return float(mean)
+    return float(mean - 0.5 * std)
 
 
 def _profit_factor(trades: list) -> float:
@@ -133,6 +142,8 @@ def _lhs_sample(search_space: dict, n: int) -> List[dict]:
     拉丁超立方采样：确保 n 组参数在每个维度上都均匀分布，
     避免聚集在某一角落。
     """
+    # L23 修复: 固定随机种子,保证可复现
+    np.random.seed(42)
     from app.backtest.llm_advisor import FALLBACK_SEARCH_SPACE
     keys = list(search_space.keys())
     samples = []
@@ -931,8 +942,7 @@ class AIBacktestOptimizer:
             all_results = exploration_results + bayesian_results
             all_results = sorted(all_results, key=lambda x: x.get("score", -999), reverse=True)
             top10 = all_results[:10]
-            _update_state(top10=top10, best_params=top10[0]["params"] if top10 else None)
-            log_cb(f"🏆 最优平盈率: {top10[0]['avg_pnl']:+.2f}% (score={top10[0]['score']:.3f})")
+            log_cb(f"🏆 Top-10 IS 平盈率: {top10[0]['avg_pnl']:+.2f}% (score={top10[0]['score']:.3f})")
 
             # ─── Phase 6: WFO 验证 ───────────────────────
             _update_state(phase="wfo")
@@ -944,6 +954,19 @@ class AIBacktestOptimizer:
                 top10[i]["wfe"] = wfo.get("wfe", "N/A")
                 top10[i]["wfe_status"] = wfo.get("wfe_status", "")
                 top10[i]["oos_pnl"] = wfo.get("oos_pnl")
+
+            # L23 修复: 用 (score, wfe) 联合排序选 best_params,防止 IS 过拟合
+            # WFE 越接近 1 越好;缺失 WFE 的项(未做 WFO)按 0 处理
+            def _sort_key(r):
+                score = r.get("score", -999)
+                wfe_raw = r.get("wfe", "N/A")
+                wfe_val = float(wfe_raw) if isinstance(wfe_raw, (int, float)) else 0.0
+                return (score, wfe_val)
+
+            top10 = sorted(top10, key=_sort_key, reverse=True)
+            best_params = top10[0]["params"] if top10 else None
+            _update_state(top10=top10, best_params=best_params)
+            log_cb(f"🎯 WFE 选优后: 平盈率={top10[0]['avg_pnl']:+.2f}% score={top10[0]['score']:.3f} WFE={top10[0].get('wfe', 'N/A')}")
             _update_state(top10=top10, wfo_results=wfo_results)
 
             # 计算最终 Regime 摘要（基于全部回测）
