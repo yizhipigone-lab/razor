@@ -254,17 +254,20 @@ async def ai_backtest_apply(body: dict):
         applied.append(f"tp_plan=[{params['tp1_profit']}%/{params['tp2_profit']}%]")
 
     # 同时更新搜索空间基线（以应用后的参数为新的中心值）
+    # L21 修复: 缺键时从 schema (唯一真相源) 读,不再硬编码假默认
+    from app.config.schema import load_risk_params
+    _risk = load_risk_params()
     _baseline = {
         "tp1_profit": params.get("tp1_profit", 3.0),
         "tp2_profit": params.get("tp2_profit", 5.0),
         "tp1_ratio": params.get("tp1_ratio", 0.30),
         "tp2_ratio": params.get("tp2_ratio", 0.30),
-        "hard_stop_loss_pct": params.get("hard_stop_loss_pct", -6.0),
-        "trailing_activate_pct": params.get("trailing_activate_pct", 6.0),
-        "trailing_drawdown_pct": params.get("trailing_drawdown_pct", 3.0),
-        "breakeven_threshold_pct": params.get("breakeven_threshold_pct", 5.0),
-        "breakeven_stop_pnl_pct": params.get("breakeven_stop_pnl_pct", 1.0),
-        "time_exit_days": params.get("time_exit_days", 5),
+        "hard_stop_loss_pct": params.get("hard_stop_loss_pct", _risk.hard_stop * 100),
+        "trailing_activate_pct": params.get("trailing_activate_pct", _risk.trail_activate * 100),
+        "trailing_drawdown_pct": params.get("trailing_drawdown_pct", _risk.trail_dd * 100),
+        "breakeven_threshold_pct": params.get("breakeven_threshold_pct", _risk.breakeven_threshold * 100),
+        "breakeven_stop_pnl_pct": params.get("breakeven_stop_pnl_pct", _risk.breakeven_stop * 100),
+        "time_exit_days": params.get("time_exit_days", _risk.time_exit_days),
     }
     _new_space = {}
     for k, v in _baseline.items():
