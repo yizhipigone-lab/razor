@@ -192,6 +192,8 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
                             stocks_with_intraday: set, period: str = "5m") -> dict | None:
     """日内K线回测引擎：有日内数据的逐K线检查，无数据的每日收盘检查"""
     from app.backtest.exit_rules import exit_rule_engine
+    # L26 修复: 用交易日计数(替代日历天)
+    from app.backtest.trading_calendar import TradingCalendar
     try:
         raw_signals = sig_result.get("signals", {})
         bars_intra = sig_result.get("bars_intraday", sig_result.get("bars_intra", []))
@@ -332,6 +334,11 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
             all_dates.add(d_str)
         sorted_dates = sorted(all_dates)
 
+        # L26 修复: 交易日历实例, sorted_dates 为 trading dates
+        _cal_for_hold = TradingCalendar(
+            [date.fromisoformat(d) for d in sorted_dates if d]
+        )
+
         # ── 逐 K 线循环（只处理有5m数据的股票） ──────
         bar_idx = 0
         for d_str in sorted_dates:
@@ -422,7 +429,8 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
                             pos.peak_price = h
 
                         entry = pos.entry_price
-                        hold_days = (d - pos.entry_date).days
+                        # L26 修复: 用交易日计数(替代日历天)
+                        hold_days = _cal_for_hold.trading_days_between(pos.entry_date, d)
 
                         # 用统一规则引擎
                         ctx = exit_rule_engine.build_context(
@@ -484,7 +492,8 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
                 high_p = day_price.get("high", close_p)
                 low_p = day_price.get("low", close_p)
                 open_p = day_price.get("open", close_p)
-                hold_days = (d - pos.entry_date).days
+                # L26 修复: 用交易日计数(替代日历天)
+                hold_days = _cal_for_hold.trading_days_between(pos.entry_date, d)
 
                 result = _check_stops_daily(pos, close_p, high_p, hold_days, params, low_p=low_p, open_p=open_p)
                 if result:
