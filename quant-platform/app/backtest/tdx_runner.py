@@ -13,6 +13,7 @@ from typing import Callable, Optional
 
 from core.logger import get_logger
 from app.backtest.simple_runner import FastEngine, Position, Trade, load_index_data
+from app.backtest.execution import can_buy, can_sell_today
 
 log = get_logger("TdxBT")
 
@@ -380,6 +381,17 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
 
                     if px <= 0:
                         continue
+                    # L29 修复: 涨停买入过滤 - 委托给 execution.can_buy
+                    # 优先从 prices_by_date 取前收(昨日 close), 取不到 fallback 0(放过)
+                    prev_close = 0
+                    if prev_day is not None:
+                        prev_snap = prices_by_date.get(str(prev_day), {})
+                        prev_bar = prev_snap.get(code, {})
+                        if isinstance(prev_bar, dict):
+                            prev_close = prev_bar.get("close", 0) or 0
+                    can_buy_ok, _ = can_buy(code, prev_close, px)
+                    if not can_buy_ok:
+                        continue
                     sh = int(dyn_size / px / 100) * 100
                     if sh < 100:
                         continue
@@ -398,56 +410,61 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
 
                 pos = positions.get(code_num)
                 if pos and pos.active and code_num in stocks_with_intraday:
-                    h = bar["high"]
-                    l = bar["low"]
-                    c = bar["close"]
-                    if h > pos.peak_price:
-                        pos.peak_price = h
+                    # L29 修复: T+1 约束 - 当日买入不能当日卖出
+                    # 原 bug: 5m 循环内会立刻检查止损/止盈导致 T+0 卖出
+                    if not can_sell_today(pos.entry_date, d):
+                        pass  # 当日买入持仓,不做任何卖出/止损检查
+                    else:
+                        h = bar["high"]
+                        l = bar["low"]
+                        c = bar["close"]
+                        if h > pos.peak_price:
+                            pos.peak_price = h
 
-                    entry = pos.entry_price
-                    hold_days = (d - pos.entry_date).days
+                        entry = pos.entry_price
+                        hold_days = (d - pos.entry_date).days
 
-                    # 用统一规则引擎
-                    ctx = exit_rule_engine.build_context(
-                        pos, bar, hold_days, params, use_high_for_tp=True,
-                        first_day_hold_value=1
-                    )
-                    signal = exit_rule_engine.check(ctx)
+                        # 用统一规则引擎
+                        ctx = exit_rule_engine.build_context(
+                            pos, bar, hold_days, params, use_high_for_tp=True,
+                            first_day_hold_value=1
+                        )
+                        signal = exit_rule_engine.check(ctx)
 
-                    reason = None
-                    sell_px = None
-                    partial_sell = None
+                        reason = None
+                        sell_px = None
+                        partial_sell = None
 
-                    if signal:
-                        reason = signal.reason
-                        sell_px = signal.sell_price
-                        if signal.reason.startswith('TP'):
-                            idx = int(signal.reason[2]) - 1
-                            pos.tp_triggered.add(idx)
-                            ss = int(pos.shares * signal.sell_ratio / 100) * 100
-                            if ss < 100:
-                                ss = 100
-                            partial_sell = min(ss, int(pos.shares))
+                        if signal:
+                            reason = signal.reason
+                            sell_px = signal.sell_price
+                            if signal.reason.startswith('TP'):
+                                idx = int(signal.reason[2]) - 1
+                                pos.tp_triggered.add(idx)
+                                ss = int(pos.shares * signal.sell_ratio / 100) * 100
+                                if ss < 100:
+                                    ss = 100
+                                partial_sell = min(ss, int(pos.shares))
 
-                    if reason and sell_px and sell_px > 0:
-                        sell_shares = partial_sell if (reason and reason.startswith("TP")) else pos.shares
-                        sell_shares = min(sell_shares, pos.shares)
-                        if sell_shares <= 0:
-                            sell_shares = pos.shares
-                        ret = (sell_px / entry - 1) * 100
-                        profit = sell_shares * (sell_px - entry)
-                        cash += sell_shares * sell_px
-                        if sell_shares >= pos.shares:
-                            pos.active = False
-                        else:
-                            pos.shares -= sell_shares
-                        trades_all.append(Trade(
-                            code_num, pos.entry_date, d, entry, sell_px,
-                            sell_shares, round(ret, 2), round(profit, 0), reason,
-                            hold_days,
-                        ))
-                        sell_reasons[reason] += 1
-                        cooldown[code_num] = d
+                        if reason and sell_px and sell_px > 0:
+                            sell_shares = partial_sell if (reason and reason.startswith("TP")) else pos.shares
+                            sell_shares = min(sell_shares, pos.shares)
+                            if sell_shares <= 0:
+                                sell_shares = pos.shares
+                            ret = (sell_px / entry - 1) * 100
+                            profit = sell_shares * (sell_px - entry)
+                            cash += sell_shares * sell_px
+                            if sell_shares >= pos.shares:
+                                pos.active = False
+                            else:
+                                pos.shares -= sell_shares
+                            trades_all.append(Trade(
+                                code_num, pos.entry_date, d, entry, sell_px,
+                                sell_shares, round(ret, 2), round(profit, 0), reason,
+                                hold_days,
+                            ))
+                            sell_reasons[reason] += 1
+                            cooldown[code_num] = d
 
                 bar_idx += 1
 
@@ -507,6 +524,9 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
                 "date": d_str, "equity": round(cash + pos_value, 2),
                 "cash": round(cash, 2), "pos": len(positions),
             })
+
+            # 更新 prev_day,供下一天买入时取前收
+            prev_day = d
 
         # ── 最终清仓 ──────────────────────────────────
         for code, p in list(positions.items()):
