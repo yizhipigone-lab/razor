@@ -50,7 +50,14 @@ class StrategyCoderAgent:
                 stream=False
             )
             raw_text = response.choices[0].message.content
-            return self._extract_code(raw_text)
+            code = self._extract_code(raw_text)
+            # L24 修复: 加载前 AST 沙箱校验,防 prompt 注入
+            from app.utils.ast_sandbox import validate_strategy_code
+            ok, msg = validate_strategy_code(code)
+            if not ok:
+                log.error(f"strategy_coder: 代码未通过 AST 沙箱: {msg}")
+                return f"# ❌ 生成的代码未通过安全校验:\n# {msg}"
+            return code
         except Exception as e:
             log.error(f"Strategy generation failed: {e}")
             return f"# ❌ 策略代码生成失败:\n# {str(e)}"
