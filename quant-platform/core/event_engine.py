@@ -38,8 +38,8 @@ class EventEngine:
     """
 
     def __init__(self):
+        # L27 修复: 删除只进不出的假异步 _queue, 改为纯同步 dispatch
         self._handlers: dict[str, list[Callable]] = defaultdict(list)
-        self._queue: list[Event] = []
         self._lock = threading.Lock()
         self._running = False
         self._thread: threading.Thread | None = None
@@ -65,10 +65,7 @@ class EventEngine:
     # --- 发送事件 ---
 
     def put(self, event: Event):
-        """将事件放入处理队列（线程安全）"""
-        with self._lock:
-            self._queue.append(event)
-        # 直接在投放线程触发处理（简单同步模式，延迟可忽略）
+        """投放事件并同步广播给所有监听器（线程安全）"""
         self._process(event)
 
     def emit(self, event_type: str, data: Any = None):

@@ -8,6 +8,7 @@ DuckDB + Parquet 数据持久化管理器
 """
 
 import threading
+import atexit
 import duckdb
 import pandas as pd
 import time
@@ -45,8 +46,9 @@ class DatabaseManager:
 
     def _init(self):
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        self._connections: dict = {}
-        self._conn_lock = threading.Lock()
+        # L27 修复: threading.local 管理线程私有连接, atexit 注册优雅回收
+        self._local = threading.local()
+        atexit.register(self._close_all)
         self._create_tables()
         # 清理残留的 .parquet.tmp 文件（上次写入中断产生的）
         try:
@@ -64,16 +66,13 @@ class DatabaseManager:
 
     @property
     def conn(self):
-        """线程私有连接，带有重试逻辑捕获残留锁"""
-        tid = threading.current_thread().ident
-        if tid not in self._connections:
+        """线程私有连接 (L27: threading.local 自动隔离, thread exit 时 GC 回收)"""
+        if not hasattr(self._local, 'conn') or self._local.conn is None:
             DB_PATH.parent.mkdir(parents=True, exist_ok=True)
             retries = 5
             while retries > 0:
                 try:
-                    conn = duckdb.connect(str(DB_PATH))
-                    with self._conn_lock:
-                        self._connections[tid] = conn
+                    self._local.conn = duckdb.connect(str(DB_PATH))
                     break
                 except Exception as e:
                     retries -= 1
@@ -82,7 +81,7 @@ class DatabaseManager:
                         raise e
                     log.warning(f"DuckDB | 数据库占用中，准备重试... ({5-retries}/5)")
                     time.sleep(0.5)
-        return self._connections[tid]
+        return self._local.conn
 
     def _create_tables(self):
         """初始化底层表结构 (全量恢复)"""
@@ -1231,15 +1230,21 @@ class DatabaseManager:
         self.conn.execute("DELETE FROM tqsdk_screen_history WHERE id = ?", [hist_id])
         self.conn.commit()
 
+    def _close_all(self):
+        """L27: atexit 注册的全局连接回收"""
+        if hasattr(self._local, 'conn') and self._local.conn is not None:
+            try:
+                self._local.conn.close()
+            except Exception as e:
+                log.warning(f"DuckDB | atexit 关闭连接失败: {e}")
+            self._local.conn = None
+
     def close_all(self):
-        """关闭所有线程的数据库连接"""
-        with self._conn_lock:
-            for tid, conn in self._connections.items():
-                try:
-                    conn.close()
-                except Exception as e:
-                    log.warning(f"关闭线程 {tid} 连接失败: {e}")
-            self._connections.clear()
+        """关闭所有线程的数据库连接（兼容旧调用方）"""
+        try:
+            self._close_all()
+        except Exception as e:
+            log.warning(f"DuckDB | close_all 异常: {e}")
 
     # ========== 热点板块 & 概念 ==========
 
@@ -1312,15 +1317,13 @@ class DatabaseManager:
 
     def close(self):
         """关闭当前线程的数据库连接（兼容旧调用方）"""
-        tid = threading.current_thread().ident
-        if tid in self._connections:
+        if hasattr(self._local, 'conn') and self._local.conn is not None:
             try:
-                self._connections[tid].close()
+                self._local.conn.close()
             except Exception as e:
                 log.warning(f"关闭当前线程连接失败: {e}")
             finally:
-                with self._conn_lock:
-                    self._connections.pop(tid, None)
+                self._local.conn = None
 
 
 # 全局单例
