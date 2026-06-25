@@ -20,6 +20,9 @@ from core.logger import get_logger
 from core.settings import settings
 from app.screener.engine import load_strategy
 
+# L25 修复: 统一成交执行层(涨停过滤/T+1/成本)
+from app.backtest.execution import can_buy, can_sell_today, calc_buy_cost, calc_sell_revenue
+
 log = get_logger("Backtest")
 
 
@@ -255,16 +258,17 @@ class BacktestEngine:
                 log.debug(f"过滤 [{code}] 信号日停牌，跳过")
                 continue
 
-            # ★ 实盘过滤②: 涨跌停检测（abs(涨跌幅) >= 9.9%）
+            # ★ 实盘过滤②: 涨跌停检测(L25: 改用 execution.can_buy 统一规则)
             pre_close = float(row.get("pre_close", 0) or 0)
             if pre_close <= 0:
                 # 从 bars 中找前一根日线收盘价
                 prev = bars[(bars["code"] == code) & (bars["date"] < signal_date)]
                 pre_close = float(prev["close"].iloc[-1]) if not prev.empty else 0
             if pre_close > 0:
-                pct = abs(entry_price - pre_close) / pre_close * 100
-                if pct >= 9.9:
-                    log.debug(f"朣戒 [{code}] 信号日涨跌停 ({pct:.1f}%)，跳过")
+                # L25: 统一通过 execution.can_buy 判断(支持主板/创业/科创/北证)
+                ok, reason = can_buy(code, prev_close=pre_close, today_high=entry_price)
+                if not ok:
+                    log.debug(f"跳过 [{code}] 信号日{reason}，跳过")
                     continue
 
             # 日线OHLC仿真
