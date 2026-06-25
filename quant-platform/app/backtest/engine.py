@@ -394,7 +394,10 @@ class BacktestEngine:
 
         cash = initial_capital
         open_positions = 0  # 当前持有的仓位数量
-        invested_capital = 0  # 持仓总成本（Kelly模式下各笔仓位不同）
+        # L27 修复: 用 position_value(市值) 替代 invested_capital(成本价)
+        # 买入时用 entry_price*shares(=position_size)作为初始市值;
+        # 卖出时 cash 已含 close*shares, 无需额外累加
+        position_value = 0   # 未平仓持仓的市值(买入=成本, 卖出前每天其实无法实时标记)
         funded_ids = set()   # 已成交交易的 code+buy_date，用于过滤卖单
         funded = []
         skipped = 0
@@ -403,7 +406,7 @@ class BacktestEngine:
 
         # 月度统计追踪
         peak_nav = initial_capital
-        month_nav = {}       # {YYYY-MM: end_of_month_nav (含持仓成本)}
+        month_nav = {}       # {YYYY-MM: end_of_month_nav}
         month_entries = {}   # {YYYY-MM: count}
         month_closes = {}    # {YYYY-MM: count}
         month_pnl_sum = {}   # {YYYY-MM: total_pnl_元}
@@ -424,8 +427,9 @@ class BacktestEngine:
                 funded_ids.discard(tid)
                 actual_pos = t.get("_position_size", position_size)
                 pnl_yuan = actual_pos * t["pnl_pct"] / 100
+                # L27: 卖出时 close*shares 进 cash(act_pos+pnl), 清掉该仓位的市值
+                position_value -= actual_pos
                 cash += actual_pos + pnl_yuan
-                invested_capital -= actual_pos
                 open_positions -= 1
 
                 # 月度统计
@@ -481,7 +485,8 @@ class BacktestEngine:
 
                 if cash >= actual_pos:
                     cash -= actual_pos
-                    invested_capital += actual_pos
+                    # L27: 买入时用车位成本作为初始市值(entry_price * shares = position_size)
+                    position_value += actual_pos
                     open_positions += 1
                     tid = (evt["trade"].get("code", ""), str(evt["trade"].get("buy_date", "")))
                     funded_ids.add(tid)
@@ -492,8 +497,8 @@ class BacktestEngine:
                 else:
                     skipped += 1
 
-            # 真实净值 = 现金 + 持仓成本（Kelly模式下各笔仓位不同）
-            nav = cash + invested_capital
+            # L27: 净值 = 现金 + 持仓市值(close*shares, 暂无实时价时用成本近似)
+            nav = cash + position_value
             m_peak = month_peak.get(month_key, nav)
             month_peak[month_key] = max(m_peak, nav)
             m_trough = month_trough.get(month_key, nav)

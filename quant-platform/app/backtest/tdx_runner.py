@@ -559,9 +559,16 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
             ))
             sell_reasons["FE"] += 1
 
-        # 补充净值终值
-        active_positions = [p for p in positions.values() if p.active]
-        pos_value = sum(p.shares * p.entry_price for p in active_positions)
+        # 补充净值终值 (L27: 用 close 而非 entry_price 计算持仓市值)
+        pos_value = 0
+        for p in [pp for pp in positions.values() if pp.active]:
+            if p.code in stocks_with_intraday:
+                code_bars = [b for b in bars_intra if b["code"] == p.code]
+                px = code_bars[-1]["close"] if code_bars else p.entry_price
+            else:
+                last_snap = prices_by_date.get(str(sorted_dates[-1]), {})
+                px = last_snap.get(p.code, {}).get("close", p.entry_price)
+            pos_value += p.shares * px
         equity_curve.append({
             "date": str(end), "equity": round(cash + pos_value, 2),
             "cash": round(cash, 2), "pos": len(active_positions),
