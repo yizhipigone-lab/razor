@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Callable, Optional
 import json
 from core.logger import get_logger
+from app.backtest.execution import can_buy, calc_buy_cost, calc_sell_revenue
 
 log = get_logger("SimpleBT")
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -83,11 +84,20 @@ class FastEngine:
 
     def buy(self, d, code, px):
         if code in self.positions: return None
+        # L28 修复: 统一成交执行层 - 涨停过滤
+        # simple_runner 没有 prev_close 历史,简化处理:prev_close = px (无涨停判断)
+        # 严格过滤由 strict_runner / engine 承担
+        prev_close = px
+        can_buy_ok, _ = can_buy(code, prev_close, px)
+        if not can_buy_ok:
+            return None
         ma = min(self.max_pos(), self.cash)
         if ma < self.min_buy: return None
         sh = int(ma / px / 100) * 100
         if sh < 100: return None
-        cost = sh * px
+        # L28 修复: 统一成交执行层 - 买入成本(佣金+滑点)
+        cost_result = calc_buy_cost(px, sh)
+        cost = cost_result['total']
         if cost > self.cash: return None
         p = Position(code, d, px, sh, cost, STRATEGY_NAME)
         self.cash -= cost
@@ -138,11 +148,15 @@ class FastEngine:
             ss = min(100, int(p.remaining))
         if ss <= 0: return None
         ss = min(ss, int(p.remaining))
+        # L28 修复: 统一成交执行层 - 卖出净收入(扣佣金+印花+滑点)
+        sell_rev = calc_sell_revenue(px, ss)
+        revenue = sell_rev['total']
+        cost_basis = ss * p.entry_price
+        profit = revenue - cost_basis
         ret = (px / p.entry_price - 1) * 100
-        profit = ss * (px - p.entry_price)
         p.remaining -= ss
         if p.remaining <= 0: p.active = False; p.remaining = 0
-        self.cash += ss * px
+        self.cash += revenue
         return Trade(p.code, p.entry_date, xd or date.today(),
                      p.entry_price, px, ss, ret, profit, reason, 0)
 
