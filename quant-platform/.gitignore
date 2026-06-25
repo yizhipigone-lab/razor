@@ -1,0 +1,43 @@
+# .gitignore
+# 用户硬约束: 不入库的临时/大文件/环境/数据
+
+# Python
+venv313/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# 日志和崩溃转储
+logs/
+*.log
+server.log
+server_stdout.log
+*.dmp
+
+# 数据和输出
+data/
+output/
+output/**
+!output/.gitkeep
+
+# 环境和敏感
+.env
+.env.local
+.env.*.local
+
+# 临时
+scratch/
+*.tmp
+*.parquet.tmp
+
+# 杂项
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
