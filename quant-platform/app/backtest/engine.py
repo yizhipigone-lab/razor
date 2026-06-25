@@ -530,21 +530,45 @@ class BacktestEngine:
         TP用High检测（先涨先触发），SL用Low检测（后跌后触发），TP优先，同bar止盈触发则跳过止损。
         apply_costs=True 时扣除滑点+佣金+印花税，还原实盘真实收益。
         """
-        def _p(key, default=None):
+        # L20 修复: 风控参数从 schema 加载(唯一真相源)。
+        # config.py → schema → engine 三层单向链;settings 不再是风控参数中间层。
+        # params_override 仅用于 AI 优化器临时覆盖,不影响真相源。
+        from app.config.schema import load_risk_params
+        _risk = load_risk_params()
+        # key -> schema 字段名 映射(单位:百分比, 需要 *100)
+        _SCHEMA_PCT_FIELDS = {
+            'hard_stop_loss_pct': 'hard_stop',
+            'breakeven_threshold_pct': 'breakeven_threshold',
+            'breakeven_stop_pnl_pct': 'breakeven_stop',
+            'trailing_activate_pct': 'trail_activate',
+            'trailing_drawdown_pct': 'trail_dd',
+            'first_day_exit_min_profit': 'first_day_exit_min_profit',
+        }
+        # key -> schema 字段名 映射(单位:整数天, 直接取)
+        _SCHEMA_INT_FIELDS = {
+            'time_exit_days': 'time_exit_days',
+            'time_exit_force_days': 'time_force_days',
+            'first_day_exit_days': 'first_day_exit_days',
+        }
+        def _p(key):
+            """params_override 优先;否则从 schema 读(唯一真相源);缺键报错(无假默认)"""
             if params_override and key in params_override:
                 return params_override[key]
-            return getattr(settings, key, default)
+            if key in _SCHEMA_PCT_FIELDS:
+                return getattr(_risk, _SCHEMA_PCT_FIELDS[key]) * 100
+            if key in _SCHEMA_INT_FIELDS:
+                return getattr(_risk, _SCHEMA_INT_FIELDS[key])
+            raise RuntimeError(f"engine.py 缺风控参数: {key},无假默认,需在 schema 或 params_override 配置")
 
-        hard_sl      = _p('hard_stop_loss_pct',      -7.0)
-        be_thresh    = _p('breakeven_threshold_pct',  5.0)
-        be_stop      = _p('breakeven_stop_pnl_pct',   0.0)
-        trail_act    = _p('trailing_activate_pct',   15.0)
-        trail_dd     = _p('trailing_drawdown_pct',    5.0)
-        max_hold     = _p('time_exit_days',          30)
-        force_hold   = _p('time_exit_force_days',    30)
-        hard_sl      = _p('hard_stop_loss_pct',      -7.0)
-        fd_min_profit = _p('first_day_exit_min_profit', 0.0)
-        fd_days = _p('first_day_exit_days', 1)
+        hard_sl      = _p('hard_stop_loss_pct')
+        be_thresh    = _p('breakeven_threshold_pct')
+        be_stop      = _p('breakeven_stop_pnl_pct')
+        trail_act    = _p('trailing_activate_pct')
+        trail_dd     = _p('trailing_drawdown_pct')
+        max_hold     = _p('time_exit_days')
+        force_hold   = _p('time_exit_force_days')
+        fd_min_profit = _p('first_day_exit_min_profit')
+        fd_days = _p('first_day_exit_days')
 
         # ATR 动态止损：用入场前14日ATR计算止损百分比
         vol_scale = 1.0  # 波动率缩放因子，默认不变
@@ -769,20 +793,42 @@ class BacktestEngine:
         if bars_daily.empty:
             return None
 
-        def _p(key, default=None):
+        # L20 修复: 同上,风控参数从 schema 读(唯一真相源)。
+        # 与 _simulate_trade_v2 保持完全一致的查表逻辑。
+        from app.config.schema import load_risk_params
+        _risk = load_risk_params()
+        _SCHEMA_PCT_FIELDS = {
+            'hard_stop_loss_pct': 'hard_stop',
+            'breakeven_threshold_pct': 'breakeven_threshold',
+            'breakeven_stop_pnl_pct': 'breakeven_stop',
+            'trailing_activate_pct': 'trail_activate',
+            'trailing_drawdown_pct': 'trail_dd',
+            'first_day_exit_min_profit': 'first_day_exit_min_profit',
+        }
+        _SCHEMA_INT_FIELDS = {
+            'time_exit_days': 'time_exit_days',
+            'time_exit_force_days': 'time_force_days',
+            'first_day_exit_days': 'first_day_exit_days',
+        }
+        def _p(key):
+            """params_override 优先;否则从 schema 读(唯一真相源);缺键报错(无假默认)"""
             if params_override and key in params_override:
                 return params_override[key]
-            return getattr(settings, key, default)
+            if key in _SCHEMA_PCT_FIELDS:
+                return getattr(_risk, _SCHEMA_PCT_FIELDS[key]) * 100
+            if key in _SCHEMA_INT_FIELDS:
+                return getattr(_risk, _SCHEMA_INT_FIELDS[key])
+            raise RuntimeError(f"engine.py 缺风控参数: {key},无假默认,需在 schema 或 params_override 配置")
 
-        hard_sl      = _p('hard_stop_loss_pct',      -7.0)
-        be_thresh    = _p('breakeven_threshold_pct',  5.0)
-        be_stop      = _p('breakeven_stop_pnl_pct',   0.0)
-        trail_act    = _p('trailing_activate_pct',   15.0)
-        trail_dd     = _p('trailing_drawdown_pct',    5.0)
-        max_hold     = _p('time_exit_days',          30)
-        force_hold   = _p('time_exit_force_days',    30)
-        fd_min_profit = _p('first_day_exit_min_profit', 0.0)
-        fd_days = _p('first_day_exit_days', 1)
+        hard_sl      = _p('hard_stop_loss_pct')
+        be_thresh    = _p('breakeven_threshold_pct')
+        be_stop      = _p('breakeven_stop_pnl_pct')
+        trail_act    = _p('trailing_activate_pct')
+        trail_dd     = _p('trailing_drawdown_pct')
+        max_hold     = _p('time_exit_days')
+        force_hold   = _p('time_exit_force_days')
+        fd_min_profit = _p('first_day_exit_min_profit')
+        fd_days = _p('first_day_exit_days')
 
         if params_override and 'tp1_profit' in params_override:
             active_tp_plan = [
