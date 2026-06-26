@@ -664,6 +664,8 @@ class AIBacktestOptimizer:
         start: date,
         end: date,
         log_cb: Callable,
+        train_end: date = None,
+        valid_end: date = None,
     ) -> List[dict]:
         import optuna
         optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -671,6 +673,10 @@ class AIBacktestOptimizer:
         log_cb(f"🤖 [Phase 5] 贝叶斯精化：{self.n_bayesian} 次 Optuna 探索...")
         results = []
         trial_count = [0]
+
+        has_split = train_end is not None and valid_end is not None and valid_end > train_end
+        if has_split:
+            log_cb(f"📅 样本分割: train(start~{train_end}) valid({train_end + timedelta(days=1)}~{valid_end}) test({valid_end + timedelta(days=1)}~{end})")
 
         def objective(trial):
             if _stop_flag:
@@ -702,6 +708,17 @@ class AIBacktestOptimizer:
 
             trades = self._run_trial(params, start, end)
             summary = _summarize_result(params, trades)
+
+            # J3/C3-3: 计算 valid_score(验证集 Calmar) 和 test_score
+            if has_split:
+                valid_trades = self._run_trial(params, train_end + timedelta(days=1), valid_end)
+                summary["valid_score"] = round(_calmar_score(valid_trades), 4)
+                test_trades = self._run_trial(params, valid_end + timedelta(days=1), end)
+                summary["test_score"] = round(_calmar_score(test_trades), 4)
+            else:
+                summary["valid_score"] = summary["score"]
+                summary["test_score"] = summary["score"]
+
             results.append(summary)
             _task_state["results"].append(summary)
 
@@ -919,8 +936,29 @@ class AIBacktestOptimizer:
             regime_summary = regime_detector.summarize_trades_by_regime(all_trades_so_far, regime_map)
             log_cb(f"📊 市场状态分析：{regime_summary}")
 
+            # J3/C3-3: train/valid/test 日期分离（按最近 70%/20%/10%）
+            train_end_d = end
+            valid_end_d = end
+            if self._cached_signals is not None and len(self._cached_signals) > 0:
+                all_dates = sorted(set(pd.to_datetime(self._cached_signals["date"]).dt.date))
+                n = len(all_dates)
+                if n >= 10:
+                    train_end_d = all_dates[int(n * 0.7) - 1]
+                    valid_end_d = all_dates[int(n * 0.9) - 1]
+                    log_cb(f"📅 样本分割: n={n} train(start~{train_end_d}) valid({train_end_d + timedelta(days=1)}~{valid_end_d}) test({valid_end_d + timedelta(days=1)}~{end})")
+
+            # 为探索结果补齐 valid_score / test_score
+            if train_end_d < end:
+                for r in exploration_results:
+                    if "valid_score" not in r:
+                        vt = self._run_trial(r["params"], train_end_d + timedelta(days=1), valid_end_d)
+                        r["valid_score"] = round(_calmar_score(vt), 4)
+                        tt = self._run_trial(r["params"], valid_end_d + timedelta(days=1), end)
+                        r["test_score"] = round(_calmar_score(tt), 4)
+
             # ─── Phase 4: 精化搜索空间 ───────────────
             _update_state(phase="refine_space")
+
             if self.use_llm:
                 log_cb("🤖 [Phase 4] LLM 分析探索结果，收窄搜索空间...")
                 refined_space = self.llm.analyze_exploration(
@@ -933,16 +971,22 @@ class AIBacktestOptimizer:
 
             # ─── Phase 5: Optuna 贝叶斯精化 ──────────────
             _update_state(phase="refining")
-            bayesian_results = self._run_bayesian(refined_space, start, end, log_cb)
+            bayesian_results = self._run_bayesian(refined_space, start, end, log_cb, train_end_d, valid_end_d)
             if _stop_flag:
                 _update_state(running=False, phase="stopped")
                 return
 
             # 合并排序，取 Top-10
+            # J3/C3-3: Top-10 排序使用 valid_score 替代全样本 score，防止 IS 过拟合
             all_results = exploration_results + bayesian_results
-            all_results = sorted(all_results, key=lambda x: x.get("score", -999), reverse=True)
+            all_results = sorted(
+                all_results,
+                key=lambda x: (x.get("valid_score", -999), x.get("wfe", 0) if isinstance(x.get("wfe"), (int, float)) else 0),
+                reverse=True,
+            )
             top10 = all_results[:10]
-            log_cb(f"🏆 Top-10 IS 平盈率: {top10[0]['avg_pnl']:+.2f}% (score={top10[0]['score']:.3f})")
+            log_cb(f"🏆 Top-10 IS 平盈率: {top10[0]['avg_pnl']:+.2f}% "
+                   f"(score={top10[0]['score']:.3f} valid_score={top10[0].get('valid_score', 'N/A')})")
 
             # ─── Phase 6: WFO 验证 ───────────────────────
             _update_state(phase="wfo")
