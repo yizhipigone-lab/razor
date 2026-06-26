@@ -164,6 +164,33 @@ class SimTraderEngine:
         # 盘中监控器（延迟初始化，避免循环导入）
         self._monitor = None
 
+        # K4/C3-4: 启动时校验模拟盘风控参数与 schema 一致
+        self._validate_params_against_schema()
+
+    def _validate_params_against_schema(self):
+        """校验 check_stops 使用的风控参数与 config.py schema 一致"""
+        try:
+            from app.config.schema import load_risk_params
+            _sch = load_risk_params()
+        except Exception as e:
+            log.warning(f"[校验] 无法加载风控 schema: {e}，跳过一致性检查")
+            return
+
+        # 从 config.py 读取（check_stops 的 fallback 源）
+        import app.sim_trader.config as _sc
+        config_hard_stop = getattr(_sc, 'HARD_STOP', None)
+        if config_hard_stop is not None and abs(config_hard_stop - _sch.hard_stop) > 0.01:
+            log.warning(f"[校验] hard_stop 不一致: schema={_sch.hard_stop} config={config_hard_stop}")
+
+        # 从 settings 读取（check_stops 的主源）
+        from core.settings import settings as _sett
+        settings_hs = _sett.get("risk", "hard_stop_loss_pct")
+        if settings_hs is not None and abs(settings_hs - _sch.hard_stop) > 0.01:
+            log.warning(f"[校验] hard_stop settings={settings_hs} vs schema={_sch.hard_stop} (app_setting.json={settings_hs})")
+
+        log.info(f"[校验] 风控参数: hard_stop={_sch.hard_stop}%, TP tiers={_sch.take_profit_tiers}, "
+                 f"trail_act={_sch.trail_activate}%, trail_dd={_sch.trail_dd}%")
+
     def refresh_trades_from_store(self):
         """从 store 重新加载 trades/positions/equity (L4 修复)
         用于回测/手动模式: store 仍持有完整数据, 入口 reporter 调此方法确保读到最新"""
