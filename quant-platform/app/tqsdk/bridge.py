@@ -39,6 +39,19 @@ def _ensure_worker_deployed():
         log.warning(f"[worker 部署] 失败: {e}")
 
 
+def _is_signal_value(value_str) -> bool:
+    """非零即视为信号 (兼容 1/100/0.5/任意非零)"""
+    if value_str is None:
+        return False
+    s = str(value_str).strip()
+    if s == "" or s == "0" or s == "0.0":
+        return False
+    try:
+        return float(s) != 0.0
+    except (ValueError, TypeError):
+        return False
+
+
 # 模块加载时自动部署一次（确保后续 _run_worker 用到的是新版本）
 _ensure_worker_deployed()
 
@@ -147,9 +160,11 @@ class TdxBridge:
         signal_codes = []
         for code, d in signals.items():
             dates = d.get("Date", [])
-            zps = d.get("ZP", d.get(OUTPUT_VAR, []))
+            # 探测变量名 (兼容 ZP/ZT/中文/任意)
+            var_name = next((k for k in d.keys() if k != "Date"), "ZP")
+            zps = d.get(var_name, [])
             for dt, v in zip(dates, zps):
-                if str(v) == "1":
+                if _is_signal_value(v):
                     if signal_start and str(dt) < signal_start:
                         continue  # 信号在回测区间之前，不拿5m数据
                     signal_codes.append(code)
