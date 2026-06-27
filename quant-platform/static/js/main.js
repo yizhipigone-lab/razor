@@ -907,6 +907,65 @@ async function saveSearchSpace() {
     msgEl.style.color = 'var(--red)';
   }
 }
+
+async function applyAiBestToRisk() {
+  // 第一步：获取 AI 状态，取 best_params
+  var bestParams = null;
+  try {
+    var stateResp = await fetch('/api/backtest/ai/status').then(function(r) { return r.json(); });
+    bestParams = stateResp.best_params;
+  } catch (e) {
+    alert('无法连接到服务器');
+    return;
+  }
+
+  if (!bestParams || Object.keys(bestParams).length === 0) {
+    alert('暂无 AI 优化结果。请先在 AI 回测 tab 运行一次优化。');
+    return;
+  }
+
+  // 第二步：四舍五入到 1 位小数
+  var rounded = {};
+  var lines = [];
+  for (var k in bestParams) {
+    if (!bestParams.hasOwnProperty(k)) continue;
+    var raw = bestParams[k];
+    if (typeof raw !== 'number') continue;
+    var applied = Math.round(raw * 10) / 10;  // round to 1 decimal
+    rounded[k] = applied;
+    lines.push(k + ': ' + raw + ' → ' + applied);
+  }
+
+  if (lines.length === 0) {
+    alert('AI 最优参数为空，无法应用');
+    return;
+  }
+
+  // 第三步：弹 confirm 确认
+  var confirmMsg = 'AI 最优参数（取整后）将写入止盈止损：\n\n' + lines.join('\n') + '\n\n是否确认？';
+  if (!confirm(confirmMsg)) return;
+
+  // 第四步：调用已有 apply 端点
+  try {
+    var applyResp = await fetch('/api/backtest/ai/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ params: rounded })
+    }).then(function(r) { return r.json(); });
+
+    if (applyResp.status === 'ok') {
+      // 第五步：刷新止盈止损卡片
+      if (typeof loadSettings === 'function') {
+        await loadSettings();
+      }
+      addLog('ok', 'AI 最优参数已应用到止盈止损 (' + (applyResp.applied || []).length + ' 项)');
+    } else {
+      alert('应用失败: ' + (applyResp.message || '未知错误'));
+    }
+  } catch (e) {
+    alert('应用失败: ' + e.message);
+  }
+}
 function saveGatewaySettings() { /* stub */ }
 function loadReportsPage() { /* stub */ }
 function loadReportsList() { /* stub */ }
