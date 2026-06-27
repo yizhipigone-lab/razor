@@ -735,7 +735,86 @@ async function saveRiskSettings() {
     if (msg) { msg.textContent = '✗ 网络错误'; msg.style.color = 'var(--red)'; }
   }
 }
-function renderSearchSpace(data) { /* stub - AI optimizer card */ }
+// ── 优化器搜索空间参数定义 (14 参数 × 5 分组) ──
+const SEARCH_SPACE_PARAMS = [
+  // ── 阶梯止盈 ──
+  { key: 'tp1_profit',             label: '止盈1 盈利%',   group: '阶梯止盈', isInt: false },
+  { key: 'tp2_profit',             label: '止盈2 盈利%',   group: '阶梯止盈', isInt: false },
+  { key: 'tp3_profit',             label: '止盈3 盈利%',   group: '阶梯止盈', isInt: false },
+  { key: 'tp1_ratio',              label: '止盈1 卖出%',   group: '阶梯止盈', isInt: false },
+  { key: 'tp2_ratio',              label: '止盈2 卖出%',   group: '阶梯止盈', isInt: false },
+  { key: 'tp3_ratio',              label: '止盈3 卖出%',   group: '阶梯止盈', isInt: false },
+  // ── 止损 ──
+  { key: 'hard_stop_loss_pct',     label: '硬止损%',       group: '止损',     isInt: false },
+  { key: 'breakeven_threshold_pct',label: '保本触发%',     group: '止损',     isInt: false },
+  { key: 'breakeven_stop_pnl_pct', label: '保本线%',       group: '止损',     isInt: false },
+  // ── 移动止盈 ──
+  { key: 'trailing_activate_pct',  label: '移动激活%',     group: '移动止盈', isInt: false },
+  { key: 'trailing_drawdown_pct',  label: '移动回撤%',     group: '移动止盈', isInt: false },
+  // ── 时间 ──
+  { key: 'time_exit_days',         label: '退出天数',      group: '时间',     isInt: true  },
+  { key: 'time_exit_force_days',   label: '强制退出天',    group: '时间',     isInt: true  },
+  // ── 首日弱势 ──
+  { key: 'first_day_exit_min_profit', label: '目标涨幅%',  group: '首日弱势', isInt: false },
+  { key: 'first_day_exit_days',    label: '有效天数',      group: '首日弱势', isInt: true  },
+];
+
+// 缺键降级源（app_setting.json 中缺失的参数从 FALLBACK 取默认值）
+const FALLBACK_SEARCH_SPACE = {
+  tp3_profit:               { min: 18.0, max: 30.0, step: 1.0 },
+  tp3_ratio:                { min: 0.2,  max: 0.4,  step: 0.05 },
+  time_exit_force_days:     { min: 3,    max: 12,   step: 1 },
+  first_day_exit_min_profit:{ min: 1.0,  max: 5.0,  step: 0.5 },
+  first_day_exit_days:      { min: 1,    max: 3,    step: 1 },
+};
+
+function renderSearchSpace(data) {
+  const list = document.getElementById('search-space-list');
+  if (!list) return;
+
+  const cfg = data || {};
+  let html = '';
+  let currentGroup = '';
+
+  for (const def of SEARCH_SPACE_PARAMS) {
+    // 缺键从 FALLBACK 取默认值
+    let v = cfg[def.key];
+    if (!v || typeof v.min === 'undefined') {
+      v = FALLBACK_SEARCH_SPACE[def.key] || { min: 0, max: 1, step: def.isInt ? 1 : 0.5 };
+    }
+
+    // 分组标题
+    if (def.group !== currentGroup) {
+      currentGroup = def.group;
+      html += '<div style="margin-top:6px;margin-bottom:2px;font-size:11px;font-weight:600;color:var(--text2);border-bottom:1px solid var(--border);padding-bottom:2px">── ' + currentGroup + '</div>';
+    }
+
+    var min = v.min;
+    var max = v.max;
+    var step = v.step || (def.isInt ? 1 : 0.5);
+    var inputStep = def.isInt ? 1 : 0.01;  // 输入框允许任意精度，展示 step 独立
+
+    html += '<div class="ss-row" style="display:flex;align-items:center;gap:6px;font-size:12px;padding:2px 0">'
+      + '<label style="min-width:105px;font-size:11px">' + def.label + '</label>'
+      + '<input type="number" class="ss-min" data-key="' + def.key + '" value="' + min + '" step="' + inputStep + '" style="width:62px;height:28px">'
+      + '<span style="color:var(--text2)">~</span>'
+      + '<input type="number" class="ss-max" data-key="' + def.key + '" value="' + max + '" step="' + inputStep + '" style="width:62px;height:28px">'
+      + '<span style="color:var(--text2);font-size:11px;margin-left:4px">步长</span>'
+      + '<input type="number" class="ss-step" data-key="' + def.key + '" value="' + step + '" step="' + (def.isInt ? 1 : 0.01) + '" style="width:52px;height:28px">'
+      + '</div>';
+  }
+
+  if (!html) {
+    html = '<div style="color:var(--text2);font-size:12px;padding:8px">暂无搜索空间配置，请先运行 AI 优化或手动配置</div>';
+  }
+
+  // 追加"应用 AI 最优参数"按钮
+  html += '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">'
+    + '<button class="btn btn-ghost btn-sm" onclick="applyAiBestToRisk()" style="color:var(--accent);width:100%">▶ 应用 AI 最优参数到止盈止损卡片</button>'
+    + '</div>';
+
+  list.innerHTML = html;
+}
 function saveDataSettings() {
   var times = [];
   document.querySelectorAll('.cron-check:checked').forEach(function(cb) { times.push(cb.value); });
