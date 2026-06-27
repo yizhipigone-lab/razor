@@ -11,6 +11,33 @@ from collections import defaultdict, Counter
 from pathlib import Path
 from typing import Callable, Optional
 
+
+def _pick_signal_var(d: dict) -> str:
+    """从 signals[code] dict 里探测实际用的变量名 (非 Date 的那个)
+
+    worker 探测后会把 hit_var 作为 dict 的 key, 例如 'ZP' / 'ZT' / '追跌反弹'。
+    这个 helper 找到它, 兜底返回 'ZP' 保持向后兼容。
+    """
+    if not d:
+        return "ZP"
+    for k in d.keys():
+        if k != "Date":
+            return k
+    return "ZP"
+
+
+def _is_signal_value(value_str) -> bool:
+    """非零即视为信号 (兼容 1/100/0.5/任意非零)"""
+    if value_str is None:
+        return False
+    s = str(value_str).strip()
+    if s == "" or s == "0" or s == "0.0":
+        return False
+    try:
+        return float(s) != 0.0
+    except (ValueError, TypeError):
+        return False
+
 from core.logger import get_logger
 from app.backtest.simple_runner import FastEngine, Position, Trade, load_index_data
 from app.backtest.execution import can_buy, can_sell_today
@@ -214,7 +241,9 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
         for code, d in raw_signals.items():
             code_num = code.split(".")[0] if "." in code else code
             dates_list = d.get("Date", [])
-            zps = d.get("ZP", [])
+            # 探测实际变量名 (兼容 ZP/ZT/中文/任意)
+            var_name = _pick_signal_var(d)
+            zps = d.get(var_name, [])
             if len(dates_list) != len(zps):
                 continue
             code_sigs = {}
@@ -226,7 +255,8 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
                     continue
                 if start <= dt_date <= end:
                     code_sigs[str(dt_date)] = zp
-                    if zp == "1":
+                    # 非零即信号 (兼容 1/100/0.5/任意)
+                    if _is_signal_value(zp):
                         has_any = True
             if has_any:
                 sig_by_code[code_num] = code_sigs
@@ -329,7 +359,7 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
 
         for code in sorted(sig_by_code.keys()):
             for dt_str, zp in sig_by_code[code].items():
-                if zp == "1":
+                if _is_signal_value(zp):
                     pending_buys[dt_str].append(code)
 
         # 收集所有交易日（5m bars 的日期 + prices 的日期）
@@ -639,7 +669,9 @@ def _run_daily_backtest(sig_result: dict, params: dict, start: date, end: date,
     for code, d in raw_signals.items():
         code_num = code.split(".")[0] if "." in code else code
         dates_list = d.get("Date", [])
-        zps = d.get("ZP", [])
+        # 探测实际变量名 (兼容 ZP/ZT/中文/任意)
+        var_name = _pick_signal_var(d)
+        zps = d.get(var_name, [])
         if len(dates_list) != len(zps):
             continue
         code_sigs = {}
@@ -651,7 +683,7 @@ def _run_daily_backtest(sig_result: dict, params: dict, start: date, end: date,
                 continue
             if start <= dt_date <= end:
                 code_sigs[str(dt_date)] = zp
-                if zp == "1":
+                if _is_signal_value(zp):
                     has_any = True
         if has_any:
             sig_by_code[code_num] = code_sigs
@@ -752,7 +784,7 @@ def _run_daily_backtest(sig_result: dict, params: dict, start: date, end: date,
 
         signals_today = sorted(
             code for code, sigs in sig_by_code.items()
-            if sigs.get(d_str) == "1"
+            if _is_signal_value(sigs.get(d_str))
         )
         total_buy_signals += len(signals_today)
         for code in signals_today:
