@@ -739,6 +739,13 @@ async def run_simple_backtest(body: dict):
 
     def _run():
         try:
+            _formula_name = params.get("strategy_name") or "QUANTQQ"
+            _start = params.get('start_date')
+            _end = params.get('end_date')
+            _period = params.get('intraday_freq', 'daily')
+            _init_cap = params.get('initial_capital', 1000000)
+            _pos_size = params.get('position_size', 50000)
+
             def _prog(step, total, msg):
                 sync_broadcast({
                     "type": "backtest_progress",
@@ -746,11 +753,18 @@ async def run_simple_backtest(body: dict):
                     "context": "simple_bt"
                 })
 
+            # 启动日志
+            sync_broadcast({"type": "log", "level": "info",
+                "msg": f"[回测开始] 公式:{_formula_name} | {_start} ~ {_end} | 精度:{_period} | "
+                       f"初始:{_init_cap:,.0f} 仓位:{_pos_size:,.0f}"})
+
             # 加载股票名称映射
             stock_names = {}
             try:
                 df_names = db.conn.execute("SELECT code, name FROM stocks").fetchdf()
                 stock_names = dict(zip(df_names['code'], df_names['name']))
+                sync_broadcast({"type": "log", "level": "info",
+                    "msg": f"[数据加载] 股票池 {len(stock_names):,} 只"})
             except Exception:
                 pass
 
@@ -799,6 +813,51 @@ async def run_simple_backtest(body: dict):
                 "daily_trades": result.get('daily_trades', {}),
                 "params": result.get('params', {}),
             })
+
+            # 额外的丰富完成日志（前端 simple_bt_done 已记基本日志，这里加更详细）
+            try:
+                s = result['summary']
+                trades = result.get('trades', [])
+                sync_broadcast({"type": "log", "level": "info",
+                    "msg": f"[数据源] {s.get('data_source', '?')} | 数据区间: {s.get('start_date', '')} ~ {s.get('end_date', '')}"})
+                # 月度盈亏
+                monthly = {}
+                for t in trades:
+                    key = str(t.get('exit_date', ''))[:7]
+                    if key:
+                        monthly[key] = monthly.get(key, 0) + float(t.get('profit', 0))
+                if monthly:
+                    monthly_lines = []
+                    for m in sorted(monthly.keys()):
+                        p = monthly[m]
+                        sign = "+" if p >= 0 else ""
+                        monthly_lines.append(f"{m}:{sign}{p:,.0f}")
+                    sync_broadcast({"type": "log", "level": "info",
+                        "msg": f"[月度盈亏] {' | '.join(monthly_lines)}"})
+                # Top 3 盈利
+                if trades:
+                    top = sorted(trades, key=lambda t: float(t.get('profit', 0)), reverse=True)[:3]
+                    top_lines = []
+                    for t in top:
+                        top_lines.append(f"{t.get('code', '')} +{float(t.get('profit', 0)):,.0f} (+{float(t.get('ret_pct', 0)):.1f}%) {t.get('reason', '')}")
+                    sync_broadcast({"type": "log", "level": "info",
+                        "msg": f"[Top 3 盈利] {' | '.join(top_lines)}"})
+                    # Worst 3
+                    worst = sorted(trades, key=lambda t: float(t.get('profit', 0)))[:3]
+                    worst_lines = []
+                    for t in worst:
+                        worst_lines.append(f"{t.get('code', '')} {float(t.get('profit', 0)):,.0f} ({float(t.get('ret_pct', 0)):.1f}%) {t.get('reason', '')}")
+                    sync_broadcast({"type": "log", "level": "info",
+                        "msg": f"[Worst 3] {' | '.join(worst_lines)}"})
+                # 资金轨迹
+                eq = result.get('equity', [])
+                if eq:
+                    max_eq = max(eq, key=lambda e: float(e.get('equity', 0)))
+                    min_eq = min(eq, key=lambda e: float(e.get('equity', 0)))
+                    sync_broadcast({"type": "log", "level": "info",
+                        "msg": f"[资金轨迹] 最高:{max_eq.get('date', '')} {float(max_eq.get('equity', 0)):,.0f} | 最低:{min_eq.get('date', '')} {float(min_eq.get('equity', 0)):,.0f}"})
+            except Exception as _e:
+                log.debug(f"完成详细日志失败: {_e}")
         except Exception as e:
             import traceback
             log.error(f"简化回测崩溃: {e}\n{traceback.format_exc()}")

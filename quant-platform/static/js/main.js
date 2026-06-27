@@ -2056,11 +2056,25 @@ function handleWS(msg) {
     renderSimpleBtResults(msg.summary, msg.equity, msg.trades, msg.indices);
     _simpleBtDailyTrades = msg.daily_trades || {};
     setTimeout(() => loadSimpleBtHistory(), 500);
-    addLog('ok', '回测完成: 收益' + msg.summary.total_return + '% DD' + msg.summary.max_drawdown + '% Calmar' + msg.summary.calmar.toFixed(2));
+    // 丰富的完成日志
+    const s = msg.summary;
+    const formulaName = (msg.params && msg.params.strategy_name) || '?';
+    addLog('ok', `[回测完成] 公式:${formulaName} | 收益${s.total_return >= 0 ? '+' : ''}${s.total_return}% DD${s.max_drawdown}% Calmar${s.calmar}`);
+    addLog('info', `[回测统计] 交易${s.trades}笔 胜率${s.win_rate}% 盈亏比${s.profit_factor} 夏普${s.sharpe} 均盈+${s.avg_win}% 均亏${s.avg_loss}%`);
+    addLog('info', `[回测区间] ${msg.params && msg.params.start_date} ~ ${msg.params && msg.params.end_date} (${s.trading_days}个交易日, 信号${s.signals})`);
+    if (s.exit_reasons) {
+      const reasons = Object.entries(s.exit_reasons).sort((a,b) => b[1]-a[1]).slice(0, 5).map(([k,v]) => `${k}:${v}`).join(', ');
+      addLog('info', `[退出原因] ${reasons}`);
+    }
     hideProgress('simple-bt');
   } else if (msg.type === 'backtest_progress' && msg.context === 'simple_bt') {
     showProgress('simple-bt', msg.msg);
     updateProgressFill('simple-bt', msg.step, msg.total);
+    // 同时输出到系统日志（带级别 + 阶段百分比）
+    if (msg.msg) {
+      const phase = (msg.total && msg.total > 0) ? `[${Math.round(msg.step/msg.total*100)}%]` : `[${msg.step}/${msg.total}]`;
+      addLog('info', '[回测] ' + phase + ' ' + msg.msg);
+    }
   } else if (msg.type === 'done') {
     addLog('ok', getMsg(msg));
     hideProgress('dl');
