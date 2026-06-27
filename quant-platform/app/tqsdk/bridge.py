@@ -3,8 +3,10 @@ TDX 公式选股桥接层
 通过 subprocess 调用 TDX PYPlugins 目录下的 worker 脚本执行公式选股
 """
 
+import hashlib
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -14,6 +16,31 @@ log = get_logger("TdxBridge")
 
 TDX_USER_DIR = Path(r"E:\NEW_TDX\PYPlugins\user")
 WORKER_SCRIPT = TDX_USER_DIR / "tqsdk_bridge_worker.py"
+
+# 仓库内 worker 源（唯一真源，进 git）
+WORKER_SOURCE = Path(__file__).parent / "worker" / "tqsdk_bridge_worker.py"
+
+
+def _ensure_worker_deployed():
+    """确保 TDX 目录的 worker 与仓库内源文件一致（hash 不一致直接覆盖）。"""
+    try:
+        if not WORKER_SOURCE.exists():
+            return  # 仓库内没有 worker，跳过
+        source_hash = hashlib.md5(WORKER_SOURCE.read_bytes()).hexdigest()
+        if WORKER_SCRIPT.exists():
+            target_hash = hashlib.md5(WORKER_SCRIPT.read_bytes()).hexdigest()
+            if source_hash == target_hash:
+                return  # 已一致，无需操作
+        # 部署
+        WORKER_SCRIPT.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(WORKER_SOURCE, WORKER_SCRIPT)
+        log.info(f"[worker 部署] 已更新 {WORKER_SCRIPT.name} 到 TDX 目录")
+    except Exception as e:
+        log.warning(f"[worker 部署] 失败: {e}")
+
+
+# 模块加载时自动部署一次（确保后续 _run_worker 用到的是新版本）
+_ensure_worker_deployed()
 
 def _get_formula_name(override: str = None) -> str:
     """获取公式名。优先级: override > settings > QUANTQQ"""
