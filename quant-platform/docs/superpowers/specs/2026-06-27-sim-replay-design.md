@@ -1,272 +1,182 @@
-# 模拟盘"历史回放"功能 Spec
+# 模拟盘 QUANTQQ 数据灌入 Spec
 
-> 日期:2026-06-27
-> 项目:quant-platform 交易控制 TAB
-> 范围:前端"历史回放"按钮 → API → TDX 5m 回测 → 结果注入 SimTraderStore
-
----
-
-## 0. 上下文
-
-### 现有能力
-
-| 组件 | 状态 | 说明 |
-|------|------|------|
-| `app/backtest/tdx_runner.run_tdx_backtest()` | ✅ 可用 | QUANTQQ + 5m/1m/daily 全市场回测 |
-| `scripts/run_quantqq_backtest.py` | ✅ 可用 | CLI 调用 run_tdx_backtest,输出 JSON/CSV |
-| `app/sim_trader/` | ✅ 可用 | 模拟盘引擎（实时逐日交易，尾盘 14:52→14:54） |
-| `app/sim_trader/main.py` | ✅ 可用 | CLI 历史回放（但用"盘整突破"+日线） |
-| `app/api/sim_trader.py` | ✅ 可用 | 前端 API（status/trades/equity/execute/reset/config） |
-| `app/sim_trader/store.py` | ✅ 可用 | DuckDB/JSON 双模式持久化 |
-| 前端"交易控制"TAB | ✅ 可用 | 净值图/持仓/交易记录/日历/盈亏分析/日志 |
-| 前端"历史回放"按钮 | ❌ 缺失 | **本次要加** |
-
-### 用户需求
-
-- 在"交易控制"TAB 中加一个按钮
-- 点击后从 2026.1.1 到今天的完整历史交易回放
-- 策略用 QUANTQQ（通达信公式），精度用 5 分钟线
-- 一键跑完，自动展示结果
-- 结果复用现有 UI（净值图/交易记录/持仓等）
+> 日期: 2026-06-27
+> 项目: quant-platform 交易控制 TAB
+> 范围: 一次性脚本 → SimTraderStore → 前端自动展示
 
 ---
 
-## 1. 方案：API 桥接
+## 0. 背景
 
-选中方案 A —— 新增 `/api/sim-trader/replay` API 端点，桥接 `run_tdx_backtest` 到 `SimTraderStore`。
+### 需求
 
-### 架构
+让"交易控制"TAB 展示 QUANTQQ + 5分钟线 + 2026.1.1~今天的完整模拟盘结果。这是一次性数据构建，不需要交互式回放。
+
+### 现状
+
+| 组件 | 能做什么 |
+|------|---------|
+| `app/backtest/tdx_runner.run_tdx_backtest()` | QUANTQQ + 5m 全市场回测，返回 trades/equity/summary |
+| `app/sim_trader/store.py` | DuckDB 持久化（sim_trades / sim_equity / sim_state 表） |
+| `app/sim_trader/engine.py` | 启动时从 store `load_trades()` + `load_equity_curve()` 恢复 |
+| `app/api/sim_trader.py` | GET trades/equity/status → 前端自动渲染 |
+| 前端"交易控制"TAB | 净值图/持仓/交易记录/日历/盈亏分析，全部从 API 读 |
+
+**差距**：缺少一条通路，把 `run_tdx_backtest` 的结果灌入 `SimTraderStore`。
+
+---
+
+## 1. 方案
+
+一个独立脚本，跑一次即可。
 
 ```
-前端"交易控制"TAB
-  ├─ [⏪ 历史回放] 按钮 (新增)
-  │   └─ POST /api/sim-trader/replay
-  │       → 后台线程 run_tdx_backtest()
-  │       → 结果写入 SimTraderStore
-  │       → WebSocket 进度推送
-  ├─ [进度条] (新增，完成后自动隐藏)
-  ├─ [净值图]  ← GET /api/sim-trader/equity (已有，不变)
-  ├─ [持仓表]  ← GET /api/sim-trader/status (已有，不变)
-  ├─ [交易记录] ← GET /api/sim-trader/trades (已有，不变)
-  └─ [日历/盈亏分析/日志] (已有，不变)
+scripts/populate_sim_quantqq.py
+  │
+  ├─ ① 调用 run_tdx_backtest(QUANTQQ, 5m, 2026.1.1~today)
+  │      → 复用 TDX 桥接、5m K线回放、统一止盈止损规则
+  │
+  ├─ ② 格式转换（simple_runner.Trade → sim_trader.Trade）
+  │
+  ├─ ③ 写入 SimTraderStore (DuckDB)
+  │      → 清空旧数据 → 逐笔写交易 → 逐日写净值 → 写终态
+  │
+  └─ ④ 打印摘要
 ```
 
-### 不修改的模块
+### 不改动的组件（零风险）
 
-- `app/backtest/tdx_runner.py` — 零改动，纯调用
-- `app/backtest/simple_runner.py` — 零改动
-- `app/backtest/execution.py` — 零改动
-- `app/backtest/exit_rules.py` — 零改动
-- `app/sim_trader/engine.py` — 零改动
-- `app/sim_trader/config.py` — 零改动（参数从它读）
-- `app/sim_trader/data_loader.py` — 零改动
-- `app/sim_trader/intraday_monitor.py` — 零改动
-- 前端 UI 布局/样式 — 零改动（只在按钮行加一个按钮 + 进度条）
+- `app/backtest/tdx_runner.py` — 纯调用
+- `app/sim_trader/engine.py` — 不碰
+- `app/sim_trader/store.py` — 不碰
+- `app/api/sim_trader.py` — 不碰
+- `static/index.html` — 不碰
+- `static/js/main.js` — 不碰
 
 ---
 
 ## 2. 详细设计
 
-### 2.1 后端：新增 API 端点
+### 2.1 文件
 
-**文件**: `app/api/sim_trader.py`
+**新建**: `scripts/populate_sim_quantqq.py`
 
-**新增端点**: `POST /api/sim-trader/replay`
+### 2.2 参数
 
 ```python
-@router.post("/api/sim-trader/replay")
-async def sim_trader_replay(body: dict):
-    """
-    启动历史回放任务（后台线程）
-    body: {
-        start_date: "2026-01-01",  // 可选，默认 2026-01-01
-        end_date: "2026-06-27",    // 可选，默认今天
-        strategy: "QUANTQQ",       // 可选，默认 "QUANTQQ"
-        period: "5m",              // 可选，默认 "5m"
-    }
-    返回: { status: "started", task_id: "..." }
-    """
+# 全部从 config.py 读取，不硬编码
+START_DATE = date(2026, 1, 1)
+END_DATE   = date.today()
+STRATEGY   = "QUANTQQ"
+PERIOD     = "5m"
 ```
 
-**状态管理**：
-- 新增模块级变量 `_replay_state = {"running": False, "progress": 0, "stage": "", "task_id": ""}`
-- 如果已有回放任务在跑，返回 `{ status: "busy" }`
-- 后台线程 daemon=True，不阻塞 API
+### 2.3 流程
 
-**后台线程流程**：
-1. 设置 `_replay_state = {"running": True, "progress": 0}`
-2. 通过 `sync_broadcast` 推送 `replay_start`
-3. 从 `app.sim_trader.config` 读取所有风控参数（与现有 `run_quantqq_backtest.py` 完全一致的方式）
-4. 调用 `run_tdx_backtest(params, progress_cb=replay_progress_cb, stop_event=None)`
-5. 得 `result = { status, summary, trades, equity, indices }`
-6. 写入 `SimTraderStore`：
-   - `store.clear_all()` 清空旧数据
-   - 逐笔 `store.save_trade()`（格式转换见 2.2 节）
-   - 逐日 `store.save_equity_point()`
-   - `store.save_state()` 写终态
-7. 替换 `_engine`: 创建新的 SimTraderEngine 从 store 恢复
-8. 推送 `replay_complete`（含 summary）
-9. 设置 `_replay_state = {"running": False}`
+```
+① 读 config
+     from app.sim_trader.config import INITIAL_CAPITAL, POSITION_SIZE, ...
 
-**进度回调** (`replay_progress_cb`):
+② 调 run_tdx_backtest
+     params = {
+         strategy_name: "QUANTQQ",
+         strategy_type: "tdx",
+         intraday_freq: "5m",
+         start_date: date(2026, 1, 1),
+         end_date: date.today(),
+         ...  # 风控/仓位参数全从 config 读
+     }
+     result = run_tdx_backtest(params)
+
+③ 格式转换 (simple_runner.Trade → sim_trader.Trade)
+     for t in result["trades"]:
+         trade = Trade(
+             code=t.code,
+             entry_date=t.entry_date,
+             exit_date=t.exit_date,
+             entry_price=t.entry_px,    # ← 字段名映射
+             exit_price=t.exit_px,
+             shares=t.shares,
+             return_pct=t.ret,
+             profit_amount=t.profit,
+             exit_reason=t.reason,
+             hold_days=t.hold,
+             entry_reason=STRATEGY,      # ← 脚本补充
+             exit_timing="close",
+             entry_time=getattr(t, 'entry_time', '09:30'),
+             exit_time=getattr(t, 'exit_time', '15:00'),
+         )
+
+④ 写入 SimTraderStore
+     store = SimTraderStore()
+     store.clear_all()
+     for trade in converted_trades:
+         store.save_trade(trade)
+     for point in result["equity"]:
+         store.save_equity_point(
+             date.fromisoformat(point["date"]),
+             point["equity"], point["cash"], point["pos"],
+         )
+     store.save_state(
+         cash=cash_end,
+         consecutive_losses=0,
+         pause_until=None,
+         trade_count=len(converted_trades),
+     )
+
+⑤ 打印摘要
+     print(f"写入完成：{len(converted_trades)} 笔交易, "
+           f"{len(result['equity'])} 个交易日")
+     print(f"收益率: {summary['total_return']:+.2f}%  "
+           f"胜率: {summary['win_rate']:.1f}%  "
+           f"最大回撤: {summary['max_drawdown']:.2f}%")
+```
+
+### 2.4 字段映射
+
+| 源 (simple_runner.Trade) | 目标 (sim_trader.Trade) | 说明 |
+|--------------------------|------------------------|------|
+| `t.code` | `t.code` | 直通 |
+| `t.entry_date` | `t.entry_date` | 直通 |
+| `t.exit_date` | `t.exit_date` | 直通 |
+| `t.entry_px` | `t.entry_price` | 字段名映射 |
+| `t.exit_px` | `t.exit_price` | 字段名映射 |
+| `t.shares` | `t.shares` | 直通 |
+| `t.ret` | `t.return_pct` | 字段名映射 |
+| `t.profit` | `t.profit_amount` | 字段名映射 |
+| `t.reason` | `t.exit_reason` | 字段名映射 |
+| `t.hold` | `t.hold_days` | 字段名映射 |
+| — | `"QUANTQQ"` | 脚本补充 |
+| — | `"close"` | 默认 |
+| `t.entry_time` | `t.entry_time` | 直通 |
+| `t.exit_time` | `t.exit_time` | 直通 |
+
+### 2.5 SimTraderStore 需要补充的方法
+
+`store.py` 缺少 `clear_all()`。当前只有各表独立的 `DELETE FROM` 写在注释里但没封装。新增一个方法：
+
 ```python
-def replay_progress_cb(stage, total, msg):
-    _replay_state["progress"] = int(stage / total * 100)
-    _replay_state["stage"] = msg
-    sync_broadcast({
-        "type": "replay_progress",
-        "percent": _replay_state["progress"],
-        "stage": msg,
-        "task_id": _replay_state["task_id"],
-    })
+def clear_all(self):
+    """清空所有模拟盘数据（交易/净值/持仓/状态）"""
+    for table in ('sim_positions', 'sim_trades', 'sim_equity', 'sim_state'):
+        self.conn.execute(f"DELETE FROM {table}")
+    try:
+        self.conn.execute("DROP SEQUENCE IF EXISTS sim_trade_id")
+    except Exception:
+        pass
+    self._ensure_tables()  # 重建序列
 ```
 
-**新增端点**: `GET /api/sim-trader/replay-status`
-```python
-@router.get("/api/sim-trader/replay-status")
-async def sim_trader_replay_status():
-    return {"status": "ok", "replay": _replay_state}
+这个方法加在 `SimTraderStore` 类末尾，不改变现有接口签名。
+
+### 2.6 使用方式
+
+```bash
+# 确保通达信已启动并登录 → 然后：
+python scripts/populate_sim_quantqq.py
 ```
 
-### 2.2 数据格式转换
-
-`run_tdx_backtest` 返回的 `Trade` 格式（simple_runner.Trade, `__slots__`）→ `SimTraderEngine.Trade`（dataclass）：
-
-| 字段 | tdx_runner 来源 | sim_trader 目标 |
-|------|----------------|-----------------|
-| code | `t.code` | `t.code` |
-| entry_date | `t.entry_date` | `t.entry_date` |
-| exit_date | `t.exit_date` | `t.exit_date` |
-| entry_price | `t.entry_px` | `t.entry_price` |
-| exit_price | `t.exit_px` | `t.exit_price` |
-| shares | `t.shares` | `t.shares` |
-| return_pct | `t.ret` | `t.return_pct` |
-| profit_amount | `t.profit` | `t.profit_amount` |
-| exit_reason | `t.reason` | `t.exit_reason` |
-| hold_days | `t.hold` | `t.hold_days` |
-| entry_reason | — | `"QUANTQQ"` |
-| exit_timing | — | `"close"` (默认) |
-| entry_time | `t.entry_time` | `t.entry_time` |
-| exit_time | `t.exit_time` | `t.exit_time` |
-
-**净值数据**（tdx_runner 已生成 `equity[]` 含 date/equity/cash/pos，可直接写入 `sim_equity` 表）。
-
-### 2.3 前端：HTML
-
-**文件**: `static/index.html`
-
-在"当前持仓"卡片的按钮行（line 1314-1317）新增一个按钮：
-
-```html
-<button class="btn btn-accent btn-sm" id="btn-sim-replay"
-        onclick="startReplay()">⏪ 历史回放</button>
-```
-
-在"当前持仓"卡片上方新增进度条（默认隐藏）：
-
-```html
-<div id="replay-progress" style="display:none; margin-bottom:12px;
-    padding:10px 14px; background:var(--card-bg);
-    border-radius:8px; border:1px solid var(--border)">
-  <div style="display:flex; justify-content:space-between; margin-bottom:4px">
-    <span style="font-size:13px; font-weight:bold">⏳ 历史回放进行中...</span>
-    <span id="replay-pct" style="font-size:12px; color:var(--text2)">0%</span>
-  </div>
-  <div style="background:var(--border); border-radius:4px; height:8px; overflow:hidden">
-    <div id="replay-bar" style="background:var(--accent); height:100%;
-        width:0%; transition:width 0.3s"></div>
-  </div>
-  <div id="replay-stage" style="font-size:11px; color:var(--text2); margin-top:4px">准备中...</div>
-</div>
-```
-
-### 2.4 前端：JS
-
-**文件**: `static/js/main.js`
-
-**新增函数**:
-
-```javascript
-// ── 历史回放 ──────────────────────────────────────
-function startReplay() {
-  if (typeof ws !== 'undefined' && ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: 'start_replay', payload: {
-      start_date: '2026-01-01',
-      end_date: '2026-06-27',
-      strategy: 'QUANTQQ',
-      period: '5m',
-    }}));
-  } else {
-    // WebSocket 未连接则直接 POST
-    fetch('/api/sim-trader/replay', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        start_date: '2026-01-01',
-        end_date: '2026-06-27',
-        strategy: 'QUANTQQ',
-        period: '5m',
-      })
-    }).then(r => r.json()).then(d => {
-      if (d.status === 'started') {
-        showReplayProgress();
-      }
-    });
-  }
-  // 禁用按钮防止重复点击
-  document.getElementById('btn-sim-replay').disabled = true;
-  showReplayProgress();
-}
-
-function showReplayProgress() {
-  document.getElementById('replay-progress').style.display = 'block';
-}
-
-function hideReplayProgress() {
-  document.getElementById('replay-progress').style.display = 'none';
-  document.getElementById('btn-sim-replay').disabled = false;
-}
-```
-
-**修改 WebSocket 消息处理器**（在现有 `onmessage` 回调中增加）：
-
-```javascript
-// 回放进度
-if (msg.type === 'replay_progress') {
-  document.getElementById('replay-bar').style.width = msg.percent + '%';
-  document.getElementById('replay-pct').textContent = msg.percent + '%';
-  document.getElementById('replay-stage').textContent = msg.stage;
-}
-// 回放完成
-if (msg.type === 'replay_complete') {
-  hideReplayProgress();
-  // 刷新所有 UI 组件
-  loadSimTraderStatus();
-  renderSimEquityChart();
-  loadSimTrades();
-  renderSimCalendar();
-  renderSimStockAnalysis();
-  showToast('回放完成: ' + msg.summary.total_return + '% 收益, '
-    + msg.summary.trades + ' 笔交易');
-}
-```
-
-### 2.5 WebSocket 消息协议
-
-新增消息类型：
-
-| type | 方向 | payload | 说明 |
-|------|------|---------|------|
-| `replay_start` | S→C | `{task_id}` | 回放开始 |
-| `replay_progress` | S→C | `{percent, stage, task_id}` | 进度更新 |
-| `replay_complete` | S→C | `{task_id, summary}` | 回放完成，summary 与 run_tdx_backtest 返回一致 |
-| `start_replay` | C→S | `{start_date, end_date, strategy, period}` | 前端触发回放（WebSocket 通道） |
-
-### 2.6 后端 WebSocket 处理
-
-**文件**: 检查 `server/websocket/manager.py`，在其 `on_message` 中新增对 `start_replay` 的处理，转发到 `sim_trader_replay` 逻辑。
-
-如果 WebSocket 框架不支持客户端发自定义消息，降级方案：前端先走 HTTP POST `/api/sim-trader/replay`，WebSocket 只用于服务端→客户端推送（progress/complete）。
+依赖：通达信客户端（TDX bridge 需要）
 
 ---
 
@@ -274,54 +184,72 @@ if (msg.type === 'replay_complete') {
 
 | 场景 | 处理 |
 |------|------|
-| TDX 连接失败（bridge 不可用） | `run_tdx_backtest` 返回 `{status:"error", message:"..."}`, API 返回 500 + 错误信息前端展示 |
-| 5m 数据不可用 | tdx_runner 内部自动降级 1m→5m→daily，最终报错才终止 |
-| 已有回放任务在跑 | 返回 `{status:"busy"}`，前端提示"请等待当前回放完成" |
-| 区间内无信号 | `run_tdx_backtest` 返回空结果，store 写入 0 条交易，前端正常展示 |
-| 回放线程崩溃 | `except Exception` 捕获，推送 `replay_error` + 错误信息，重置 `_replay_state` |
-| DuckDB 写入失败 | 尝试回退 `JsonSimStore`，均失败则推送错误 |
+| TDX bridge 不可用 | `run_tdx_backtest` 返回 `status: "error"`，脚本 exit 1 + 打印错误信息 |
+| 5m 数据不可用 | tdx_runner 内部自动降级（1m→5m→daily） |
+| 区间内无信号 | 写入 0 条交易，前端显示空 |
+| DuckDB 写入失败 | try/except 打印错误，不写残缺数据 |
 
 ---
 
-## 4. 文件改动清单
+## 4. 改动清单
 
-| 文件 | 改动类型 | 说明 |
-|------|---------|------|
-| `app/api/sim_trader.py` | 修改 | 新增 `replay` + `replay-status` 端点，约 80 行 |
-| `static/index.html` | 修改 | 新增回放按钮 + 进度条 HTML，约 20 行 |
-| `static/js/main.js` | 修改 | 新增 `startReplay` + WS 消息处理，约 40 行 |
-| `app/sim_trader/store.py` | 可选修改 | 如果 `clear_all` 需要更细粒度（先不动） |
+| 文件 | 改动 |
+|------|------|
+| `scripts/populate_sim_quantqq.py` | **新建**，约 80 行 |
+| `app/sim_trader/store.py` | 新增 `clear_all()` 方法，约 10 行 |
 
-**不改动的文件（零风险）**：
+**不改动的文件**：
 - `app/backtest/tdx_runner.py`
 - `app/sim_trader/engine.py`
 - `app/sim_trader/config.py`
-- 前端所有现有 UI 结构
+- `app/api/sim_trader.py`
+- 所有前端文件
 
 ---
 
-## 5. 测试验证
+## 5. 验证
 
-### 手动验证步骤
-
-1. **正常回放**: 打开"交易控制"TAB → 点击"⏪ 历史回放" → 观察进度条变化 → 完成后净值图/交易表自动刷新
-2. **重复点击**: 回放中再次点击 → 应提示"请等待当前回放完成"
-3. **数据一致性**: 回放完成后，交易记录数与 `scripts/run_quantqq_backtest.py` CLI 跑的一致
-4. **刷新恢复**: 回放完成后刷新页面 → 净值图/交易记录仍然存在（已持久化到 DuckDB）
-5. **不影响实时**: 回放运行期间，其他 TAB（选股/行情等）正常工作
-
-### 自动化测试（后续补）
-
-- `tests/test_api_sim_trader.py::test_replay_start` — 验证 API 返回 status=started
-- `tests/test_api_sim_trader.py::test_replay_busy` — 验证重复调用的 busy 状态
-
----
-
-## 6. 风险与边界
-
-| 风险 | 缓解 |
+| 步骤 | 预期 |
 |------|------|
-| TDX 桥接依赖本地通达信客户端 | bridge 不可用时报错提示"请启动通达信" |
-| 5m 全市场回测耗时长（3-10 分钟） | 进度条实时更新，用户可见 |
-| 回放结果覆盖当前模拟盘实时持仓 | 这是预期行为（一键跑完看结果），未来可加"保存/恢复快照" |
-| WebSocket 断连 | 进度丢失但后台继续跑，重连后调 status API 查看 |
+| 运行脚本 | 终端打印进度 + 最终摘要 |
+| 打开前端"交易控制"TAB | 净值图显示 2026.1~6 曲线 |
+| 查看交易记录 | 列出所有 QUANTQQ 买卖 |
+| 刷新页面 | 数据持久化，仍在 |
+| 与 CLI 对比 | `scripts/run_quantqq_backtest.py` 结果一致 |
+
+---
+
+## 6. 架构图
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                scripts/populate_sim_quantqq.py           │
+│                      （唯一新增文件）                      │
+│                                                         │
+│  run_tdx_backtest()  ────→  格式转换  ────→  Store      │
+│  (不修改，纯调用)           (字段名映射)       (新增       │
+│                                              clear_all) │
+└─────────────────────────────────────────────────────────┘
+        │                                              │
+        ▼                                              ▼
+┌──────────────┐                          ┌──────────────────────┐
+│ tdx_runner   │                          │   SimTraderStore     │
+│ (零改动)      │                          │   (DuckDB)           │
+│              │                          │                      │
+│ TdxBridge    │                          │ sim_trades  ← 交易   │
+│ FastEngine   │                          │ sim_equity  ← 净值   │
+│ exit_rules   │                          │ sim_state   ← 终态   │
+└──────────────┘                          └──────────┬───────────┘
+                                                     │
+                                                     ▼
+                                          ┌──────────────────────┐
+                                          │ SimTraderEngine      │
+                                          │ (启动时 load 恢复)    │
+                                          └──────────┬───────────┘
+                                                     │
+                                                     ▼
+                                          ┌──────────────────────┐
+                                          │ 前端"交易控制"TAB     │
+                                          │ (零改动，自动展示)     │
+                                          └──────────────────────┘
+```
