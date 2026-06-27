@@ -12,8 +12,18 @@ QUANTQQ 公式 TDX 回测（独立脚本）
 import sys
 import json
 import csv
+import os
+import time
 from pathlib import Path
 from datetime import date, timedelta
+
+# 强制 UTF-8 stdout (Windows GBK 兼容)
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -21,10 +31,10 @@ sys.path.insert(0, str(ROOT))
 from app.backtest.tdx_runner import run_tdx_backtest
 
 # ── 参数 ──────────────────────────────────────────────
-START_DATE = "2022-01-01"
-END_DATE   = date.today().isoformat()  # 2026-06-27
-STRATEGY   = "QUANTQQ"
-PERIOD     = "daily"  # 日线
+START_DATE = os.environ.get("BT_START", "2022-01-01")
+END_DATE   = os.environ.get("BT_END", date.today().isoformat())  # 2026-06-27
+STRATEGY   = os.environ.get("BT_STRATEGY", "QUANTQQ")
+PERIOD     = os.environ.get("BT_PERIOD", "daily")  # 日线
 
 OUT_DIR = ROOT / "output" / "quantqq_backtest"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -79,9 +89,12 @@ def main():
     print()
 
     def _progress(stage, total, msg):
-        print(f"  [{stage}/{total}] {msg}")
+        print(f"  [{stage}/{total}] {msg}", flush=True)
 
+    t0 = time.time()
     result = run_tdx_backtest(params, progress_cb=_progress)
+    t1 = time.time()
+    print(f"\n  TDX回测耗时: {t1-t0:.1f}秒", flush=True)
 
     if result.get("status") != "ok":
         print(f"\n回测失败: {result.get('message', result)}")
@@ -176,14 +189,14 @@ def main():
 
     all_ok = True
     for name, ok, note in checks:
-        mark = "✓" if ok else "✗"
-        print(f"  {mark} {name}  {note}")
+        mark = "OK" if ok else "X"
+        print(f"  [{mark}] {name}  {note}")
         if not ok:
             all_ok = False
     if all_ok:
-        print("  自检通过 ✓")
+        print("  自检通过 OK")
     else:
-        print("  ⚠ 自检发现问题，但不影响数据有效性")
+        print("  [WARN] 自检发现问题，但不影响数据有效性")
 
     return s
 
