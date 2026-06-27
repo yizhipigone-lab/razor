@@ -770,15 +770,25 @@ async def run_simple_backtest(body: dict):
 
             if strategy_type == "tdx":
                 from app.backtest.tdx_runner import run_tdx_backtest
+                sync_broadcast({"type": "log", "level": "info",
+                    "msg": f"[引擎选择] TDX 公式回测 (公式:{_formula_name})"})
                 result = run_tdx_backtest(params, progress_cb=_prog,
                                           stop_event=stop_evt, stock_names=stock_names)
             else:
+                sync_broadcast({"type": "log", "level": "info",
+                    "msg": f"[引擎选择] Python 策略回测 (策略:{_formula_name})"})
                 result = run_backtest(params, progress_cb=_prog, stop_event=stop_evt,
                                       stock_names=stock_names)
 
             if result.get('status') == 'stopped':
                 sync_broadcast({"type": "log", "level": "warn", "msg": "回测已停止"})
                 return
+
+            # 检查 TDX 信号为 0 的情况
+            trades_count = len(result.get('trades', []))
+            if strategy_type == "tdx" and trades_count == 0:
+                sync_broadcast({"type": "log", "level": "warn",
+                    "msg": f"[无信号] 公式 '{_formula_name}' 在 {_start} ~ {_end} 区间内无任何信号/交易。请检查公式是否存在或区间是否合理"})
 
             # 持久化结果
             result_id = None

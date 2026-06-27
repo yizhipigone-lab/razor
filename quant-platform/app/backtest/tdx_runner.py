@@ -957,9 +957,14 @@ def _empty_result(params, signal_count, message=""):
             "profit_factor": 0, "sharpe": 0, "calmar": 0, "sortino": 0,
             "ann_return": 0, "positive_months": "0/0",
             "trading_days": 0, "total_calendar_days": 0,
+            "start_date": str(params.get("start_date", "")),
+            "end_date": str(params.get("end_date", "")),
+            "data_source": "empty",
         },
         "equity": [],
         "trades": [],
         "indices": {},
+        "daily_trades": {},
         "message": message,
+        "params": params,  # 新增：前端需要 formula_name 和日期
     }
