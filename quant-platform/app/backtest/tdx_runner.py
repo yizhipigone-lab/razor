@@ -560,8 +560,9 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
             sell_reasons["FE"] += 1
 
         # 补充净值终值 (L27: 用 close 而非 entry_price 计算持仓市值)
+        active_positions = [pp for pp in positions.values() if pp.active]
         pos_value = 0
-        for p in [pp for pp in positions.values() if pp.active]:
+        for p in active_positions:
             if p.code in stocks_with_intraday:
                 code_bars = [b for b in bars_intra if b["code"] == p.code]
                 px = code_bars[-1]["close"] if code_bars else p.entry_price
