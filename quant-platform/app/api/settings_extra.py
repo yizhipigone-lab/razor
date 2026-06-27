@@ -22,4 +22,6 @@ async def set_tqsdk_formula(body: dict):
         settings._data["tqsdk"] = {}
     settings._data["tqsdk"]["formula_name"] = formula_name
     settings.save()
+    # 重要：刷新单例内存，否则后续调用 _get_formula_name() 仍读旧值
+    settings.reload()
     return {"status": "ok", "formula_name": formula_name}

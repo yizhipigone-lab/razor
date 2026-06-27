@@ -65,6 +65,8 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
     # 动态仓位：position_size 转为净值的固定比例（默认20%）
     params["position_ratio"] = params.get("position_size", POSITION_SIZE) / params["initial_capital"]
 
+    # 关键修复：从 params 读 formula_name 作为 override 传给 bridge
+    _formula_name = params.get("strategy_name") or None
     bridge = TdxBridge()
     if stop_event and stop_event.is_set():
         return {"status": "stopped"}
@@ -74,9 +76,10 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
     # 选什么精度就严格按照什么精度：daily 直接走日线路径
     if period == "daily":
         if progress_cb:
-            progress_cb(0, 5, "使用日线回测...")
+            progress_cb(0, 5, f"使用日线回测 (公式: {_formula_name or 'settings'})...")
         sig_result = bridge.execute_screen_range(
-            end_time=end_time, kline_count=kline_count, start_time=formula_start)
+            end_time=end_time, kline_count=kline_count,
+            start_time=formula_start, formula_name=_formula_name)
         if sig_result.get("status") != "ok":
             return {"status": "error", "message": sig_result.get("message", "TDX 信号获取失败")}
         return _run_daily_backtest(
@@ -90,13 +93,14 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
 
     try:
         if progress_cb:
-            progress_cb(0, 5, f"尝试获取{period}线数据...")
+            progress_cb(0, 5, f"尝试获取{period}线数据 (公式: {_formula_name or 'settings'})...")
         sig_result = bridge.execute_screen_range_intraday(
             end_time=end_time,
             kline_count=kline_count,
             start_time=formula_start,
             signal_start=start_time_str,
             period=period,
+            formula_name=_formula_name,
         )
         if sig_result.get("status") == "ok":
             bars_intra = sig_result.get("bars_intraday", sig_result.get("bars_intra", []))
@@ -117,7 +121,8 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
         try:
             sig_result = bridge.execute_screen_range_intraday(
                 end_time=end_time, kline_count=kline_count,
-                start_time=formula_start, signal_start=start_time_str, period="5m")
+                start_time=formula_start, signal_start=start_time_str,
+                period="5m", formula_name=_formula_name)
             if sig_result.get("status") == "ok":
                 bars_5m = sig_result.get("bars_intraday", sig_result.get("bars_5m", []))
                 valid_bars = [b for b in (bars_5m or []) if b.get("close", 0) > 0]
@@ -139,6 +144,7 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
             end_time=end_time,
             kline_count=kline_count,
             start_time=formula_start,
+            formula_name=_formula_name,
         )
         if sig_result.get("status") != "ok":
             return {"status": "error", "message": sig_result.get("message", "TDX 信号获取失败")}
@@ -148,7 +154,7 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
         )
 
     if progress_cb:
-        progress_cb(0, 5, f"{period}逐K线回放 ({len(stocks_with_intraday)}只)...")
+        progress_cb(0, 5, f"{period}逐K线回放 ({len(stocks_with_intraday)}只, 公式: {_formula_name or 'settings'})...")
 
     return _run_intraday_backtest(
         sig_result, params, start, end, progress_cb,
