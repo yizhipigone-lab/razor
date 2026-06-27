@@ -185,13 +185,27 @@ async function loadSimRiskParams() {
 
 function switchSimStrategy(val) { /* deprecated - use edit/save */ }
 
-async function loadSimTrades() {
+async function loadSimTrades(page) {
+  if (typeof page !== 'number' || page < 1) page = 1;
+  if (page > _simTradePages && _simTradePages > 0) page = _simTradePages;
+  _simTradePage = page;
   try {
-    const r = await fetch('/api/sim-trader/trades').then(r => r.json());
+    const r = await fetch('/api/sim-trader/trades?page=' + page + '&limit=' + _simTradeLimit).then(function(res){return res.json();});
+    _simTradePages = r.pages || 1;
+    if (page > _simTradePages) page = _simTradePages;
+    _simTradePage = page;
+    // 同步顶部/底部翻页显示
+    document.getElementById('sim-trade-page-num').textContent = page;
+    document.getElementById('sim-trade-page-total').textContent = _simTradePages;
+    var el2 = document.getElementById('sim-trade-page-num-2');
+    if (el2) el2.textContent = page;
+    var el2t = document.getElementById('sim-trade-page-total-2');
+    if (el2t) el2t.textContent = _simTradePages;
+    document.getElementById('sim-trade-count').textContent = r.total + '笔 共' + _simTradePages + '页';
     const tbody = document.getElementById('sim-trade-tbody');
     if (tbody && r.trades) {
       tbody.innerHTML = r.trades.length > 0
-        ? r.trades.sort(function(a, b) { return (b.entry || '').localeCompare(a.entry || ''); }).map(t => {
+        ? r.trades.map(function(t) {
             const isHolding = t.status === '持仓中';
             const shares = t.shares || 0;
             const exitPx = Number(t.exit_px || 0).toFixed(2);
@@ -230,7 +244,16 @@ async function loadSimTrades() {
           }).join('')
         : '<tr><td colspan="11" style="text-align:center;color:var(--text2)">暂无记录</td></tr>';
     }
-  } catch(e) {}
+  } catch(e) { console.error('loadSimTrades failed:', e); }
+}
+
+var _simTradePage = 1;
+var _simTradePages = 1;
+var _simTradeLimit = 50;
+
+function changeSimTradesLimit(v) {
+  _simTradeLimit = Number(v);
+  loadSimTrades(1);
 }
 
 var _simEquityChart = null;
@@ -3939,12 +3962,49 @@ async function loadBtSimpleConfig() {
     if (stratSel && cfg.strategy_name) stratSel.value = cfg.strategy_name;
     const precSel = document.getElementById('sbt-precision');
     if (precSel && cfg.intraday_freq) precSel.value = cfg.intraday_freq;
+    // 策略类型 Radio 回填 + 互斥切换 + TDX 公式名回填
+    const stype = cfg.strategy_type || 'python';
+    const pyRadio = document.getElementById('sbt-type-python');
+    const tdxRadio = document.getElementById('sbt-type-tdx');
+    if (stype === 'tdx' && tdxRadio) {
+      tdxRadio.checked = true;
+      if (pyRadio) pyRadio.checked = false;
+      const tdxInput = document.getElementById('sbt-tdx-formula');
+      if (tdxInput && cfg.strategy_name) tdxInput.value = cfg.strategy_name;
+    } else {
+      if (pyRadio) pyRadio.checked = true;
+      if (tdxRadio) tdxRadio.checked = false;
+    }
+    onBtStrategyTypeChange(stype);
     const sp = cfg.signal_params || {};
     document.getElementById('sbt-qs').checked = !sp.disable_quality_sort;
     addLog('ok', '已加载回测配置');
   } catch (e) {
     addLog('error', '加载回测配置失败: ' + e.message);
   }
+}
+
+function onBtStrategyTypeChange(type) {
+  // 互斥切换：Python 下拉 vs TDX 输入框
+  const pyRow = document.getElementById('sbt-py-row');
+  const tdxRow = document.getElementById('sbt-tdx-row');
+  const tdxInput = document.getElementById('sbt-tdx-formula');
+  if (type === 'tdx') {
+    if (pyRow) pyRow.style.display = 'none';
+    if (tdxRow) tdxRow.style.display = '';
+    // 切到 TDX 时聚焦输入框
+    setTimeout(() => { if (tdxInput) tdxInput.focus(); }, 0);
+  } else {
+    if (pyRow) pyRow.style.display = '';
+    if (tdxRow) tdxRow.style.display = 'none';
+  }
+  // 清除可能的红框
+  if (tdxInput) {
+    tdxInput.style.borderColor = '';
+    tdxInput.title = '';
+  }
+  const hint = document.getElementById('sbt-tdx-hint');
+  if (hint) { hint.style.display = 'none'; hint.textContent = ''; }
 }
 
 function _collectBtConfig() {
@@ -3987,9 +4047,21 @@ function _collectBtConfig() {
   cfg.atr_trail_multiplier = parseFloat(document.getElementById('sbt-atr-mul')?.value) || 1.0;
   cfg.start_date = document.getElementById('sbt-start').value || '2023-01-01';
   cfg.end_date = document.getElementById('sbt-end').value || new Date().toISOString().slice(0, 10);
-  cfg.strategy_name = document.getElementById('sbt-strategy')?.value || '盘整突破';
-  var stratOpt = document.getElementById('sbt-strategy')?.selectedOptions?.[0];
-  cfg.strategy_type = (stratOpt && stratOpt.dataset.strategyType) || 'python';
+  // 策略类型互斥：Python 下拉 vs TDX 输入框
+  const strategyType = (document.getElementById('sbt-type-tdx') || {}).checked ? 'tdx' : 'python';
+  cfg.strategy_type = strategyType;
+  if (strategyType === 'tdx') {
+    const tdxName = (document.getElementById('sbt-tdx-formula') || {}).value || '';
+    cfg.strategy_name = tdxName.trim();
+  } else {
+    cfg.strategy_name = document.getElementById('sbt-strategy')?.value || '盘整突破';
+    var stratOpt = document.getElementById('sbt-strategy')?.selectedOptions?.[0];
+    cfg.strategy_type = (stratOpt && stratOpt.dataset.strategyType) || 'python';
+    // 若用户从 Python 下拉里选了 TDX 分组项（兼容旧路径），强制类型为 tdx
+    if (cfg.strategy_type === 'tdx') {
+      cfg.strategy_name = cfg.strategy_name;  // 透传 value
+    }
+  }
   cfg.intraday_freq = document.getElementById('sbt-precision')?.value || '5m';
   // signal_params 由后端从策略文件 PARAMS 自动读取，前端只传策略名
   cfg.signal_params = {};
@@ -4060,6 +4132,19 @@ async function resetBtSimpleConfig() {
 
 async function runSimpleBacktest() {
   const cfg = _collectBtConfig();
+  // TDX 模式下公式名不能为空（前端兜底，后端还会再校验）
+  if (cfg.strategy_type === 'tdx' && !cfg.strategy_name) {
+    const tdxInput = document.getElementById('sbt-tdx-formula');
+    if (tdxInput) {
+      tdxInput.style.borderColor = 'var(--red)';
+      tdxInput.title = '请输入通达信公式名';
+      tdxInput.focus();
+    }
+    const hint = document.getElementById('sbt-tdx-hint');
+    if (hint) { hint.textContent = '请输入公式名'; hint.style.color = 'var(--red)'; hint.style.display = ''; }
+    addLog('error', '通达信模式下公式名不能为空');
+    return;
+  }
   // 先保存
   await saveBtSimpleConfig();
 

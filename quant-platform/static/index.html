@@ -263,11 +263,31 @@
             <!-- 策略选择 -->
             <div class="bt-cfg-group">
               <div class="bt-cfg-title">策略选择</div>
+              <!-- 类型互斥单选 -->
+              <div class="bt-cfg-grid" style="margin-bottom:6px">
+                <div class="bt-cfg-item" style="flex-direction:row;align-items:center;gap:14px;min-height:0">
+                  <label style="margin-bottom:0;color:var(--text2)">策略类型</label>
+                  <label style="margin-bottom:0;cursor:pointer;display:flex;align-items:center;gap:4px;font-weight:400">
+                    <input type="radio" name="sbt-strategy-type" value="python" id="sbt-type-python" checked onchange="onBtStrategyTypeChange('python')" style="margin:0;width:14px;height:14px">
+                    Python 策略（预设下拉）
+                  </label>
+                  <label style="margin-bottom:0;cursor:pointer;display:flex;align-items:center;gap:4px;font-weight:400">
+                    <input type="radio" name="sbt-strategy-type" value="tdx" id="sbt-type-tdx" onchange="onBtStrategyTypeChange('tdx')" style="margin:0;width:14px;height:14px">
+                    通达信公式（手动录入）
+                  </label>
+                </div>
+              </div>
               <div class="bt-cfg-grid">
-                <div class="bt-cfg-item"><label>选股策略</label>
-                  <select id="sbt-strategy" style="width:160px;height:28px;font-size:12px">
+                <div class="bt-cfg-item" id="sbt-py-row"><label>选股策略</label>
+                  <select id="sbt-strategy" style="width:200px;height:28px;font-size:12px">
                     <option value="">加载中...</option>
                   </select>
+                </div>
+                <div class="bt-cfg-item" id="sbt-tdx-row" style="display:none">
+                  <label>公式名</label>
+                  <input type="text" id="sbt-tdx-formula" placeholder="例：MA5角度_TDXv2 / FIX(_TDXv2)"
+                    style="width:200px;height:28px;font-size:12px" autocomplete="off">
+                  <span id="sbt-tdx-hint" style="font-size:10px;color:var(--text2);margin-left:6px;display:none"></span>
                 </div>
                 <div class="bt-cfg-item"><label>数据精度</label>
                   <select id="sbt-precision" style="width:90px;height:28px;font-size:12px">
@@ -1332,7 +1352,25 @@
         </div>
 
         <div class="card" style="margin-top:12px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h3 style="margin:0">交易记录 <span class="sub" id="sim-trade-count"></span></h3><button class="btn btn-sm" onclick="loadSimTrades()" style="font-size:11px">刷新</button></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+            <h3 style="margin:0">交易记录 <span class="sub" id="sim-trade-count"></span></h3>
+            <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+              <button class="btn btn-sm" onclick="loadSimTrades(1)" style="font-size:11px;padding:2px 8px">⏮ 首页</button>
+              <button class="btn btn-sm" onclick="loadSimTrades(_simTradePage-1)" style="font-size:11px;padding:2px 8px">‹ 上一页</button>
+              <span style="font-size:11px;color:var(--text1);min-width:90px;text-align:center">
+                第 <b id="sim-trade-page-num">1</b> / <b id="sim-trade-page-total">1</b> 页
+              </span>
+              <button class="btn btn-sm" onclick="loadSimTrades(_simTradePage+1)" style="font-size:11px;padding:2px 8px">下一页 ›</button>
+              <button class="btn btn-sm" onclick="loadSimTrades(_simTradePages)" style="font-size:11px;padding:2px 8px">末页 ⏭</button>
+              <select id="sim-trade-page-size" onchange="changeSimTradesLimit(this.value)" style="font-size:11px;height:24px">
+                <option value="20">20/页</option>
+                <option value="50" selected>50/页</option>
+                <option value="100">100/页</option>
+                <option value="200">200/页</option>
+              </select>
+              <button class="btn btn-sm" onclick="loadSimTrades(_simTradePage)" style="font-size:11px;padding:2px 8px">🔄</button>
+            </div>
+          </div>
           <div class="tbl-wrap" style="max-height:400px; overflow:auto">
             <table style="table-layout:fixed; min-width:1100px; width:100%">
               <thead><tr>
@@ -1342,6 +1380,16 @@
                 <tr><td colspan="11" style="text-align:center;color:var(--text2)">暂无记录</td></tr>
               </tbody>
             </table>
+          </div>
+          <!-- 底部翻页 -->
+          <div style="display:flex;justify-content:center;gap:4px;align-items:center;margin-top:8px;flex-wrap:wrap">
+            <button class="btn btn-sm" onclick="loadSimTrades(1)" style="font-size:11px;padding:2px 8px">⏮ 首页</button>
+            <button class="btn btn-sm" onclick="loadSimTrades(_simTradePage-1)" style="font-size:11px;padding:2px 8px">‹ 上一页</button>
+            <span style="font-size:11px;color:var(--text1);min-width:90px;text-align:center">
+              第 <b id="sim-trade-page-num-2">1</b> / <b id="sim-trade-page-total-2">1</b> 页
+            </span>
+            <button class="btn btn-sm" onclick="loadSimTrades(_simTradePage+1)" style="font-size:11px;padding:2px 8px">下一页 ›</button>
+            <button class="btn btn-sm" onclick="loadSimTrades(_simTradePages)" style="font-size:11px;padding:2px 8px">末页 ⏭</button>
           </div>
         </div>
 
