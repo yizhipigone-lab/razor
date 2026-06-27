@@ -36,7 +36,7 @@ def main():
         "position_size": POSITION_SIZE,
         "min_buy_amt": MIN_BUY_AMT,
         "hard_stop": HARD_STOP,
-        "take_profit_tiers": [dict(t) for t in TAKE_PROFIT_TIERS],
+        "take_profit_tiers": [tier.copy() for tier in TAKE_PROFIT_TIERS],
         "trail_activate": TRAIL_ACTIVATE,
         "trail_dd": TRAIL_DD,
         "time_exit_days": TIME_EXIT_DAYS,
@@ -72,7 +72,8 @@ def main():
     print(f"\n  TDX 回测耗时: {t1-t0:.1f}秒")
 
     if result is None or result.get("status") != "ok":
-        print(f"\n[ERROR] 回测失败: {result.get('message', result)}")
+        msg = result.get("message", str(result)) if result is not None else "No result returned"
+        print(f"\n[ERROR] 回测失败: {msg}")
         sys.exit(1)
 
     # ── 写入 JSON Store ───────────────────────
@@ -142,6 +143,7 @@ def write_to_json_store(result: dict, strategy_name: str, initial_capital: float
         "consecutive_losses": 0,
         "pause_until": None,
         "trade_count": len(trades_out),
+        "strategy_name": strategy_name,
     }
 
     # ── 4) 持仓 ──────────────────────────────
