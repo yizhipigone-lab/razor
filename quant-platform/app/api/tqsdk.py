@@ -41,6 +41,7 @@ async def start_screen(body: dict):
     end_time = body.get("end_date", "")
     start_time = body.get("start_date", "")
     stock_list_override = body.get("stock_list_override")
+    formula_name = (body.get("formula_name") or "").strip()  # 新增：前端传入的公式名
 
     # TDX 格式 YYYYMMDD 转 DuckDB 格式 YYYY-MM-DD
     def _fmt_date(d):
@@ -52,6 +53,13 @@ async def start_screen(body: dict):
         return d
     db_start = _fmt_date(start_time)
     db_end = _fmt_date(end_time)
+
+    # 解析最终公式名（前端传入 > settings > QUANTQQ）
+    def _resolve_formula_name():
+        if formula_name:
+            return formula_name
+        from core.settings import settings
+        return settings.get("tqsdk", "formula_name", default="QUANTQQ") or "QUANTQQ"
 
     with _stop_lock:
         if "tqsdk" in _stop_events:
@@ -83,11 +91,11 @@ async def start_screen(body: dict):
             if len(scan_dates) == 0:
                 scan_dates = [date.today()]
 
-            log.info(f"TDX 区间选股: {scan_dates[0]} ~ {scan_dates[-1]}, 共 {len(scan_dates)} 个交易日")
+            log.info(f"TDX 区间选股: {scan_dates[0]} ~ {scan_dates[-1]}, 共 {len(scan_dates)} 个交易日, 公式: {_resolve_formula_name()}")
             sync_broadcast({
                 "type": "tqsdk_progress",
                 "step": 0, "total": len(scan_dates) + 2,
-                "msg": f"区间选股 {scan_dates[0]} ~ {scan_dates[-1]}, 共 {len(scan_dates)} 天"
+                "msg": f"区间选股 {scan_dates[0]} ~ {scan_dates[-1]}, 共 {len(scan_dates)} 天, 公式: {_resolve_formula_name()}"
             })
 
             all_matched = {}  # code -> first_date
@@ -101,7 +109,7 @@ async def start_screen(body: dict):
                 d_str = d.strftime("%Y%m%d")
                 sync_broadcast({
                     "type": "tqsdk_progress",
-                    "step": i + 1, "total": total + 2,
+                    "step": i + 1, "total": total,
                     "msg": f"扫描 {d} ({i+1}/{total})..."
                 })
 
@@ -109,6 +117,7 @@ async def start_screen(body: dict):
                     end_time=d_str,
                     stock_list_override=stock_list_override,
                     lookback_days=500,
+                    formula_name=formula_name,  # 传递前端传入的公式名
                 )
                 if result.get("status") == "ok":
                     for code in result.get("matched", []):
@@ -145,9 +154,9 @@ async def start_screen(body: dict):
                     log.warning(f"补充股票信息失败: {e}")
                     stock_details = [{"code": c.split(".")[0], "name": "", "sector": ""} for c in matched]
 
-            # 持久化
+            # 持久化（用真实公式名，不硬编码）
             history_id = db.save_tqsdk_screen_history(
-                formula_name="QUANTQQ",
+                formula_name=_resolve_formula_name(),  # 改：之前硬编码 "QUANTQQ"
                 formula_arg="",
                 start_date=db_start,
                 end_date=db_end,
@@ -162,6 +171,7 @@ async def start_screen(body: dict):
                 "result_id": history_id,
                 "count": len(matched),
                 "results": stock_details,
+                "formula_name": _resolve_formula_name(),
             })
 
         except Exception as e:
@@ -176,7 +186,7 @@ async def start_screen(body: dict):
                 _stop_events.pop("tqsdk", None)
 
     run_in_thread(_run)
-    return {"status": "started"}
+    return {"status": "started", "formula_name": _resolve_formula_name()}
 
 
 # ── 2. 停止选股 ──
@@ -233,7 +243,7 @@ async def delete_history(hist_id: int):
 
 @router.post("/api/tqsdk/backtest")
 async def run_tqsdk_bt(body: dict):
-    """QUANTQQ 一键回测：选股 + 轻量回测"""
+    """一键回测：选股 + 轻量回测 (formula_name 可选)"""
     result = None
 
     def _run():
@@ -246,6 +256,7 @@ async def run_tqsdk_bt(body: dict):
         try:
             history_id = body.get("history_id")
             params = body.get("params", body)
+            formula_name = (body.get("formula_name") or "").strip()  # 新增
 
             strategy_type = params.get("strategy_type", "tdx")
             stock_list_override = params.get("stock_list_override")
@@ -253,6 +264,15 @@ async def run_tqsdk_bt(body: dict):
             n_max = params.get("n_max", 300)
             start = params.get("start_date", "2023-01-01")
             end = params.get("end_date", str(_date.today()))
+
+            # 如果传了 formula_name，临时覆盖 settings 让 bridge 读到
+            if formula_name:
+                from core.settings import settings as _settings
+                if "tqsdk" not in _settings._data:
+                    _settings._data["tqsdk"] = {}
+                _settings._data["tqsdk"]["formula_name"] = formula_name
+                params["strategy_name"] = formula_name  # 同时给 params 用
+                log.info(f"回测公式覆盖: {formula_name}")
 
             if isinstance(start, str):
                 start = _date.fromisoformat(start)
