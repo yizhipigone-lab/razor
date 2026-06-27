@@ -852,7 +852,61 @@ async function loadDataSettings() {
   } catch(e) {}
 }
 function saveSettings() { /* stub */ }
-function saveSearchSpace() { /* stub */ }
+async function saveSearchSpace() {
+  const msgEl = document.getElementById('save-sspace-msg');
+  if (!msgEl) return;
+
+  // 收集所有行的输入值
+  var items = {};
+  var errors = [];
+  document.querySelectorAll('#search-space-list .ss-row').forEach(function(row) {
+    var minEl = row.querySelector('.ss-min');
+    var maxEl = row.querySelector('.ss-max');
+    var stepEl = row.querySelector('.ss-step');
+    if (!minEl || !maxEl) return;
+    var key = minEl.dataset.key;
+    var isInt = (key === 'time_exit_days' || key === 'time_exit_force_days' || key === 'first_day_exit_days');
+    var minVal = isInt ? parseInt(minEl.value) : parseFloat(minEl.value);
+    var maxVal = isInt ? parseInt(maxEl.value) : parseFloat(maxEl.value);
+    var stepVal = stepEl ? (isInt ? parseInt(stepEl.value) : parseFloat(stepEl.value)) : (isInt ? 1 : 0.5);
+
+    if (isNaN(minVal) || isNaN(maxVal)) return;  // 空行跳过
+    if (minVal >= maxVal) { errors.push(key + ': min必须<max'); return; }
+    if (isNaN(stepVal) || stepVal <= 0) { errors.push(key + ': step必须>0'); return; }
+
+    items[key] = { min: minVal, max: maxVal, step: stepVal };
+  });
+
+  if (errors.length > 0) {
+    alert('校验失败:\n' + errors.join('\n'));
+    return;
+  }
+
+  if (Object.keys(items).length === 0) {
+    alert('请至少填写一个参数');
+    return;
+  }
+
+  msgEl.textContent = '保存中...';
+  try {
+    var r = await fetch('/api/settings/list/optimizer_search_space', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: items })
+    }).then(function(r) { return r.json(); });
+    if (r.status === 'ok') {
+      msgEl.textContent = '✓ 已保存';
+      msgEl.style.color = 'var(--green)';
+      setTimeout(function() { msgEl.textContent = ''; }, 2000);
+    } else {
+      msgEl.textContent = '✗ ' + (r.message || '失败');
+      msgEl.style.color = 'var(--red)';
+    }
+  } catch (e) {
+    msgEl.textContent = '✗ 网络错误';
+    msgEl.style.color = 'var(--red)';
+  }
+}
 function saveGatewaySettings() { /* stub */ }
 function loadReportsPage() { /* stub */ }
 function loadReportsList() { /* stub */ }
