@@ -4760,6 +4760,7 @@ function initTqsdkTab() {
       String(prev.getDate()).padStart(2, '0');
   }
   loadTqsdkHistory();
+  loadTqsdkFormula();
 }
 
 function toggleTqsdkButtons(running) {
@@ -4772,6 +4773,7 @@ function toggleTqsdkButtons(running) {
 async function runTqsdkScreen() {
   const endEl = document.getElementById('tqsdk-end');
   const startEl = document.getElementById('tqsdk-start');
+  const formulaEl = document.getElementById('tqsdk-formula');
   if (!endEl || !endEl.value) { alert('请选择结束日期'); return; }
 
   toggleTqsdkButtons(true);
@@ -4785,16 +4787,51 @@ async function runTqsdkScreen() {
       body: JSON.stringify({
         start_date: (startEl && startEl.value) ? startEl.value.replace(/-/g, '') : '',
         end_date: endEl.value.replace(/-/g, ''),
+        formula_name: (formulaEl && formulaEl.value) ? formulaEl.value.trim() : '',
       }),
     });
     const data = await resp.json();
     if (data.status !== 'started') {
       addLog('error', '选股启动失败: ' + (data.message || ''));
       toggleTqsdkButtons(false);
+    } else if (data.formula_name) {
+      addLog('info', '使用公式: ' + data.formula_name);
     }
   } catch (e) {
     addLog('error', '请求失败: ' + e.message);
     toggleTqsdkButtons(false);
+  }
+}
+
+async function loadTqsdkFormula() {
+  try {
+    const r = await fetch('/api/settings/tqsdk-formula').then(function(res) { return res.json(); });
+    const el = document.getElementById('tqsdk-formula');
+    if (el && r.formula_name) el.value = r.formula_name;
+  } catch (e) { /* ignore */ }
+}
+
+async function saveTqsdkFormula() {
+  const el = document.getElementById('tqsdk-formula');
+  const msg = document.getElementById('tqsdk-formula-msg');
+  if (!el || !el.value.trim()) {
+    if (msg) { msg.textContent = '公式名不能为空'; msg.style.color = 'var(--red)'; }
+    return;
+  }
+  try {
+    const r = await fetch('/api/settings/tqsdk-formula', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ formula_name: el.value.trim() }),
+    }).then(function(res) { return res.json(); });
+    if (r.status === 'ok') {
+      if (msg) { msg.textContent = '已保存: ' + r.formula_name; msg.style.color = 'var(--up)'; }
+      setTimeout(function() { if (msg) msg.textContent = ''; }, 2500);
+    } else {
+      if (msg) { msg.textContent = '保存失败: ' + (r.message || ''); msg.style.color = 'var(--red)'; }
+    }
+  } catch (e) {
+    if (msg) { msg.textContent = '请求失败: ' + e.message; msg.style.color = 'var(--red)'; }
   }
 }
 
