@@ -106,6 +106,7 @@ from app.api import (
     sim_trader,
     tqsdk,
 )
+from app.api.settings_extra import router as settings_extra_router
 
 app.include_router(system.router)
 app.include_router(market.router)
@@ -120,6 +121,7 @@ app.include_router(agents.router)
 app.include_router(hot_sector.router)
 app.include_router(sim_trader.router)
 app.include_router(tqsdk.router)
+app.include_router(settings_extra_router)
 
 if __name__ == "__main__":
     import uvicorn
