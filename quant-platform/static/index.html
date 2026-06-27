@@ -1449,8 +1449,15 @@
       <!-- TQSDK Tab: 通达信选股 -->
       <div id="tab-tqsdk">
         <div class="card" style="margin-bottom: 12px;">
-          <h3>📡 通达信 QUANTQQ 公式选股</h3>
+          <h3>📡 通达信公式选股</h3>
           <div class="form-row" style="flex-wrap: wrap; gap: 8px; align-items: center;">
+            <label>公式名</label>
+            <input type="text" id="tqsdk-formula" style="width: 160px;"
+                   placeholder="QUANTQQ" />
+            <button class="btn btn-ghost btn-sm" onclick="saveTqsdkFormula()" style="font-size:11px">保存</button>
+            <span id="tqsdk-formula-msg" style="font-size:11px;color:var(--text2)"></span>
+          </div>
+          <div class="form-row" style="flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px;">
             <label>开始日期</label>
             <input type="date" id="tqsdk-start" style="width: 140px;" />
             <label>结束日期</label>
