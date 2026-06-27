@@ -78,7 +78,7 @@ def main():
 
     # ── 写入 JSON Store ───────────────────────
     print("\n[2/3] 转换格式并写入 state.json ...")
-    write_to_json_store(result, STRATEGY, params['initial_capital'])
+    write_to_json_store(result, params['initial_capital'])
 
     # ── 打印摘要 ───────────────────────────────
     print("\n[3/3] 完成:")
@@ -92,7 +92,7 @@ def main():
     print(f"  → 刷新前端交易控制 TAB 即可查看")
 
 
-def write_to_json_store(result: dict, strategy_name: str, initial_capital: float):
+def write_to_json_store(result: dict, initial_capital: float):
     """将 run_tdx_backtest 结果写入 JsonSimStore (state.json)"""
 
     from app.sim_trader.store import JsonSimStore
@@ -143,7 +143,6 @@ def write_to_json_store(result: dict, strategy_name: str, initial_capital: float
         "consecutive_losses": 0,
         "pause_until": None,
         "trade_count": len(trades_out),
-        "strategy_name": strategy_name,
     }
 
     # ── 4) 持仓 ──────────────────────────────
