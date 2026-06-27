@@ -286,3 +286,22 @@ async def log_query(date: str = "", keyword: str = "", limit: int = 200):
 
 
 # ─── AI 智能体 API ─────────────────────────────────────────────
+
+
+class SearchSpaceUpdate(BaseModel):
+    items: dict
+
+
+@router.post("/api/settings/list/optimizer_search_space")
+async def save_optimizer_search_space(body: SearchSpaceUpdate):
+    """原子保存优化器搜索空间（不干扰 POST /api/settings）"""
+    items = body.items
+    if not items or not isinstance(items, dict) or len(items) < 1:
+        return {"status": "error", "message": "items 不能为空"}
+    try:
+        settings.set("optimizer", "search_space", items, save=True)
+        log.info(f"优化器搜索空间已保存 ({len(items)} 参数)")
+        return {"status": "ok", "message": "搜索空间已保存"}
+    except Exception as e:
+        log.error(f"保存搜索空间失败: {e}")
+        return {"status": "error", "message": str(e)}
