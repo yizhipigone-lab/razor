@@ -1,6 +1,6 @@
 # 优化器搜索空间卡片 — 前端渲染 + 联动写入
 
-> 状态: 已确认 | 日期: 2026-06-27
+> 状态: 已确认（v2 修订） | 日期: 2026-06-27
 
 ## 1. 问题陈述
 
@@ -12,199 +12,254 @@
 
 后端能力（`core/settings.py` / `config/app_setting.json` / `ai_optimizer.py`）已完整，仅缺前端实现。
 
-## 2. 目标
+## 2. 盘查结论（14 参数，全部在用）
 
-1. **渲染搜索空间**：9 个固定参数的 min / max / step 输入框
-2. **独立保存**：保存此卡不干扰其他设置卡片
-3. **联动写入按钮**：将 AI 最优参数（取整 1 位小数）一键写入止盈止损卡片
+对 `app_setting.json`、`exit_rules.py`、`engine.py`、`ai_optimizer.py`、`llm_advisor.py` 五处交叉对比：
 
-## 3. 数据模型
+### 2.1 app_setting.json 已有 10 个参数
 
-### 3.1 存储位置不变
+| JSON Key | exit_rules 规则 | engine.py | ai_optimizer | 状态 |
+|---|------|------|------|------|
+| `tp1_profit` | `rule_take_profit` (P60) | ✅ | ✅ _lhs_sample | **在用** |
+| `tp2_profit` | `rule_take_profit` (P60) | ✅ | ✅ | **在用** |
+| `tp1_ratio` | `rule_take_profit` (P60) | ✅ | ✅ | **在用** |
+| `tp2_ratio` | `rule_take_profit` (P60) | ✅ | ✅ | **在用** |
+| `hard_stop_loss_pct` | `rule_hard_stop` (P100) | ✅ | ✅ | **在用** |
+| `trailing_activate_pct` | `rule_trailing_stop` (P40) | ✅ | ✅ | **在用** |
+| `trailing_drawdown_pct` | `rule_trailing_stop` (P40) | ✅ | ✅ | **在用** |
+| `breakeven_threshold_pct` | `rule_breakeven_stop` (P95) | ✅ | ✅ | **在用** |
+| `breakeven_stop_pnl_pct` | `rule_breakeven_stop` (P95) | ✅ | ✅ | **在用** |
+| `time_exit_days` | `rule_time_exit` (P20) | ✅ | ✅ | **在用** |
 
-`config/app_setting.json` → `optimizer.search_space`，9 个固定参数：
+### 2.2 缺口参数（exit_rules/engine 在用，但搜索空间缺失）
 
-```json
-{
-  "optimizer": {
-    "search_space": {
-      "tp1_profit":         {"min": 2.0,  "max": 6.0,  "step": 0.5},
-      "tp2_profit":         {"min": 10.0, "max": 18.0, "step": 1.0},
-      "tp1_ratio":          {"min": 0.1,  "max": 0.3,  "step": 0.05},
-      "tp2_ratio":          {"min": 0.2,  "max": 0.5,  "step": 0.05},
-      "hard_stop_loss_pct":  {"min": -7.0, "max": -4.5, "step": 0.5},
-      "trailing_activate_pct": {"min": 1.0, "max": 6.0, "step": 0.5},
-      "trailing_drawdown_pct": {"min": 1.5, "max": 6.0, "step": 0.5},
-      "time_exit_days":      {"min": 5,   "max": 20,  "step": 1},
-      "time_exit_force_days": {"min": 8,   "max": 25,  "step": 1}
-    }
-  }
-}
+| JSON Key | 来源 | 使用位置 |
+|---|------|------|
+| `tp3_profit` | FALLBACK_SEARCH_SPACE | engine.py `_simulate_trade_v2`, `POST /api/backtest/ai/apply` |
+| `tp3_ratio` | FALLBACK_SEARCH_SPACE | engine.py, `POST /api/backtest/ai/apply` |
+| `time_exit_force_days` | _default_search_space | exit_rules `rule_time_force` (P80), engine.py |
+| `time_exit_profit` | _default_search_space | exit_rules `rule_time_exit` (P20) |
+| `first_day_exit_min_profit` | _default_search_space | exit_rules `rule_first_day_exit` (P90), engine.py |
+| `first_day_exit_days` | _default_search_space | exit_rules `rule_first_day_exit` (P90), engine.py |
+
+### 2.3 发现的问题
+
+| 问题 | 说明 |
+|------|------|
+| tp3 未入搜索空间 | FALLBACK 有 tp3_profit/tp3_ratio，但 app_setting 没有 |
+| time_exit_force_days 未入搜索空间 | exit_rules `rule_time_force` 在用，但只靠 FALLBACK |
+| first_day 系列未入搜索空间 | exit_rules `rule_first_day_exit` 在用，但只靠 `_default` / config |
+| breakeven 默认值矛盾 | exit_rules 默认 `0.0`（禁用），app_setting 的 min=2.0（永远启用） |
+
+**本次只处理前端渲染，不在本次修默认值矛盾。**
+
+## 3. 目标
+
+1. **渲染搜索空间**：14 个参数，按 5 组渲染 min / max / step 输入框
+2. **缺键优雅降级**：app_setting 中没有的参数，从 FALLBACK 取默认值渲染，保存时同步写入
+3. **独立保存**：保存此卡不干扰其他设置卡片
+4. **联动写入按钮**：复用已有 `POST /api/backtest/ai/apply` 端点，取整 1 位小数
+
+## 4. 数据模型
+
+### 4.1 参数映射（14 参数 × 5 分组）
+
+```javascript
+const SEARCH_SPACE_PARAMS = [
+  // ── 阶梯止盈 ──
+  { key: 'tp1_profit',             label: '止盈1 盈利%',   group: '阶梯止盈', isInt: false },
+  { key: 'tp2_profit',             label: '止盈2 盈利%',   group: '阶梯止盈', isInt: false },
+  { key: 'tp3_profit',             label: '止盈3 盈利%',   group: '阶梯止盈', isInt: false },
+  { key: 'tp1_ratio',              label: '止盈1 卖出%',   group: '阶梯止盈', isInt: false },
+  { key: 'tp2_ratio',              label: '止盈2 卖出%',   group: '阶梯止盈', isInt: false },
+  { key: 'tp3_ratio',              label: '止盈3 卖出%',   group: '阶梯止盈', isInt: false },
+  // ── 止损 ──
+  { key: 'hard_stop_loss_pct',     label: '硬止损%',       group: '止损',     isInt: false },
+  { key: 'breakeven_threshold_pct',label: '保本触发%',     group: '止损',     isInt: false },
+  { key: 'breakeven_stop_pnl_pct', label: '保本线%',       group: '止损',     isInt: false },
+  // ── 移动止盈 ──
+  { key: 'trailing_activate_pct',  label: '移动激活%',     group: '移动止盈', isInt: false },
+  { key: 'trailing_drawdown_pct',  label: '移动回撤%',     group: '移动止盈', isInt: false },
+  // ── 时间 ──
+  { key: 'time_exit_days',         label: '退出天数',      group: '时间',     isInt: true  },
+  { key: 'time_exit_force_days',   label: '强制退出天',    group: '时间',     isInt: true  },
+  // ── 首日弱势 ──
+  { key: 'first_day_exit_min_profit', label: '目标涨幅%',  group: '首日弱势', isInt: false },
+  { key: 'first_day_exit_days',    label: '有效天数',      group: '首日弱势', isInt: true  },
+];
 ```
 
-### 3.2 参数名 → 中文标签映射
+### 4.2 缺键降级源
 
-| JSON Key | 中文标签 |
-|---|---|
-| `tp1_profit` | 止盈1 盈利% |
-| `tp2_profit` | 止盈2 盈利% |
-| `tp1_ratio` | 止盈1 卖出% |
-| `tp2_ratio` | 止盈2 卖出% |
-| `hard_stop_loss_pct` | 硬止损% |
-| `trailing_activate_pct` | 移动激活% |
-| `trailing_drawdown_pct` | 移动回撤% |
-| `time_exit_days` | 退出天数 |
-| `time_exit_force_days` | 强制退出天 |
+```javascript
+const FALLBACK_SEARCH_SPACE = {
+  // 从 llm_advisor.py 的 FALLBACK_SEARCH_SPACE 同级同步
+  tp3_profit:              { min: 18.0, max: 30.0, step: 1.0 },
+  tp3_ratio:               { min: 0.2,  max: 0.4,  step: 0.05 },
+  time_exit_force_days:    { min: 3,    max: 12,   step: 1 },
+  first_day_exit_min_profit:{ min: 1.0, max: 5.0,   step: 0.5 },
+  first_day_exit_days:     { min: 1,    max: 3,    step: 1 },
+};
+```
 
-## 4. API 设计
+### 4.3 存储位置不变
 
-### 4.1 GET /api/settings（已有，不修改）
+`config/app_setting.json` → `optimizer.search_space`。保存时，缺键从 FALLBACK 取默认值的参数**也一并写入**，实现"首次保存自动补齐"。
 
-加载时已返回 `optimizer.search_space`，无需改动。
+## 5. UI 设计
 
-### 4.2 POST /api/settings/list/optimizer_search_space（新增）
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🎯 优化器搜索空间                                     [💾 保存此卡]    │
+│ AI 参数优化的搜索边界，值越小收敛越快。                     ✓ 已保存   │
+│ ───────────────────────────────────────────────────────────────────── │
+│                                                                        │
+│  ── 阶梯止盈 ─────────────────────────────────────────────────────── │
+│  参数            min          max         step                        │
+│  tp1_profit  止盈1 盈利%  [  2.0 ] ~ [  6.0 ]  步长 [ 0.5 ]          │
+│  tp2_profit  止盈2 盈利%  [ 10.0 ] ~ [ 18.0 ]  步长 [ 1.0 ]          │
+│  tp3_profit  止盈3 盈利%  [ 18.0 ] ~ [ 30.0 ]  步长 [ 1.0 ]          │
+│  tp1_ratio   止盈1 卖出%  [  0.10] ~ [  0.30]  步长 [0.05]           │
+│  tp2_ratio   止盈2 卖出%  [  0.40] ~ [  0.70]  步长 [0.05]           │
+│  tp3_ratio   止盈3 卖出%  [  0.10] ~ [  0.50]  步长 [0.05]           │
+│                                                                        │
+│  ── 止损 ───────────────────────────────────────────────────────     │
+│  hard_stop   硬止损%       [ -7.0 ] ~ [ -4.5 ]  步长 [ 0.5 ]          │
+│  breakeven   保本触发%     [  2.0 ] ~ [  6.0 ]  步长 [ 0.5 ]          │
+│  breakeven_stop 保本线%    [  0.5 ] ~ [  2.0 ]  步长 [ 0.5 ]          │
+│                                                                        │
+│  ── 移动止盈 ─────────────────────────────────────────────────────── │
+│  trail_act   移动激活%     [  1.0 ] ~ [  6.0 ]  步长 [ 0.5 ]          │
+│  trail_dd    移动回撤%     [  0.5 ] ~ [  2.5 ]  步长 [0.25]           │
+│                                                                        │
+│  ── 时间 ───────────────────────────────────────────────────────     │
+│  time_exit   退出天数      [    2 ] ~ [    8 ]  步长 [ 1   ]          │
+│  time_force  强制退出天    [    3 ] ~ [   12 ]  步长 [ 1   ]          │
+│                                                                        │
+│  ── 首日弱势 ─────────────────────────────────────────────────────── │
+│  first_day_profit 目标涨幅% [ 1.0 ] ~ [ 5.0 ]  步长 [ 0.5 ]          │
+│  first_day_days   有效天数  [   1 ] ~ [   3 ]  步长 [ 1   ]          │
+│                                                                        │
+│ ───────────────────────────────────────────────────────────────────── │
+│  💡 灰色参数 = 首次保存后自动写入 app_setting.json                     │
+│                                                                        │
+│  [▶ 应用 AI 最优参数到止盈止损卡片]                                   │
+└────────────────────────────────────────────────────────────────────────┘
+```
 
-**独立原子端点**，不通过通用 `POST /api/settings`。
+## 6. API 设计
+
+### 6.1 GET /api/settings（已有，不修改）
+
+加载时已返回 `optimizer.search_space`。缺键时该字段不存在，前端用 FALLBACK 补。
+
+### 6.2 POST /api/backtest/ai/apply（已有，不修改，复用）
+
+端点 `POST /api/backtest/ai/apply` 已存在（`app/api/backtest.py:216-290`），前端直接复用。
+
+功能：
+- 取 `body.params`（AI 最优参数）→ 写入 risk 字段
+- 同时更新 `optimizer.search_space` 基线
+- 取整策略：`round(raw_val, 1)`
+
+### 6.3 POST /api/settings/list/optimizer_search_space（新增）
+
+独立原子端点，不通过通用 `POST /api/settings`。
 
 ```
 请求:  POST /api/settings/list/optimizer_search_space
       Content-Type: application/json
-      Body: {
-        "items": {
-          "tp1_profit": {"min": 2.0, "max": 6.0, "step": 0.5},
-          ...
-        }
-      }
+      Body: { "items": { "tp1_profit": {"min": 2.0, "max": 6.0, "step": 0.5}, ... } }
 
-响应:  200 OK
-      {"status": "ok", "message": "搜索空间已保存"}
+响应:  200 OK  { "status": "ok", "message": "搜索空间已保存" }
 ```
 
-**后端实现**：`app/api/system.py` 新增路由，调用 `settings.set("optimizer", "search_space", items, save=True)`。
+**实现**: `app/api/system.py` 新增路由，调用 `settings.set("optimizer", "search_space", items, save=True)`。
 
-### 4.3 POST /api/backtest/ai/apply-best（新增）
+## 7. 前端设计
 
-取最近一次 AI 优化的最佳参数 → 取整 → 写入 risk 字段。
+### 7.1 renderSearchSpace(data)
 
-```
-请求:  POST /api/backtest/ai/apply-best
-      Body: {}  （空，默认最近一次 AI 结果）
+输入：`data` 来自 `optimizer.search_space`，可能缺少部分 key。
 
-响应:  200 OK
-      {
-        "status": "ok",
-        "message": "最优参数已应用到止盈止损",
-        "raw": {"tp1_profit": 3.72, "hard_stop": -5.83, ...},
-        "applied": {"tp1_profit": 3.7, "hard_stop": -5.8, ...}
-      }
+1. 遍历 `SEARCH_SPACE_PARAMS` 14 个定义
+2. 每个参数从 `data` 取值；缺失时从 `FALLBACK_SEARCH_SPACE` 取默认
+3. 按 group 分组渲染，每组加 `<div class="ss-group-title">── 组名</div>` 分隔
+4. `isInt=true` 的参数 input step=1，否则 step=0.01（允许任意精度输入，展示的 step 字段独立）
 
-错误:  404
-      {"status": "error", "message": "暂无 AI 优化结果"}
-```
+### 7.2 saveSearchSpace()
 
-**后端实现**：`app/api/backtest.py` 新增路由。
-- 数据源优先级：`ai_optimizer._last_best_params`（内存）→ `output/backtest_results/` 最新 JSON（文件）
-- 取整：`round(raw_val, 1)`
-- 写入：调用 `settings.set("risk", <field>, <value>, save=True)` 对每个可映射参数
-- 参数映射表（后端维护）：`tp1_profit` → `risk.take_profit_tiers[0].profit_pct`、`hard_stop` → `risk.hard_stop_loss_pct` 等
+1. 收集 14 行输入值（包括缺键已补的参数）
+2. 校验：min < max && step > 0
+3. POST `/api/settings/list/optimizer_search_space`
+4. 成功 → 绿字 "✓ 已保存"（2s 淡出），失败 → 红字提示
 
-## 5. 前端设计
+### 7.3 applyAiBestToRisk()
 
-### 5.1 renderSearchSpace(data)
+1. GET `/api/backtest/ai/status` → 取 `best_params`
+2. 若无 `best_params` → alert "暂无 AI 优化结果"
+3. 对 best_params 做 `round(val, 1)` 取整
+4. POST `/api/backtest/ai/apply` → body `{ params: roundedParams }`
+5. 弹 confirm 显示取整前后对比
+6. 用户确认后 → 刷新止盈止损卡片 input → `addLog("ok", ...)`
 
-输入：`data` 为 `{key: {min, max, step}, ...}` 字典。
-
-渲染逻辑：
-```
-若 data 为空或键数 < 1 → 显示灰色提示 "暂无搜索空间配置"
-否则 → 渲染表头行 + 9 行输入框，每行 3 个 input[type=number]
-     → 行左侧显示中文标签
-     → step 字段按参数自身 step 设置 input 的 step 属性
-```
-
-HTML 结构约定：
-- 容器 `#search-space-list`
-- 每行 class `ss-row`，3 个 input class `ss-min` / `ss-max` / `ss-step`，通过 `data-key` 标识参数名
-
-### 5.2 saveSearchSpace()
-
-从 9 行收集输入值 → 构造 `{items: {key: {min, max, step}, ...}}` → POST → 显示保存结果。
-
-**前端校验**：
-- min 必须 < max（否则 alert + 阻止提交）
-- step 必须 > 0（否则 alert + 阻止提交）
-- 空值跳过该参数（不保存）
-
-### 5.3 applyAiBestToRisk()
-
-1. 先 POST `/api/backtest/ai/apply-best`
-2. 若返回 error → alert 提示
-3. 若返回 ok → 弹 confirm 显示 raw vs applied 对比表
-4. 用户确认 → 遍历 applied 字段，更新止盈止损卡片对应 input 的 value
-5. 调用 `saveRiskSettings()` 自动持久化
-6. `addLog('ok', ...)` 输出成功日志
-
-**前置保护**：如果止盈止损卡片有未保存修改 → 默认不阻止（用户点应用按钮后自动保存，不做额外确认）。
-
-### 5.4 空状态
-
-若 `optimizer.search_space` 为空对象或字段数 < 2：
-- 渲染灰色文字 "暂无搜索空间配置，请先运行 AI 优化或手动配置"
-- "保存此卡"按钮正常可用（允许首次创建）
-- "应用 AI 最优参数"按钮置灰 + tooltip "需先运行 AI 优化"
-
-## 6. 交互流程
+## 8. 交互流程
 
 ```
 进入"系统参数配置"tab
   → loadSettings()
-  → renderSearchSpace(optimizer.search_space)
+  → renderSearchSpace(optimizer.search_space)  // 14 参数，分组渲染
 
-用户修改搜索空间
-  → 点"保存此卡"
+用户修改搜索空间 → 点"保存此卡"
   → saveSearchSpace()
+  → POST /api/settings/list/optimizer_search_space
   → 绿字 "✓ 已保存"
 
 用户点"应用 AI 最优参数到止盈止损卡片"
   → applyAiBestToRisk()
-  → POST /api/backtest/ai/apply-best
+  → GET /api/backtest/ai/status → 取 best_params
+  → round(val, 1) 取整
+  → POST /api/backtest/ai/apply { params: rounded }
   → 弹 confirm 确认
   → 自动更新止盈止损卡片 input
   → addLog("ok", "AI 最优参数已应用")
 ```
 
-## 7. 错误处理
+## 9. 错误处理
 
 | 场景 | 处理 |
 |---|---|
-| 搜索空间为空 | renderSearchSpace 显示空状态提示 |
+| 搜索空间为空 | renderSearchSpace 用全部 FALLBACK 默认值渲染 |
+| 部分参数缺键 | 缺键的行用 FALLBACK 填充，保存后自动补齐 |
 | 输入 min ≥ max 或 step ≤ 0 | 前端校验，alert + 阻止提交 |
 | 保存 API 网络错误 | 红字 "✗ 网络错误"，保留输入 |
-| AI 无历史优化结果 | 后端返回 error，前端 alert |
+| AI 无历史优化结果 | best_params 为空，alert 提示 |
 | AI 结果缺少部分字段 | 缺失字段跳过不写入 |
 | 并发保存冲突 | 最后保存覆盖（与现有行为一致） |
 
-## 8. 向后兼容
+## 10. 向后兼容
 
 - ❌ 不修改 `POST /api/settings`
 - ❌ 不修改 `renderRiskTiers` / `saveRiskSettings`
 - ❌ 不修改 `ai_optimizer.run()` 的 search_space 读取路径
+- ❌ 不修改 `POST /api/backtest/ai/apply`（直接复用）
 - ✅ `renderSearchSpace` 替换空 stub，无破坏风险
-- ✅ `app_setting.json` 数据不变
+- ✅ 缺键从 FALLBACK 补默认值，不影响已有数据
 
-## 9. 改动文件清单
+## 11. 改动文件清单
 
 | 文件 | 改动 | 行数估计 |
 |---|---|---|
-| `static/js/main.js` | 实现 `renderSearchSpace()` + `saveSearchSpace()` + `applyAiBestToRisk()` | ~80 行 |
+| `static/js/main.js` | 实现 `renderSearchSpace()` + `saveSearchSpace()` + `applyAiBestToRisk()` + `SEARCH_SPACE_PARAMS` + `FALLBACK_SEARCH_SPACE` | ~120 行 |
 | `app/api/system.py` | 新增 `POST /api/settings/list/optimizer_search_space` | ~15 行 |
-| `app/api/backtest.py` | 新增 `POST /api/backtest/ai/apply-best` | ~60 行 |
 | `static/index.html` | 无改动（HTML 已存在） | 0 |
-| `config/app_setting.json` | 无改动（数据已存在） | 0 |
+| `config/app_setting.json` | 无改动（保存时自动补齐缺键） | 0 |
 | `core/settings.py` | 无改动（property 已存在） | 0 |
+| `app/api/backtest.py` | 无改动（复用已有 `POST /api/backtest/ai/apply`） | 0 |
 
-## 10. 未纳入范围
+## 12. 未纳入范围
 
 - 参数动态增删（用户选了固定列表）
-- 搜索空间参数与风险参数的自动双向同步（只做单向：AI → 风险）
+- breakeven 默认值矛盾修复（exit_rules 默认 0.0 但搜索空间 min=2.0）
+- tp1/tp2/tp3 step 与取整策略的统一（本次按 FALLBACK 值渲染，不强制统一）
 - 多组搜索空间（只支持 1 组全局搜索空间）
