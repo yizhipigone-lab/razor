@@ -15,11 +15,14 @@ log = get_logger("TdxBridge")
 TDX_USER_DIR = Path(r"E:\NEW_TDX\PYPlugins\user")
 WORKER_SCRIPT = TDX_USER_DIR / "tqsdk_bridge_worker.py"
 
-def _get_formula_name():
+def _get_formula_name(override: str = None) -> str:
+    """获取公式名。优先级: override > settings > QUANTQQ"""
+    if override and override.strip():
+        return override.strip()
     try:
         from core.settings import settings
         name = settings.get("tqsdk", "formula_name", default="QUANTQQ")
-        return name
+        return name if name else "QUANTQQ"
     except Exception:
         return "QUANTQQ"
 
@@ -32,10 +35,10 @@ class TdxBridge:
     """通达信公式选股桥接器"""
 
     def execute_screen(self, end_time: str, stock_list_override: list = None,
-                       lookback_days: int = 30):
+                       lookback_days: int = 30, formula_name: str = None):
         """单日选股：返回当天 ZP=1 的股票列表"""
         task = {
-            "formula_name": _get_formula_name(),
+            "formula_name": _get_formula_name(formula_name),
             "formula_arg": "",
             "output_var_name": OUTPUT_VAR,
             "match_value": MATCH_VALUE,
@@ -49,7 +52,8 @@ class TdxBridge:
     def execute_screen_range(self, end_time: str, kline_count: int,
                               return_count: int = None,
                               stock_list_override: list = None,
-                              start_time: str = ""):
+                              start_time: str = "",
+                              formula_name: str = None):
         """
         区间选股：返回信号 + 价格
 
@@ -61,7 +65,7 @@ class TdxBridge:
             return_count = kline_count
         task = {
             "task_type": "range",
-            "formula_name": _get_formula_name(),
+            "formula_name": _get_formula_name(formula_name),
             "formula_arg": "",
             "output_var_name": OUTPUT_VAR,
             "end_time": end_time,
@@ -78,7 +82,8 @@ class TdxBridge:
                                        stock_list_override: list = None,
                                        start_time: str = "",
                                        signal_start: str = "",
-                                       period: str = "5m"):
+                                       period: str = "5m",
+                                       formula_name: str = None):
         """
         区间选股 + 日内K线增强版：两步调用 worker
         Step 1: range → 信号 + 日线收盘价 (快)
@@ -95,7 +100,7 @@ class TdxBridge:
         # ── Step 1: 获取信号 + 日线收盘价 ──────────────────
         task1 = {
             "task_type": "range",
-            "formula_name": _get_formula_name(),
+            "formula_name": _get_formula_name(formula_name),
             "formula_arg": "",
             "output_var_name": OUTPUT_VAR,
             "end_time": end_time,
