@@ -348,30 +348,36 @@ async def sim_trader_execute():
 
 
 @router.get("/api/sim-trader/trades")
-async def sim_trader_trades(limit: int = 50):
+async def sim_trader_trades(page: int = 1, limit: int = 50):
+    """分页获取交易记录。page 从 1 开始，limit 默认 50。"""
+    if page < 1:
+        page = 1
+    if limit < 1:
+        limit = 50
+    if limit > 500:
+        limit = 500
+
     engine = get_engine()
     names = _load_stock_names()
     today = date.today()
 
-    # 已完成交易
-    trades = engine.trades[-limit:]
-    result = []
-    for t in reversed(trades):
-        result.append({
-            'code': t.code, 'name': names.get(t.code, ''),
-            'entry': str(t.entry_date), 'entry_time': getattr(t, 'entry_time', '15:00'),
-            'exit': str(t.exit_date), 'exit_time': getattr(t, 'exit_time', '15:00'),
-            'entry_px': t.entry_price, 'exit_px': t.exit_price,
-            'shares': t.shares, 'ret_pct': round(t.return_pct, 2),
-            'profit': round(t.profit_amount, 0), 'reason': t.exit_reason,
-            'hold_days': t.hold_days, 'entry_reason': t.entry_reason,
-            'exit_timing': t.exit_timing, 'status': '已平仓',
-        })
+    # ── 已完成交易：按 entry_date 倒序（同股同日多笔按 code+price+shares 排，确保分页稳定） ──
+    closed_sorted = sorted(
+        engine.trades,
+        key=lambda t: (str(t.entry_date), t.code, t.entry_price, t.shares),
+        reverse=True,
+    )
 
-    # 当前持仓（买入记录，尚未卖出）
+    # ── 当前持仓：按 entry_date 倒序 ──
+    holding = []
     try:
         daily_dir = ROOT_DIR / "data" / "parquet" / "daily"
-        for p in engine.active_positions():
+        holding_positions = sorted(
+            engine.active_positions(),
+            key=lambda p: str(p.entry_date),
+            reverse=True,
+        )
+        for p in holding_positions:
             cur_px = p.entry_price
             f = daily_dir / f"{p.code}.parquet"
             if f.exists():
@@ -386,7 +392,7 @@ async def sim_trader_trades(limit: int = 50):
                 if not row.empty:
                     cur_px = float(row.iloc[0]['close'])
             ret = (cur_px / p.entry_price - 1) * 100
-            result.append({
+            holding.append({
                 'code': p.code, 'name': names.get(p.code, ''),
                 'entry': str(p.entry_date), 'entry_time': getattr(p, 'entry_time', '15:00'),
                 'exit': '持仓中', 'exit_time': '',
@@ -400,7 +406,35 @@ async def sim_trader_trades(limit: int = 50):
     except Exception:
         pass
 
-    return {'status': 'ok', 'trades': result}
+    # ── 合并：持仓优先（最新在最前），然后按日期倒序的已平仓 ──
+    all_trades = holding + [
+        {
+            'code': t.code, 'name': names.get(t.code, ''),
+            'entry': str(t.entry_date), 'entry_time': getattr(t, 'entry_time', '15:00'),
+            'exit': str(t.exit_date), 'exit_time': getattr(t, 'exit_time', '15:00'),
+            'entry_px': t.entry_price, 'exit_px': t.exit_price,
+            'shares': t.shares, 'ret_pct': round(t.return_pct, 2),
+            'profit': round(t.profit_amount, 0), 'reason': t.exit_reason,
+            'hold_days': t.hold_days, 'entry_reason': t.entry_reason,
+            'exit_timing': t.exit_timing, 'status': '已平仓',
+        }
+        for t in closed_sorted
+    ]
+
+    total = len(all_trades)
+    pages = (total + limit - 1) // limit if limit > 0 else 0
+    start = (page - 1) * limit
+    end = start + limit
+    page_data = all_trades[start:end]
+
+    return {
+        'status': 'ok',
+        'trades': page_data,
+        'total': total,
+        'page': page,
+        'limit': limit,
+        'pages': pages,
+    }
 
 
 @router.get("/api/sim-trader/equity")
