@@ -42,3 +42,4 @@ Thumbs.db
 .vscode/
 *.swp
 output_backup_*/
+data/parquet/daily_backup_*/
