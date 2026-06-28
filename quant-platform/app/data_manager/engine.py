@@ -144,12 +144,12 @@ def download_min5_bars(code: str, count: int = 800) -> pd.DataFrame:
             df = ts.pro_bar(ts_code=ts_code, freq='5min', adj='qfq')
             if df is not None and not df.empty:
                 df = df.head(count)
-                df = df.rename(columns={'trade_time': 'date', 'trade_time': 'datetime', 'vol': 'volume'})
-                if 'datetime' not in df.columns and 'date' in df.columns:
-                    df['datetime'] = df['date']
-                df['date'] = pd.to_datetime(df['datetime'])
+                # 数据-C1: min5 统一输出 datetime 列(load_all_bars 对 min5 读 datetime)。
+                # 原双键 rename {'trade_time':'date','trade_time':'datetime'} 第一键被pandas静默丢弃。
+                df = df.rename(columns={'trade_time': 'datetime', 'vol': 'volume'})
+                df['datetime'] = pd.to_datetime(df['datetime'])
                 # Tushare amount 字段单位是元，无需转换
-                df = df[['date','open','high','low','close','volume','amount']].sort_values('date')
+                df = df[['datetime', 'open', 'high', 'low', 'close', 'volume', 'amount']].sort_values('datetime')
                 return df
     except Exception as e:
         log.debug(f"Tushare M5 {code} 失败: {e}，尝试使用 TDX兜底")
@@ -163,10 +163,11 @@ def download_min5_bars(code: str, count: int = 800) -> pd.DataFrame:
             api.disconnect()
             if data:
                 df = api.to_df(data)
-                df = df.rename(columns={'datetime': 'date', 'vol': 'volume'})
-                df['date'] = pd.to_datetime(df['date'])
+                # 数据-C1: TDX 兜底路径同样统一输出 datetime 列
+                df = df.rename(columns={'datetime': 'datetime', 'vol': 'volume'})
+                df['datetime'] = pd.to_datetime(df['datetime'])
                 df['amount'] = df['close'] * df['volume'] * 100
-                return df[['date','open','high','low','close','volume','amount']]
+                return df[['datetime', 'open', 'high', 'low', 'close', 'volume', 'amount']]
     except Exception:
         log.warning(f"TDX 5分钟线下载失败 {code}")
     return None
@@ -404,7 +405,10 @@ def batch_download_all(freq: str = "daily", years: int = 1, mode: str = "increme
                         # count=80 覆盖至少一个交易日（240分钟/5=48根，冗余防假期）
                         df = download_bars(c, freq, count=max(80, (date.today() - last_dt).days * 50))
                         if df is not None and not df.empty:
-                            df = df[df['date'] > last_dt]
+                            # 数据-C1: daily 用 date 列, min5 用 datetime 列(统一后)
+                            _tcol = 'date' if freq == 'daily' else 'datetime'
+                            if _tcol in df.columns:
+                                df = df[pd.to_datetime(df[_tcol]) > pd.to_datetime(last_dt)]
                             if not df.empty:
                                 with _results_lock:
                                     results[c] = df

@@ -853,6 +853,11 @@ class DatabaseManager:
                     old_df = pd.DataFrame()
                 # 统一日期类型，避免 Timestamp vs date 比较出错
                 if not old_df.empty:
+                    # 数据-C1 迁移兼容: 旧 min5 文件可能用 'date' 列，新写入用 'datetime'。
+                    # 合并前把 old_df 的时间列归一到 new_df 的 date_col，避免双列/NaN。
+                    _other_col = 'datetime' if date_col == 'date' else 'date'
+                    if date_col not in old_df.columns and _other_col in old_df.columns:
+                        old_df = old_df.rename(columns={_other_col: date_col})
                     if date_col in old_df.columns:
                         old_df[date_col] = pd.to_datetime(old_df[date_col])
                     if date_col in new_df.columns:
