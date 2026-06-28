@@ -52,7 +52,7 @@ def can_sell_today(entry_date: date, today: date) -> bool:
     return today > entry_date  # 严格大于
 
 
-# 默认成本配置
+# 默认成本配置（settings 缺失时的 fallback）
 DEFAULT_COST_CFG = {
     'commission_rate': 0.00025,   # 万2.5
     'min_commission': 5.0,         # 最低 5 元
@@ -61,9 +61,22 @@ DEFAULT_COST_CFG = {
 }
 
 
+def get_cost_cfg() -> dict:
+    """成本率唯一真相源：优先读 config(backtest.cost)，缺失回退 DEFAULT_COST_CFG。
+    任务一前 execution 走硬编码，现统一从 settings 读，禁止散落硬编码。"""
+    try:
+        from core.settings import settings
+        cfg = settings.get("backtest", "cost", default=None)
+        if isinstance(cfg, dict) and cfg:
+            return {**DEFAULT_COST_CFG, **cfg}
+    except Exception:
+        pass
+    return dict(DEFAULT_COST_CFG)
+
+
 def calc_buy_cost(price: float, shares: int, cfg: dict = None) -> dict:
     """买入成本 = 毛额 + 佣金 + 滑点"""
-    cfg = {**DEFAULT_COST_CFG, **(cfg or {})}
+    cfg = {**get_cost_cfg(), **(cfg or {})}
     gross = price * shares
     commission = max(gross * cfg['commission_rate'], cfg['min_commission'])
     slippage = gross * cfg['slippage_rate']
@@ -77,7 +90,7 @@ def calc_buy_cost(price: float, shares: int, cfg: dict = None) -> dict:
 
 def calc_sell_revenue(price: float, shares: int, cfg: dict = None) -> dict:
     """卖出净收入 = 毛额 - 佣金 - 印花 - 滑点"""
-    cfg = {**DEFAULT_COST_CFG, **(cfg or {})}
+    cfg = {**get_cost_cfg(), **(cfg or {})}
     gross = price * shares
     commission = max(gross * cfg['commission_rate'], cfg['min_commission'])
     stamp_tax = gross * cfg['stamp_tax_rate']

@@ -684,6 +684,17 @@ class AIBacktestOptimizer:
         if remaining > 0:
             return None  # 未完成交易不计入
 
+        # 任务一: 扣交易成本(比例口径)。realized 是百分比收益率(×100)，
+        # 成本同口径×100。买入扣 佣金+滑点；卖出扣 佣金+印花+滑点。
+        # 局限: 比例口径无法体现 min_commission(5元最低)，金额口径重构属后续。
+        apply_costs = bool(_p('apply_costs', True))
+        if apply_costs:
+            from app.backtest.execution import get_cost_cfg
+            _c = get_cost_cfg()
+            buy_cost_rate = _c['commission_rate'] + _c['slippage_rate']
+            sell_cost_rate = _c['commission_rate'] + _c['stamp_tax_rate'] + _c['slippage_rate']
+            realized -= (buy_cost_rate + sell_cost_rate) * 100  # 一买一卖的成本占比(全仓)
+
         return {
             "code": code, "name": self._code_to_name.get(code, code),
             "entry_price": entry, "exit_price": exit_price or entry,
