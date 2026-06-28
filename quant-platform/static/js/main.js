@@ -874,7 +874,22 @@ async function loadDataSettings() {
     });
   } catch(e) {}
 }
-function saveSettings() { /* stub */ }
+async function saveSettings() {
+  // 「保存全局设置」= 依次保存系统设置 tab 的 4 张配置卡(搜索空间/风控/数据/网关)。
+  // 复用各卡已有的保存函数，不重造逻辑。密钥卡(saveEnvKeys)独立操作，空值会误报，故不纳入。
+  const msg = document.getElementById('save-msg');
+  try {
+    await Promise.resolve(saveSearchSpace());
+    await Promise.resolve(saveRiskSettings());
+    await Promise.resolve(saveDataSettings());
+    await Promise.resolve(saveGatewaySettings());
+    if (msg) { msg.style.display = 'inline'; msg.textContent = '✓ 配置已持久化保存'; msg.style.color = 'var(--green)'; }
+    addLog('ok', '全局设置已保存（搜索空间/风控/数据/网关）');
+  } catch (e) {
+    if (msg) { msg.style.display = 'inline'; msg.textContent = '✗ 部分保存失败'; msg.style.color = 'var(--red)'; }
+    addLog('error', '全局设置保存失败: ' + (e && e.message || e));
+  }
+}
 async function saveSearchSpace() {
   const msgEl = document.getElementById('save-sspace-msg');
   if (!msgEl) return;
@@ -989,7 +1004,24 @@ async function applyAiBestToRisk() {
     alert('应用失败: ' + e.message);
   }
 }
-function saveGatewaySettings() { /* stub */ }
+function saveGatewaySettings() {
+  var data = {
+    gateway: {
+      qmt_path: (document.getElementById('set-qmt-path') || {}).value || '',
+      qmt_market_mode: (document.getElementById('set-qmt-mode') || {}).value || 'B',
+    }
+  };
+  var msg = document.getElementById('save-gateway-msg');
+  return fetch('/api/settings', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({data: data})
+  }).then(function(r) { return r.json(); }).then(function(res) {
+    if (msg) { msg.textContent = res.message || '已保存'; msg.style.color = 'var(--green)'; }
+    return res;
+  }).catch(function() {
+    if (msg) { msg.textContent = '保存失败'; msg.style.color = 'var(--red)'; }
+  });
+}
 function loadReportsPage() { /* stub */ }
 function loadReportsList() { /* stub */ }
 function downloadModalMD() { /* stub */ }
