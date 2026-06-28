@@ -246,16 +246,21 @@ async def ai_backtest_apply(body: dict):
             applied.append(f"{param_key}={params[param_key]}")
 
     # 重建 staged_take_profit（支持 2 档或 3 档）
+    # P0-1 单位约定: take_profit_tiers.profit_pct 统一为小数(0.03=3%)。
+    # 本端点 params 来自 best_params，tp*_profit 与 search_space 同量纲=百分比(如 3.0 或 0.83)，
+    # 无条件 /100 转小数。不可用 "v>1才除" 猜测——search_space 允许 0.83% 这种 <1 的百分比值。
+    def _to_decimal_pct(v):
+        return float(v) / 100.0
     if "tp1_profit" in params and "tp2_profit" in params:
         tp_plan = [
-            {"profit_pct": params["tp1_profit"], "sell_ratio": params.get("tp1_ratio", 0.33),
+            {"profit_pct": _to_decimal_pct(params["tp1_profit"]), "sell_ratio": params.get("tp1_ratio", 0.33),
              "label": "分阶止盈1"},
-            {"profit_pct": params["tp2_profit"], "sell_ratio": params.get("tp2_ratio", 0.33),
+            {"profit_pct": _to_decimal_pct(params["tp2_profit"]), "sell_ratio": params.get("tp2_ratio", 0.33),
              "label": "分阶止盈2"},
         ]
         if "tp3_profit" in params:
             tp_plan.append(
-                {"profit_pct": params["tp3_profit"], "sell_ratio": params.get("tp3_ratio", 0.34),
+                {"profit_pct": _to_decimal_pct(params["tp3_profit"]), "sell_ratio": params.get("tp3_ratio", 0.34),
                  "label": "分阶止盈3", "sell_all": True},
             )
         else:

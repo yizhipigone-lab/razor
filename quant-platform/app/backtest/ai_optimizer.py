@@ -553,14 +553,15 @@ class AIBacktestOptimizer:
 
         # 分档止盈
         if params and 'tp1_profit' in params:
+            # P0-1 单位约定: tp*_profit 是百分比(3.0=3%)，统一转小数(0.03) 与 config/_build_tp_plan 一致
             tp_plan = [
-                {"profit_pct": params.get('tp1_profit', 10.0),
+                {"profit_pct": params.get('tp1_profit', 10.0) / 100.0,
                  "sell_ratio": params.get('tp1_ratio', 0.33), "label": "分阶止盈1"},
-                {"profit_pct": params.get('tp2_profit', 20.0),
+                {"profit_pct": params.get('tp2_profit', 20.0) / 100.0,
                  "sell_ratio": params.get('tp2_ratio', 0.33), "label": "分阶止盈2"},
             ]
             if 'tp3_profit' in params:
-                tp_plan.append({"profit_pct": params.get('tp3_profit', 30.0),
+                tp_plan.append({"profit_pct": params.get('tp3_profit', 30.0) / 100.0,
                                 "sell_ratio": params.get('tp3_ratio', 0.34),
                                 "label": "分阶止盈3", "sell_all": True})
         else:
@@ -633,16 +634,18 @@ class AIBacktestOptimizer:
                 if s_idx in staged_done:
                     continue
                 tp_pct = stage.get("profit_pct", 999.0)
-                if (high_p / entry - 1) * 100 >= tp_pct:
+                # P0-1: tp_pct 已统一为小数(0.03=3%)。比较与成交价均按小数口径
+                if (high_p / entry - 1) >= tp_pct:
                     staged_done.add(s_idx)
                     sell_ratio = remaining if stage.get("sell_all") else stage.get("sell_ratio", 0.0)
                     actual = min(sell_ratio, remaining)
                     if actual > 0:
-                        realized += tp_pct * actual
+                        # realized 是百分比口径(close_pnl=(close/entry-1)*100)，tp_pct小数→*100
+                        realized += tp_pct * 100 * actual
                         remaining -= actual
                     tp_triggered = True
                     if remaining <= 0:
-                        exit_price = entry * (1 + tp_pct / 100)
+                        exit_price = entry * (1 + tp_pct)
                         break
 
             if remaining <= 0:
