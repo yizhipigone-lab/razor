@@ -855,7 +855,9 @@ class AIBacktestOptimizer:
                     f"当前最优平盈率: {max((r['avg_pnl'] for r in results), default=0):+.2f}%"
                 )
 
-            return summary["score"]
+            # 任务二(寻优-C1): Optuna 在验证集上爬山，而非全样本 IS score。
+            # 防止贝叶斯优化器对全样本(含valid+test)过拟合。无分割时退回 score。
+            return summary["valid_score"] if has_split else summary["score"]
 
         study = optuna.create_study(direction="maximize")
         study.optimize(objective, n_trials=self.n_bayesian, n_jobs=1)
@@ -1071,16 +1073,18 @@ class AIBacktestOptimizer:
             regime_summary = regime_detector.summarize_trades_by_regime(all_trades_so_far, regime_map)
             log_cb(f"📊 市场状态分析：{regime_summary}")
 
-            # J3/C3-3: train/valid/test 日期分离（按最近 70%/20%/10%）
+            # 任务二(寻优-C1): train/valid/test 按【自然交易日跨度】70/20/10 切分。
+            # 原按信号日期序号(int(n*0.7))切分——信号时间分布不均时 valid/test 区间畸短、噪声大。
+            # 改按 start~end 日历跨度线性切，保证三段时间长度稳定。test 严格隔离只做最终展示。
             train_end_d = end
             valid_end_d = end
-            if self._cached_signals is not None and len(self._cached_signals) > 0:
-                all_dates = sorted(set(pd.to_datetime(self._cached_signals["date"]).dt.date))
-                n = len(all_dates)
-                if n >= 10:
-                    train_end_d = all_dates[int(n * 0.7) - 1]
-                    valid_end_d = all_dates[int(n * 0.9) - 1]
-                    log_cb(f"📅 样本分割: n={n} train(start~{train_end_d}) valid({train_end_d + timedelta(days=1)}~{valid_end_d}) test({valid_end_d + timedelta(days=1)}~{end})")
+            total_days = (end - start).days
+            if total_days >= 30:
+                train_end_d = start + timedelta(days=int(total_days * 0.7))
+                valid_end_d = start + timedelta(days=int(total_days * 0.9))
+                log_cb(f"📅 样本分割(自然日 {total_days}天): train(start~{train_end_d}) "
+                       f"valid({train_end_d + timedelta(days=1)}~{valid_end_d}) "
+                       f"test({valid_end_d + timedelta(days=1)}~{end}) [test严格隔离]")
 
             # 为探索结果补齐 valid_score / test_score
             if train_end_d < end:
@@ -1141,18 +1145,19 @@ class AIBacktestOptimizer:
                 top10[i]["wfe_status"] = wfo.get("wfe_status", "")
                 top10[i]["oos_pnl"] = wfo.get("oos_pnl")
 
-            # L23 修复: 用 (score, wfe) 联合排序选 best_params,防止 IS 过拟合
+            # 任务二(寻优-C1): 用 (valid_score, wfe) 选 best_params，与 Top-10 排序口径一致。
+            # 原用全样本 score 排序会抵消 valid_score 防过拟合的努力。
             # WFE 越接近 1 越好;缺失 WFE 的项(未做 WFO)按 0 处理
             def _sort_key(r):
-                score = r.get("score", -999)
+                valid_score = r.get("valid_score", r.get("score", -999))
                 wfe_raw = r.get("wfe", "N/A")
                 wfe_val = float(wfe_raw) if isinstance(wfe_raw, (int, float)) else 0.0
-                return (score, wfe_val)
+                return (valid_score, wfe_val)
 
             top10 = sorted(top10, key=_sort_key, reverse=True)
             best_params = top10[0]["params"] if top10 else None
             _update_state(top10=top10, best_params=best_params)
-            log_cb(f"🎯 WFE 选优后: 平盈率={_safe_float(top10[0].get('avg_pnl'),0):+.2f}% score={_safe_float(top10[0].get('score'),-999):.3f} WFE={top10[0].get('wfe', 'N/A')}")
+            log_cb(f"🎯 WFE 选优后: 平盈率={_safe_float(top10[0].get('avg_pnl'),0):+.2f}% valid_score={_safe_float(top10[0].get('valid_score'),-999):.3f} score={_safe_float(top10[0].get('score'),-999):.3f} WFE={top10[0].get('wfe', 'N/A')}")
             _update_state(top10=top10, wfo_results=wfo_results)
 
             # 计算最终 Regime 摘要（基于全部回测）
