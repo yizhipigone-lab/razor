@@ -156,7 +156,8 @@ class DataPipelineScheduler:
         log.info("CronScheduler | 指数日线更新已安排在 15:35 执行。")
 
         # ── 启动时补执行：如果已是交易日且过了14:52，立即跑一次 ──
-        self._daily_ran_today = False
+        # 用「最后执行日期」而非布尔标志，避免长驻进程下次日起永久跳过
+        self._daily_ran_date = None
         loop = asyncio.get_event_loop()
         loop.create_task(self._catch_up_daily())
 
@@ -178,7 +179,6 @@ class DataPipelineScheduler:
 
             log.info(f"CronScheduler | [启动补执行] 已过14:52，立即执行尾盘交易: {today}")
             await self.run_sim_trader_daily()
-            self._daily_ran_today = True
         except Exception as e:
             log.warning(f"CronScheduler | [启动补执行] 失败: {e}")
 
@@ -373,11 +373,11 @@ class DataPipelineScheduler:
         from datetime import date
         today = date.today()
 
-        # 防重复：同一天只跑一次
-        if getattr(self, '_daily_ran_today', False):
+        # 防重复：同一天只跑一次（按日期判断，跨日自动复位）
+        if getattr(self, '_daily_ran_date', None) == today:
             log.info(f"CronScheduler | [模拟盘] {today} 已执行过，跳过")
             return
-        self._daily_ran_today = True
+        self._daily_ran_date = today
 
         log.info(f"CronScheduler | [模拟盘] 14:52 开始执行尾盘交易: {today}")
 

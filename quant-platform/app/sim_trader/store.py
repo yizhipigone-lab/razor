@@ -332,9 +332,7 @@ class JsonSimStore:
     # ── 全量清空 ────────────────────────────────
 
     def clear_all(self):
-        for t in ('sim_positions', 'sim_trades', 'sim_equity', 'sim_state'):
-            self.conn.execute(f"DELETE FROM {t}")
-        try:
-            self.conn.execute("DROP SEQUENCE IF EXISTS sim_trade_id")
-        except Exception:
-            log.warning("DROP SEQUENCE sim_trade_id 失败")
+        # JsonSimStore 用内存 dict + JSON 落盘，无 self.conn；
+        # 历史 bug：此处误用 DuckDB SQL 会 AttributeError 必崩
+        self._data = {}
+        self._save()

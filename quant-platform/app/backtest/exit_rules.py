@@ -12,6 +12,9 @@
 from dataclasses import dataclass, field
 from typing import Optional, List, Callable
 
+from core.logger import get_logger
+
+_log = get_logger("ExitRules")
 
 def _pct(v: float) -> float:
     """自动识别百分比/小数格式：abs>1 时除以100，否则保持"""
@@ -255,6 +258,14 @@ class ExitRuleEngine:
                 if signal is not None:
                     return signal
             except Exception:
+                # 不静默吞：记录规则名与关键上下文，避免"该止损没止损"被掩盖
+                _log.error(
+                    f"退出规则 {_name} 执行异常 "
+                    f"(entry={getattr(ctx, 'entry_price', '?')}, "
+                    f"close={getattr(ctx, 'close', '?')}, "
+                    f"hold_days={getattr(ctx, 'hold_days', '?')})",
+                    exc_info=True,
+                )
                 continue
         return None
 

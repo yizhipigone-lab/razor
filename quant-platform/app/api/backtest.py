@@ -85,6 +85,13 @@ async def ai_backtest_start(body: dict):
     atr_stop_mult   = body.get("atr_stop_multiplier")
     use_hot_concept = body.get("use_hot_concept", False)
     hot_concept_top_n = body.get("hot_concept_top_n", 5)
+    strategy_type = body.get("strategy_type", "python")   # "python" | "tdx"
+    formula_name = body.get("formula_name", "")
+
+    # TDX 模式：公式名必填
+    if strategy_type == "tdx" and not formula_name.strip():
+        _update_state(running=False, phase="idle")
+        return {"status": "error", "message": "TDX 模式下通达信公式名不能为空"}
 
     def _do_ai_backtest():
         try:
@@ -93,6 +100,7 @@ async def ai_backtest_start(body: dict):
                 use_llm=use_llm,
                 n_exploration=n_exploration,
                 n_bayesian=n_bayesian,
+                strategy_type=strategy_type,
             )
             # 更新全局单例
             import app.backtest.ai_optimizer as _aio
@@ -123,6 +131,8 @@ async def ai_backtest_start(body: dict):
                 atr_stop_multiplier=atr_stop_mult,
                 use_hot_concept=use_hot_concept,
                 hot_concept_top_n=hot_concept_top_n,
+                strategy_type=strategy_type,
+                formula_name=formula_name,
             )
 
             # 💾 自动保存 AI 回测历史
@@ -496,7 +506,13 @@ _BT_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _default_bt_config() -> dict:
-    """从 sim_trader config 读取默认回测配置"""
+    """系统默认回测配置。
+
+    以 sim_trader.config 硬编码常量为底，再用「系统设置」页保存到
+    app_setting.json 的最新风控参数覆盖存在的字段。
+    这样「系统配置」按钮拉取到的值能真实反映用户在系统设置页的保存，
+    重启后也不会回退到硬编码默认（修复历史上「系统配置形同虚设」的问题）。
+    """
     from app.sim_trader.config import (
         INITIAL_CAPITAL, POSITION_SIZE, MIN_BUY_AMT,
         HARD_STOP, TAKE_PROFIT_TIERS,
@@ -508,7 +524,7 @@ def _default_bt_config() -> dict:
         FIRST_DAY_EXIT_MIN_PROFIT,
         FIRST_DAY_EXIT_DAYS,
     )
-    return {
+    cfg = {
         "strategy_name": STRATEGY_NAME,
         "initial_capital": INITIAL_CAPITAL,
         "position_size": POSITION_SIZE,
@@ -532,6 +548,27 @@ def _default_bt_config() -> dict:
         "start_date": "2023-01-01",
         "end_date": str(date.today()),
     }
+    # 用系统设置页保存的最新值覆盖（来源: app_setting.json 的 backtest 段，
+    # 由 /api/settings/risk-params 与 /api/backtest/apply-to-system 写入）
+    try:
+        from core.settings import settings
+        settings.reload()
+        bt = settings.get("backtest", default={}) or {}
+        _OVERRIDE_KEYS = (
+            "initial_capital", "position_size", "min_buy_amt", "hard_stop",
+            "trail_activate", "trail_dd", "time_exit_days", "time_exit_profit",
+            "time_force_days", "first_day_exit_min_profit", "first_day_exit_days",
+            "same_stock_cooldown", "loss_streak_halve", "loss_streak_pause",
+            "pause_days",
+        )
+        for k in _OVERRIDE_KEYS:
+            if k in bt and bt[k] is not None:
+                cfg[k] = bt[k]
+        if bt.get("take_profit_tiers"):
+            cfg["take_profit_tiers"] = copy.deepcopy(bt["take_profit_tiers"])
+    except Exception as e:
+        log.warning(f"读取系统设置回测默认值失败，回退硬编码默认: {e}")
+    return cfg
 
 
 def _load_bt_config() -> dict:
@@ -577,7 +614,7 @@ async def save_simple_bt_config(body: dict):
 
 @router.post("/api/backtest/simple-config/reset")
 async def reset_simple_bt_config():
-    """重置回测配置为系统默认值"""
+    """重置回测配置为系统默认值（仅在用户显式点「重置」时调用，会落盘覆盖）"""
     cfg = _default_bt_config()
     _save_bt_config(cfg)
     return {"status": "ok", "message": "已重置为系统配置", "config": cfg}
