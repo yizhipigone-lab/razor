@@ -606,17 +606,19 @@ class BacktestEngine:
 
         # 分档止盈：优先从 params_override 扁平化构建，否则读 settings
         if params_override and 'tp1_profit' in params_override:
+            # P0-1 单位约定: tp*_profit 是百分比格式(3.0=3%)，take_profit_tiers.profit_pct
+            # 统一为小数约定(0.03)，与 config / exit_rules 判定口径一致 → 此处 /100
             active_tp_plan = [
-                {"profit_pct": params_override.get('tp1_profit', 10.0),
+                {"profit_pct": params_override.get('tp1_profit', 10.0) / 100.0,
                  "sell_ratio": params_override.get('tp1_ratio', 0.33),
                  "label": "分阶止盈1"},
-                {"profit_pct": params_override.get('tp2_profit', 20.0),
+                {"profit_pct": params_override.get('tp2_profit', 20.0) / 100.0,
                  "sell_ratio": params_override.get('tp2_ratio', 0.33),
                  "label": "分阶止盈2"},
             ]
             if 'tp3_profit' in params_override:
                 active_tp_plan.append({
-                    "profit_pct": params_override.get('tp3_profit', 30.0),
+                    "profit_pct": params_override.get('tp3_profit', 30.0) / 100.0,
                     "sell_ratio": params_override.get('tp3_ratio', 0.34),
                     "label": "分阶止盈3", "sell_all": True,
                 })
@@ -758,7 +760,8 @@ class BacktestEngine:
                             actual_sell = min(sell_ratio, remaining_ratio)
                             if actual_sell > 0:
                                 tp_pct = stage.get("profit_pct", 999.0)
-                                tp_price = entry_price * (1 + tp_pct / 100)
+                                # P0-1: tp_pct 已统一为小数(0.03=3%)，成交价 = entry*(1+小数)
+                                tp_price = entry_price * (1 + tp_pct)
                                 realized_pnl += _cost_pnl(tp_price, actual_sell)
                                 sell_events.append({"type": "sell", "date": str(curr_dt),
                                                     "price": tp_price, "ratio": actual_sell,
@@ -840,17 +843,19 @@ class BacktestEngine:
         fd_days = _p('first_day_exit_days')
 
         if params_override and 'tp1_profit' in params_override:
+            # P0-1 单位约定: tp*_profit 是百分比格式(3.0=3%)，take_profit_tiers.profit_pct
+            # 统一为小数约定(0.03)，与 config / exit_rules 判定口径一致 → 此处 /100
             active_tp_plan = [
-                {"profit_pct": params_override.get('tp1_profit', 10.0),
+                {"profit_pct": params_override.get('tp1_profit', 10.0) / 100.0,
                  "sell_ratio": params_override.get('tp1_ratio', 0.33),
                  "label": "分阶止盈1"},
-                {"profit_pct": params_override.get('tp2_profit', 20.0),
+                {"profit_pct": params_override.get('tp2_profit', 20.0) / 100.0,
                  "sell_ratio": params_override.get('tp2_ratio', 0.33),
                  "label": "分阶止盈2"},
             ]
             if 'tp3_profit' in params_override:
                 active_tp_plan.append({
-                    "profit_pct": params_override.get('tp3_profit', 30.0),
+                    "profit_pct": params_override.get('tp3_profit', 30.0) / 100.0,
                     "sell_ratio": params_override.get('tp3_ratio', 0.34),
                     "label": "分阶止盈3", "sell_all": True,
                 })
@@ -928,8 +933,11 @@ class BacktestEngine:
                         sell_ratio = remaining_ratio if stage.get("sell_all") else stage.get("sell_ratio", 0.0)
                         actual_sell = min(sell_ratio, remaining_ratio)
                         if actual_sell > 0:
-                            tp_pct = stage.get("profit_pct", 999.0)
-                            realized_pnl += tp_pct * actual_sell
+                            # P0-1: 原 `realized_pnl += tp_pct * actual_sell` 单位错(tp_pct小数 vs
+                            # realized_pnl百分比口径)且是名义档位收益。改为按真实成交价算百分比收益，
+                            # 与下方 close_pnl(950)/pnl(965) 口径一致。
+                            tp_realized_pct = (signal.sell_price / entry_price - 1) * 100
+                            realized_pnl += tp_realized_pct * actual_sell
                             sell_events.append({"type": "sell", "date": str(d),
                                                 "price": signal.sell_price,
                                                 "ratio": actual_sell,
