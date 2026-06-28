@@ -59,6 +59,20 @@ class ParquetPipelineManager:
                     sync_broadcast({"type": "log", "level": "warning", "msg": msg})
                     continue
 
+                # 数据-C3: 同步拉复权因子, 存入 parquet(adj_factor列), 读取层做前复权。
+                # 存原始价+因子(不在写入时改价), 读时按文件内最新因子归一→永远正确的前复权,
+                # 增量追加不破坏(读取时整体重算)。
+                try:
+                    adj = self.pro.adj_factor(trade_date=d)
+                    if adj is not None and not adj.empty:
+                        df = df.merge(adj[['ts_code', 'adj_factor']], on='ts_code', how='left')
+                    time.sleep(0.15)  # adj_factor 限速
+                except Exception as _e:
+                    log.debug(f"adj_factor 拉取失败 {d}: {_e}")
+                if 'adj_factor' not in df.columns:
+                    df['adj_factor'] = 1.0
+                df['adj_factor'] = df['adj_factor'].fillna(1.0)
+
                 df['code'] = df['ts_code'].apply(self.format_to_duckdb_code)
                 df['date'] = pd.to_datetime(d)
 

@@ -22,6 +22,30 @@ from app.data_manager.indicators import enrich_with_indicators
 
 log = get_logger("DuckDB")
 
+
+def _apply_qfq_by_code(df: pd.DataFrame, date_col: str) -> pd.DataFrame:
+    """数据-C3: 按股票前复权。qfq_price = raw_price * adj_factor / 该股最新(最大日期)因子。
+    OHLC 与价格相关列复权; volume/amount 不变。基准用 df 内每股最新因子, 保证除权日价格连续。
+    """
+    if df.empty or "adj_factor" not in df.columns or "code" not in df.columns:
+        return df
+    price_cols = [c for c in ("open", "high", "low", "close") if c in df.columns]
+    if not price_cols:
+        return df
+    df = df.copy()
+    df["adj_factor"] = pd.to_numeric(df["adj_factor"], errors="coerce").fillna(1.0)
+    # 每股最新(最大日期)因子作为前复权基准
+    idx_latest = df.groupby("code")[date_col].transform("max")
+    latest_mask = df[date_col] == idx_latest
+    latest_factor = (df[latest_mask].groupby("code")["adj_factor"].first())
+    base = df["code"].map(latest_factor).fillna(1.0)
+    base = base.where(base != 0, 1.0)
+    ratio = df["adj_factor"] / base
+    for c in price_cols:
+        df[c] = pd.to_numeric(df[c], errors="coerce") * ratio
+    return df
+
+
 ROOT_DIR = Path(__file__).parent.parent
 DATA_DIR = ROOT_DIR / "data"
 PARQUET_DAILY_DIR = DATA_DIR / "parquet" / "daily"
@@ -906,6 +930,12 @@ class DatabaseManager:
                 df = df[df[date_col].dt.date >= start]
             if end:
                 df = df[df[date_col].dt.date <= end]
+            # 数据-C3: daily 前复权(读取层), 与 load_all_bars 一致
+            if freq == "daily" and "adj_factor" in df.columns and not df.empty:
+                if "code" not in df.columns:
+                    df = df.copy()
+                    df["code"] = clean_code
+                df = _apply_qfq_by_code(df, date_col)
         return df
 
     def load_all_bars(
@@ -966,6 +996,10 @@ class DatabaseManager:
                 df = df.drop(columns=["filename"])
                 # 统一日期格式：确保 date 列是 datetime 类型方便 Pandas 处理
                 df[date_col] = pd.to_datetime(df[date_col])
+                # 数据-C3: daily 前复权(读取层)。qfq = raw * adj_factor / 该股最新因子。
+                # 基准用加载区间内每股最大日期的因子, 保证除权日价格连续(消除跳空)。
+                if freq == "daily" and "adj_factor" in df.columns:
+                    df = _apply_qfq_by_code(df, date_col)
             return df
         except Exception as e:
             log.error(f"DuckDB | 批量加载 K 线失败: {e}")
