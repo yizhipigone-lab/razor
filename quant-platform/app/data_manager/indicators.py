@@ -12,6 +12,13 @@ def enrich_with_indicators(df: pd.DataFrame) -> pd.DataFrame:
     接收一只股票的历史全量 K 线 DataFrame，
     使用 TA-Lib 计算一系列基础与核心技术指标，丰富数据字典。
     前提：df 必须按时间正序排列，且包含 open, high, low, close, volume 列。
+
+    ⚠️ 数据-C3 注意: 本函数在 batch_save_bars 写入时调用, 基于【写入时价格】算指标。
+    日线前复权(adj_factor)在读取层(load_bars/_apply_qfq_by_code)进行, 因此存储到 parquet 的
+    指标列(ma*/macd*/kdj*/rsi*/boll*/wr*)是基于【原始/写入价】, 可能与读取出的复权价不一致。
+    现状: 全链路无人消费这些存储列——前端K线MA(calculateMA)、回测/选股策略(ma5_angle等)
+    都用读取出的(已复权)close【自行重算】指标。这些存储列目前是冗余。
+    若未来要直接消费存储指标列, 必须改为读取层复权后重算, 否则会与复权价错位。
     """
     if talib is None:
         return df
