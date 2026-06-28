@@ -158,6 +158,7 @@ class DataPipelineScheduler:
         # ── 启动时补执行：如果已是交易日且过了14:52，立即跑一次 ──
         # 用「最后执行日期」而非布尔标志，避免长驻进程下次日起永久跳过
         self._daily_ran_date = None
+        self._pipeline_last_run = None  # 数据-C4: (日期, 时段) 幂等键
         loop = asyncio.get_event_loop()
         loop.create_task(self._catch_up_daily())
 
@@ -273,8 +274,23 @@ class DataPipelineScheduler:
         except Exception as e:
             log.error(f"CronScheduler | [Redis收割] 严重异常: {e}", exc_info=True)
 
-    async def run_daily_pipeline(self):
-        """后台自动化清洗全部管线的主串行流"""
+    async def run_daily_pipeline(self, force: bool = False):
+        """后台自动化清洗全部管线的主串行流。
+
+        数据-C4 幂等: 同一天同一时段(盘前<12 / 盘后>=12)只跑一次，避免
+        08:30+17:30 双时段 + 手动触发的纯重复(重复消耗 Tushare 配额)。
+        force=True (手动触发) 绕过幂等。
+        """
+        from datetime import datetime as _dt
+        now = _dt.now()
+        session = "am" if now.hour < 12 else "pm"
+        run_key = (now.date(), session)
+        if not force and getattr(self, "_pipeline_last_run", None) == run_key:
+            log.info(f"CronScheduler | [管道] {run_key} 本时段已执行过，跳过(幂等)")
+            sync_info(f"=== 本时段({session})数据已同步过，跳过重复执行 ===")
+            return
+        self._pipeline_last_run = run_key
+
         log.info("CronScheduler ========= [全自动日线/面料收取管道] 起步 =========")
         sync_info("=== 全量数据洗盘开始 ===")
         loop = asyncio.get_running_loop()
@@ -318,12 +334,12 @@ class DataPipelineScheduler:
             log.error(f"CronScheduler | 后台管道同步出现严重异常: {e}", exc_info=True)
 
     async def trigger_manual_run(self):
-        """暴露给 API，允许强制手工起步 (异步安全)"""
+        """暴露给 API，允许强制手工起步 (异步安全)。force=True 绕过幂等。"""
         if self._scheduler.running:
-            await self.run_daily_pipeline()
+            await self.run_daily_pipeline(force=True)
         else:
             log.warning("CronScheduler 未在运行状态，直接触发一次管道同步")
-            await self.run_daily_pipeline()
+            await self.run_daily_pipeline(force=True)
 
     async def trigger_redis_harvest(self):
         """暴露给 API，允许手工触发 Redis→DuckDB 收割"""
