@@ -34,6 +34,52 @@ class Settings:
                     self._data = json.load(f)
             else:
                 self._data = {}
+        # 审计P0(风控三源真相): 加载后校验 risk段(百分比) ÷100 与 backtest段(小数)、
+        # 与 sim_trader/config.py 硬编码是否一致, 不一致 log.warning 暴露漂移(不阻断)。
+        self._check_risk_consistency()
+
+    def _check_risk_consistency(self):
+        """风控参数三源一致性校验(只告警不阻断)。
+        三源: risk段(百分比命名如 hard_stop_loss_pct) / backtest段(小数命名如 hard_stop)
+              / app/sim_trader/config.py(模块常量)。
+        """
+        try:
+            import logging
+            _log = logging.getLogger("Settings")
+            risk = self._data.get("risk", {}) or {}
+            bt = self._data.get("backtest", {}) or {}
+            # (risk百分比字段, backtest小数字段)
+            pairs = [
+                ("hard_stop_loss_pct", "hard_stop"),
+                ("trailing_stop_activate_pct", "trail_activate"),
+                ("trailing_stop_drawdown_pct", "trail_dd"),
+                ("time_exit_min_profit_pct", "time_exit_profit"),
+            ]
+            for rk, bk in pairs:
+                if rk in risk and bk in bt and risk[rk] is not None and bt[bk] is not None:
+                    if abs(float(risk[rk]) / 100.0 - float(bt[bk])) > 1e-6:
+                        _log.warning(
+                            f"[风控真相漂移] risk.{rk}={risk[rk]}%(÷100={float(risk[rk])/100}) "
+                            f"≠ backtest.{bk}={bt[bk]}; 两段不同步, 跑批口径可能不一致"
+                        )
+            # take_profit_tiers 两段是否一致
+            rt, btt = risk.get("take_profit_tiers"), bt.get("take_profit_tiers")
+            if rt and btt and rt != btt:
+                _log.warning("[风控真相漂移] risk.take_profit_tiers ≠ backtest.take_profit_tiers, 两段不同步")
+            # 与 sim_trader/config.py 硬编码比对(小数)
+            try:
+                from app.sim_trader import config as _sc
+                if "hard_stop_loss_pct" in risk and risk["hard_stop_loss_pct"] is not None:
+                    if abs(float(risk["hard_stop_loss_pct"]) / 100.0 - float(getattr(_sc, "HARD_STOP", -0.06))) > 1e-6:
+                        _log.warning(
+                            f"[风控真相漂移] risk.hard_stop_loss_pct÷100={float(risk['hard_stop_loss_pct'])/100} "
+                            f"≠ sim_trader/config.py HARD_STOP={getattr(_sc,'HARD_STOP',None)}; "
+                            f"模块硬编码与配置不一致, 建议 sim_trader 启动时从 settings 加载"
+                        )
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     def reload(self):
         """手动重新加载配置（设置面板保存后调用）"""
