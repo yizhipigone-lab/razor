@@ -169,6 +169,12 @@
     "streak_pause": 3,
     "intraday_freq": "min1",
     "apply_costs": true,
+    "cost": {
+      "commission_rate": 0.00025,
+      "min_commission": 5.0,
+      "stamp_tax_rate": 0.0005,
+      "slippage_rate": 0.001
+    },
     "use_hot_concept": false,
     "hot_concept_top_n": 5
   },
