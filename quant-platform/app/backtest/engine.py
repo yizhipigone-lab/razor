@@ -327,9 +327,25 @@ class BacktestEngine:
         _prog(5, 5, f"回测任务完成: {len(all_trades)}笔(含{len(all_trades)-total_valid if all_trades else 0}笔平手离场)")
         return result
 
-    # 实盘交易成本（万三佣金 + 千一滑点 + 千0.5印花税）
-    TRADE_COST_BUY  = 0.125   # 买入: 0.1%滑点 + 0.025%佣金 = 0.125%
-    TRADE_COST_SELL = 0.175   # 卖出: 0.1%滑点 + 0.025%佣金 + 0.05%印花税 = 0.175%
+    # 实盘交易成本（比例口径, 百分比）。审计P0: 改为从 execution.get_cost_cfg() 派生,
+    # 与 config(backtest.cost) 单一真相源对齐, 不再硬编码。保留类属性作为 import 失败兜底。
+    TRADE_COST_BUY  = 0.125   # fallback: 0.1%滑点 + 0.025%佣金 = 0.125%
+    TRADE_COST_SELL = 0.175   # fallback: 0.1%滑点 + 0.025%佣金 + 0.05%印花税 = 0.175%
+
+    @staticmethod
+    def _cost_rates():
+        """从 execution.get_cost_cfg() 派生买/卖成本比例(百分比, 比例口径)。
+        买 = (佣金+滑点)*100; 卖 = (佣金+印花+滑点)*100。
+        注: 比例口径无法体现 min_commission(5元最低), 与 tdx/sim_trader 含费成本基的已知差异。
+        """
+        try:
+            from app.backtest.execution import get_cost_cfg
+            c = get_cost_cfg()
+            buy = (c['commission_rate'] + c['slippage_rate']) * 100
+            sell = (c['commission_rate'] + c['stamp_tax_rate'] + c['slippage_rate']) * 100
+            return buy, sell
+        except Exception:
+            return BacktestEngine.TRADE_COST_BUY, BacktestEngine.TRADE_COST_SELL
 
     @staticmethod
     def _compute_regime(signal_date, lookback=60):
@@ -654,12 +670,14 @@ class BacktestEngine:
         time_col = "datetime" if "datetime" in bars_5m.columns else "date"
 
         # 成本调整：买入成本摊入 entry_price，卖出时单独扣除
-        cost_entry = entry_price * (1 + self.TRADE_COST_BUY / 100) if apply_costs else entry_price
+        # 审计P0: 成本率从 execution.get_cost_cfg() 派生(config单一真相源), 不再用类内硬编码
+        _cost_buy, _cost_sell = self._cost_rates()
+        cost_entry = entry_price * (1 + _cost_buy / 100) if apply_costs else entry_price
 
         def _cost_pnl(raw_sell_price, ratio):
             """计算扣除交易成本后的实际盈亏贡献"""
             if apply_costs:
-                cost_sell = raw_sell_price * (1 - self.TRADE_COST_SELL / 100)
+                cost_sell = raw_sell_price * (1 - _cost_sell / 100)
                 return ((cost_sell / cost_entry) - 1) * 100 * ratio
             return ((raw_sell_price / entry_price) - 1) * 100 * ratio
 

@@ -70,23 +70,32 @@ class DatabaseManager:
 
     def _init(self):
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        # 性能/并发(审计 P0): 只读模式开关。DuckDB 同一文件不允许多个读写连接共存,
+        # 这是"基线 diff 脚本与运行中服务争用 DB"的根因。只读进程(回测脚本/盘中API)
+        # 设环境变量 DUCKDB_READ_ONLY=1 即可与写进程共存; 写进程(task worker/数据收割)默认读写。
+        import os as _os
+        self._read_only = _os.getenv("DUCKDB_READ_ONLY", "0") in ("1", "true", "True")
         # L27 修复: threading.local 管理线程私有连接, atexit 注册优雅回收
         self._local = threading.local()
         atexit.register(self._close_all)
-        self._create_tables()
-        # 清理残留的 .parquet.tmp 文件（上次写入中断产生的）
-        try:
-            from pathlib import Path as _P
-            daily_dir = _P(__file__).resolve().parent.parent / "data" / "parquet" / "daily"
-            if daily_dir.exists():
-                for f in daily_dir.rglob("*.parquet.tmp"):
-                    try:
-                        f.unlink()
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-        log.info(f"DuckDB 核心就绪: {DB_PATH}")
+        if not self._read_only:
+            self._create_tables()
+        else:
+            log.info("DuckDB | 只读模式(DUCKDB_READ_ONLY=1), 跳过建表, 可与写进程共存")
+        # 清理残留的 .parquet.tmp 文件（上次写入中断产生的, 只读模式不清理）
+        if not self._read_only:
+            try:
+                from pathlib import Path as _P
+                daily_dir = _P(__file__).resolve().parent.parent / "data" / "parquet" / "daily"
+                if daily_dir.exists():
+                    for f in daily_dir.rglob("*.parquet.tmp"):
+                        try:
+                            f.unlink()
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+        log.info(f"DuckDB 核心就绪: {DB_PATH} (read_only={self._read_only})")
 
     @property
     def conn(self):
@@ -96,7 +105,7 @@ class DatabaseManager:
             retries = 5
             while retries > 0:
                 try:
-                    self._local.conn = duckdb.connect(str(DB_PATH))
+                    self._local.conn = duckdb.connect(str(DB_PATH), read_only=self._read_only)
                     break
                 except Exception as e:
                     retries -= 1
