@@ -497,7 +497,8 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
                             sell_shares = min(sell_shares, pos.shares)
                             if sell_shares <= 0:
                                 sell_shares = pos.shares
-                            # 任务一: 卖出扣成本，按卖出股数摊分成本基
+                            # 任务一: 卖出扣成本。tdx 有资金守恒断言(:630)，必须用含费成本基(pos.cost)，
+                            # profit=净卖额-含费成本基, 保证 init+Σprofit == cash+pos_value
                             _sr = calc_sell_revenue(sell_px, sell_shares)
                             _cost_basis = pos.cost * (sell_shares / pos.shares) if pos.shares else 0.0
                             profit = _sr['total'] - _cost_basis
@@ -506,7 +507,7 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
                             if sell_shares >= pos.shares:
                                 pos.active = False
                             else:
-                                pos.cost -= _cost_basis  # 摊减已卖部分成本基，保证后续档位 ratio 正确
+                                pos.cost -= _cost_basis  # 摊减已卖成本基，保证后续档位 ratio 正确
                                 pos.shares -= sell_shares
                             trades_all.append(Trade(
                                 code_num, pos.entry_date, d, entry, sell_px,
@@ -544,7 +545,7 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
                     sell_shares = min(sell_shares, pos.shares)
                     if sell_shares <= 0:
                         sell_shares = pos.shares
-                    # 任务一: 卖出扣成本，按卖出股数摊分成本基
+                    # 任务一: 卖出扣成本(含费成本基, 满足资金守恒断言)
                     _sr = calc_sell_revenue(sell_px, sell_shares)
                     _cost_basis = pos.cost * (sell_shares / pos.shares) if pos.shares else 0.0
                     profit = _sr['total'] - _cost_basis
@@ -593,7 +594,7 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
             else:
                 last_snap = prices_by_date.get(str(sorted_dates[-1]), {})
                 px = last_snap.get(code, {}).get("close", p.entry_price)
-            # 任务一: 期末清仓扣成本
+            # 任务一: 期末清仓扣成本(含费成本基, 满足资金守恒断言)
             _sr = calc_sell_revenue(px, p.shares)
             profit = _sr['total'] - p.cost
             ret = (profit / p.cost * 100) if p.cost else 0.0
