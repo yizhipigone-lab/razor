@@ -240,6 +240,10 @@ class BacktestEngine:
 
         _prog(4, 5, f"处理 {len(signals)} 条信号，日线OHLC仿真...")
 
+        # 性能(审计P1): 循环外按 code 预分组, 循环内 O(1) 查表, 替代 bars[bars["code"]==code]
+        # 全表过滤(原 O(N×M): 5000股×2500信号=12.5M行扫描)。每组按 date 升序便于切片。
+        bars_by_code = {c: g.sort_values("date") for c, g in bars.groupby("code", sort=False)}
+
         all_trades = []
         for i, (_, row) in enumerate(signals.iterrows()):
             if stop_event and stop_event.is_set(): break
@@ -252,6 +256,11 @@ class BacktestEngine:
             entry_price = float(row.get("close", 0))
             if entry_price <= 0: continue
 
+            # 预分组查表(O(1)), 替代全表过滤
+            stock_daily = bars_by_code.get(code)
+            if stock_daily is None or stock_daily.empty:
+                continue
+
             # ★ 实盘过滤①: 停牌检测（成交量为0）
             vol = float(row.get("volume", 1) or 1)
             if vol == 0:
@@ -261,8 +270,8 @@ class BacktestEngine:
             # ★ 实盘过滤②: 涨跌停检测(L25: 改用 execution.can_buy 统一规则)
             pre_close = float(row.get("pre_close", 0) or 0)
             if pre_close <= 0:
-                # 从 bars 中找前一根日线收盘价
-                prev = bars[(bars["code"] == code) & (bars["date"] < signal_date)]
+                # 从预分组数据中找前一根日线收盘价
+                prev = stock_daily[stock_daily["date"] < signal_date]
                 pre_close = float(prev["close"].iloc[-1]) if not prev.empty else 0
             if pre_close > 0:
                 # L25: 统一通过 execution.can_buy 判断(支持主板/创业/科创/北证)
@@ -271,8 +280,7 @@ class BacktestEngine:
                     log.debug(f"跳过 [{code}] 信号日{reason}，跳过")
                     continue
 
-            # 日线OHLC仿真
-            stock_daily = bars[bars["code"] == code]
+            # 日线OHLC仿真(从预分组切片)
             bars_daily = stock_daily[stock_daily["date"] >= signal_date]
             trade = self._simulate_trade_daily_fallback(code, name, entry_price, signal_date, bars_daily, params_override=params_override, time_exit_min_pnl=time_exit_min_pnl, apply_costs=apply_costs)
 
