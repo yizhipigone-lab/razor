@@ -274,7 +274,7 @@ class BacktestEngine:
             # 日线OHLC仿真
             stock_daily = bars[bars["code"] == code]
             bars_daily = stock_daily[stock_daily["date"] >= signal_date]
-            trade = self._simulate_trade_daily_fallback(code, name, entry_price, signal_date, bars_daily, params_override=params_override, time_exit_min_pnl=time_exit_min_pnl)
+            trade = self._simulate_trade_daily_fallback(code, name, entry_price, signal_date, bars_daily, params_override=params_override, time_exit_min_pnl=time_exit_min_pnl, apply_costs=apply_costs)
 
             if trade:
                 # 传递quality和股票元信息给组合管理
@@ -800,10 +800,16 @@ class BacktestEngine:
     def _simulate_trade_daily_fallback(self, code: str, stock_name: str, entry_price: float,
                                        signal_date, bars_daily: pd.DataFrame,
                                        params_override: dict = None,
-                                       time_exit_min_pnl: float = None) -> Optional[dict]:
-        """[v3.1 日线降级] OHLC-aware：TP用High检测，SL用Low检测，TP优先于SL。条件时间到期。"""
+                                       time_exit_min_pnl: float = None,
+                                       apply_costs: bool = None) -> Optional[dict]:
+        """[v3.1 日线降级] OHLC-aware：TP用High检测，SL用Low检测，TP优先于SL。条件时间到期。
+
+        任务一(C4): 新增 apply_costs，扣交易成本(与 _simulate_trade_v2 一致的 _cost_pnl 模式)。
+        """
         if bars_daily.empty:
             return None
+        if apply_costs is None:
+            apply_costs = settings.backtest_apply_costs
 
         # L20 修复: 同上,风控参数从 schema 读(唯一真相源)。
         # 与 _simulate_trade_v2 保持完全一致的查表逻辑。
@@ -871,6 +877,16 @@ class BacktestEngine:
         sell_events = [{"type": "buy", "date": str(signal_date), "price": entry_price,
                         "ratio": 1.0, "reason": "买入(日线)"}]
 
+        # 任务一(C4): 与 _simulate_trade_v2 一致的成本模型。买入成本摊入 entry，卖出单独扣。
+        cost_entry = entry_price * (1 + self.TRADE_COST_BUY / 100) if apply_costs else entry_price
+
+        def _cost_pnl(raw_sell_price, ratio):
+            """扣交易成本后的实际盈亏贡献(百分比×ratio)"""
+            if apply_costs:
+                cost_sell = raw_sell_price * (1 - self.TRADE_COST_SELL / 100)
+                return ((cost_sell / cost_entry) - 1) * 100 * ratio
+            return ((raw_sell_price / entry_price) - 1) * 100 * ratio
+
         from app.backtest.exit_rules import exit_rule_engine, _pct
         from dataclasses import dataclass
 
@@ -933,11 +949,8 @@ class BacktestEngine:
                         sell_ratio = remaining_ratio if stage.get("sell_all") else stage.get("sell_ratio", 0.0)
                         actual_sell = min(sell_ratio, remaining_ratio)
                         if actual_sell > 0:
-                            # P0-1: 原 `realized_pnl += tp_pct * actual_sell` 单位错(tp_pct小数 vs
-                            # realized_pnl百分比口径)且是名义档位收益。改为按真实成交价算百分比收益，
-                            # 与下方 close_pnl(950)/pnl(965) 口径一致。
-                            tp_realized_pct = (signal.sell_price / entry_price - 1) * 100
-                            realized_pnl += tp_realized_pct * actual_sell
+                            # P0-1+任务一: 按真实成交价 signal.sell_price 算收益并扣成本(_cost_pnl)
+                            realized_pnl += _cost_pnl(signal.sell_price, actual_sell)
                             sell_events.append({"type": "sell", "date": str(d),
                                                 "price": signal.sell_price,
                                                 "ratio": actual_sell,
@@ -950,8 +963,8 @@ class BacktestEngine:
                 if remaining_ratio <= 0:
                     break
             else:
-                # 非TP → 全卖
-                realized_pnl += close_pnl * remaining_ratio
+                # 非TP → 全卖。任务一: 按成交价 signal.sell_price 扣成本(原用 close_pnl 与记录价不符)
+                realized_pnl += _cost_pnl(signal.sell_price, remaining_ratio)
                 sell_events.append({"type": "sell", "date": str(d),
                                     "price": signal.sell_price,
                                     "ratio": remaining_ratio,
@@ -965,8 +978,8 @@ class BacktestEngine:
             last = bars_daily.iloc[-1]
             exit_price = float(last["close"])
             exit_date = last["date"]
-            pnl = (exit_price / entry_price - 1) * 100
-            realized_pnl += pnl * remaining_ratio
+            # 任务一: 期末清仓扣成本
+            realized_pnl += _cost_pnl(exit_price, remaining_ratio)
             sell_events.append({"type": "sell", "date": str(exit_date), "price": exit_price,
                                 "ratio": remaining_ratio, "reason": "清仓"})
 

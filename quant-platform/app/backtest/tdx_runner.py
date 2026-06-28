@@ -40,7 +40,7 @@ def _is_signal_value(value_str) -> bool:
 
 from core.logger import get_logger
 from app.backtest.simple_runner import FastEngine, Position, Trade, load_index_data
-from app.backtest.execution import can_buy, can_sell_today
+from app.backtest.execution import can_buy, can_sell_today, calc_buy_cost, calc_sell_revenue
 
 log = get_logger("TdxBT")
 
@@ -438,7 +438,9 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
                     sh = int(dyn_size / px / 100) * 100
                     if sh < 100:
                         continue
-                    cost = sh * px
+                    # 任务一: 买入扣成本(佣金+滑点)
+                    _bc = calc_buy_cost(px, sh)
+                    cost = _bc['total']
                     if cost > cash:
                         continue
                     cash -= cost
@@ -495,12 +497,16 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
                             sell_shares = min(sell_shares, pos.shares)
                             if sell_shares <= 0:
                                 sell_shares = pos.shares
-                            ret = (sell_px / entry - 1) * 100
-                            profit = sell_shares * (sell_px - entry)
-                            cash += sell_shares * sell_px
+                            # 任务一: 卖出扣成本，按卖出股数摊分成本基
+                            _sr = calc_sell_revenue(sell_px, sell_shares)
+                            _cost_basis = pos.cost * (sell_shares / pos.shares) if pos.shares else 0.0
+                            profit = _sr['total'] - _cost_basis
+                            ret = (profit / _cost_basis * 100) if _cost_basis else 0.0
+                            cash += _sr['total']
                             if sell_shares >= pos.shares:
                                 pos.active = False
                             else:
+                                pos.cost -= _cost_basis  # 摊减已卖部分成本基，保证后续档位 ratio 正确
                                 pos.shares -= sell_shares
                             trades_all.append(Trade(
                                 code_num, pos.entry_date, d, entry, sell_px,
@@ -538,12 +544,16 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
                     sell_shares = min(sell_shares, pos.shares)
                     if sell_shares <= 0:
                         sell_shares = pos.shares
-                    ret = (sell_px / pos.entry_price - 1) * 100
-                    profit = sell_shares * (sell_px - pos.entry_price)
-                    cash += sell_shares * sell_px
+                    # 任务一: 卖出扣成本，按卖出股数摊分成本基
+                    _sr = calc_sell_revenue(sell_px, sell_shares)
+                    _cost_basis = pos.cost * (sell_shares / pos.shares) if pos.shares else 0.0
+                    profit = _sr['total'] - _cost_basis
+                    ret = (profit / _cost_basis * 100) if _cost_basis else 0.0
+                    cash += _sr['total']
                     if sell_shares >= pos.shares:
                         pos.active = False
                     else:
+                        pos.cost -= _cost_basis
                         pos.shares -= sell_shares
                     trades_all.append(Trade(
                         code_num, pos.entry_date, d, pos.entry_price, sell_px,
@@ -583,9 +593,11 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
             else:
                 last_snap = prices_by_date.get(str(sorted_dates[-1]), {})
                 px = last_snap.get(code, {}).get("close", p.entry_price)
-            ret = (px / p.entry_price - 1) * 100
-            profit = p.shares * (px - p.entry_price)
-            cash += p.shares * px
+            # 任务一: 期末清仓扣成本
+            _sr = calc_sell_revenue(px, p.shares)
+            profit = _sr['total'] - p.cost
+            ret = (profit / p.cost * 100) if p.cost else 0.0
+            cash += _sr['total']
             p.active = False
             last_date = date.fromisoformat(sorted_dates[-1]) if sorted_dates else end
             trades_all.append(Trade(

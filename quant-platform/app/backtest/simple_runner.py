@@ -445,7 +445,9 @@ def _run_intraday_backtest(
                 sh = int(dyn_size / px / 100) * 100
                 if sh < 100:
                     continue
-                cost = sh * px
+                # 任务一: 日内买入扣成本(佣金+滑点)，与日线 FastEngine.buy(:99) 一致
+                _bc = calc_buy_cost(px, sh)
+                cost = _bc['total']
                 if cost > cash:
                     continue
                 cash -= cost
@@ -593,9 +595,13 @@ def _execute_signal(pos, code, d, sig, cash, trades_all, sell_reasons, cooldown)
         sell_shares = min(ss, pos.shares)
     if sell_shares <= 0:
         sell_shares = pos.shares
-    ret = (sig.sell_price / pos.entry_price - 1) * 100
-    profit = sell_shares * (sig.sell_price - pos.entry_price)
-    cash += sell_shares * sig.sell_price
+    # 任务一: 卖出扣成本(佣金+印花+滑点)。pos.cost 含买入成本，按卖出股数摊分成本基。
+    _sr = calc_sell_revenue(sig.sell_price, sell_shares)
+    sell_revenue = _sr['total']
+    cost_basis = pos.cost * (sell_shares / pos.shares) if pos.shares else 0.0
+    profit = sell_revenue - cost_basis
+    ret = (profit / cost_basis * 100) if cost_basis else 0.0
+    cash += sell_revenue
     pos.remaining -= sell_shares
     if pos.remaining <= 0:
         pos.active = False
