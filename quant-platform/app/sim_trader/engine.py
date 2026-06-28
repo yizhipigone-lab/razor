@@ -334,7 +334,9 @@ class SimTraderEngine:
         shares = int(max_amt / price / 100) * 100
         if shares < 100:
             return None
-        cost = shares * price
+        # 任务一: 模拟盘买入扣成本(佣金+滑点)，与回测引擎口径一致
+        from app.backtest.execution import calc_buy_cost
+        cost = calc_buy_cost(price, shares)['total']
         if cost > self.cash:
             return None
 
@@ -443,15 +445,21 @@ class SimTraderEngine:
         if ss <= 0:
             return None
 
-        rp = (exit_price / pos.entry_price - 1) * 100
-        profit = ss * (exit_price - pos.entry_price)
+        # 任务一: 卖出扣成本(佣金+印花+滑点)，profit/ret 基于含费净额
+        from app.backtest.execution import calc_sell_revenue
+        sell_net = calc_sell_revenue(exit_price, ss)['total']
+        cost_basis = pos.cost * (ss / pos.shares) if pos.shares else 0.0
+        profit = sell_net - cost_basis
+        rp = (profit / cost_basis * 100) if cost_basis else 0.0
         pos.remaining_shares -= ss
+        if pos.remaining_shares > 0:
+            pos.cost -= cost_basis  # 摊减已卖成本基，保证后续部分卖出口径正确
 
         if pos.remaining_shares <= 0:
             pos.is_active = False
             pos.remaining_shares = 0
 
-        self.cash += ss * exit_price
+        self.cash += sell_net
         self._trade_count += 1
 
         log.info(f"[卖出] {pos.code} 价格={exit_price:.2f} 数量={ss} 收益={rp:.1f}% 利润={profit:.0f} 原因={reason} 剩余现金={self.cash:.0f}")
