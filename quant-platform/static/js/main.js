@@ -1293,8 +1293,28 @@ function aiToggleExchange(ex) {
   document.getElementById(`ai-btn-${ex.toLowerCase()}`).classList.toggle('active', _aiExchanges.has(ex));
 }
 
+function aiOnStrategyChange() {
+  const strategyEl = document.getElementById('ai-bt-strategy');
+  const group = document.getElementById('ai-tdx-formula-group');
+  if (!strategyEl || !group) return;
+  const selOpt = strategyEl.options[strategyEl.selectedIndex];
+  const isTdx = !!(selOpt && selOpt.dataset && selOpt.dataset.strategyType === 'tdx');
+  group.style.display = isTdx ? '' : 'none';
+  // TDX 公式选项的 value 即公式名，自动回填到输入框方便用户编辑
+  if (isTdx) {
+    const el = document.getElementById('ai-formula-name');
+    if (el && !el.value) el.value = strategyEl.value || '';
+  }
+}
+
 async function startAIBacktest() {
-  const strategy = document.getElementById('ai-bt-strategy').value;
+  const strategyEl = document.getElementById('ai-bt-strategy');
+  const strategy = strategyEl.value;
+  const selOpt   = strategyEl.options[strategyEl.selectedIndex];
+  const isTdx    = !!(selOpt && selOpt.dataset && selOpt.dataset.strategyType === 'tdx');
+  const formulaName = isTdx
+    ? (document.getElementById('ai-formula-name').value || '').trim()
+    : '';
   const start    = document.getElementById('ai-start-date').value;
   const end      = document.getElementById('ai-end-date').value;
   const useLLM   = document.getElementById('ai-use-llm').checked;
@@ -1302,6 +1322,7 @@ async function startAIBacktest() {
   const nBay     = parseInt(document.getElementById('ai-n-bayesian').value)    || 50;
 
   if (!strategy) { alert('请选择策略'); return; }
+  if (isTdx && !formulaName) { alert('请填写通达信公式名'); return; }
   if (!start || !end) { alert('请填写起止日期'); return; }
   if (_aiExchanges.size === 0) { alert('请至少选择一个市场'); return; }
 
@@ -1327,6 +1348,8 @@ async function startAIBacktest() {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({
       strategy_name: strategy,
+      strategy_type: isTdx ? 'tdx' : 'python',
+      formula_name: formulaName,
       strategy_params: collectStrategyParams('ai'),
       risk_params: collectRiskParams('ai'),
       start, end,
@@ -2563,13 +2586,14 @@ function renderStrategyList() {
   
   const pyOpts = factoryStrategies.filter(s => s.is_active).map(s => `<option value="${s.name}">${s.name}</option>`).join('');
   const tdxOpt = '<optgroup label=\"TDX 策略\"><option value=\"QUANTQQ\" data-strategy-type=\"tdx\">QUANTQQ</option></optgroup>';
-  // AI 回测不支持 TDX，仅 Python
   document.querySelectorAll('#bt-strategy, #scan-strategy, #sim-strategy, #sim-strategy-select').forEach(el => {
     if(el) el.innerHTML = pyOpts + tdxOpt;
   });
+  // AI 回测：Python 策略 + TDX 公式信号源（选 TDX 时显示公式名输入框）
   document.querySelectorAll('#ai-bt-strategy').forEach(el => {
-    if(el) el.innerHTML = pyOpts;
+    if(el) el.innerHTML = pyOpts + tdxOpt;
   });
+  if (typeof aiOnStrategyChange === 'function') aiOnStrategyChange();
 }
 
 function handleDeleteClick(name, event, btn) {
@@ -3246,7 +3270,9 @@ async function showChart(tradeJson) {
 
     const markPointData = [];
     const signalBuyDate = trade.buy_date || trade.date || trade.signal_date;
-    if (isSignal && signalBuyDate) {
+    // 信号点(isSignal) 与回测交易(!isSignal) 都应画买入 B 点；
+    // 回测 trade 带 buy_date/entry_price，原条件 isSignal && 会漏画入场点
+    if (signalBuyDate) {
         let buyDate = String(signalBuyDate).split(' ')[0];
         let idx = categoryData.indexOf(buyDate);
         if(idx === -1 && categoryData.length > 0) {
@@ -3921,81 +3947,105 @@ async function loadBtSimpleConfig() {
     }
   } catch(e) {}
 
+  // 自动加载：只读取已保存的回测配置（独立持久化），绝不调用 reset。
+  // 历史 bug：此处曾先 POST /simple-config/reset，把用户保存的 TP 档位/档数
+  // 用系统默认覆盖落盘，导致刷新或重启后总是回退到 3%/单档。
   try {
     const resp = await fetch('/api/backtest/simple-config');
     const data = await resp.json();
     if (data.status !== 'ok') return;
-    const cfg = data.config;
-    // 填充普通字段
-    const map = {
-      'sbt-capital': 'initial_capital', 'sbt-pos-size': 'position_size',
-      'sbt-min-buy': 'min_buy_amt', 'sbt-cooldown': 'same_stock_cooldown',
-      'sbt-hs': 'hard_stop', 'sbt-ta': 'trail_activate', 'sbt-td': 'trail_dd',
-      'sbt-ted': 'time_exit_days', 'sbt-tep': 'time_exit_profit',
-      'sbt-tfd': 'time_force_days', 'sbt-lsh': 'loss_streak_halve',
-      'sbt-lsp': 'loss_streak_pause', 'sbt-pd': 'pause_days',
-      'sbt-fd-profit': 'first_day_exit_min_profit', 'sbt-fd-days': 'first_day_exit_days',
-    };
-    for (const [elId, key] of Object.entries(map)) {
-      if (cfg[key] !== undefined) {
-        const el = document.getElementById(elId);
-        if (el) {
-          if (typeof cfg[key] === 'number' && cfg[key] < 1 && cfg[key] > -1) {
-            el.value = (cfg[key] * 100).toFixed(1);
-          } else {
-            el.value = cfg[key];
-          }
-        }
-      }
-    }
-    // ATR 配置
-    const atrCb = document.getElementById('sbt-atr');
-    if (atrCb && cfg.use_atr_trail !== undefined) atrCb.checked = cfg.use_atr_trail;
-    const atrMul = document.getElementById('sbt-atr-mul');
-    if (atrMul && cfg.atr_trail_multiplier !== undefined) atrMul.value = cfg.atr_trail_multiplier;
-    // 填充多档止盈
-    var tiers = cfg.take_profit_tiers || [];
-    var container = document.getElementById('sbt-tiers-container');
-    if (container && tiers.length > 0) {
-      container.innerHTML = '';
-      var colors = ['#d29922','#3fb950','#58a6ff','#a371f7','#f59e0b'];
-      tiers.forEach(function(t, i) {
-        var c = colors[i % colors.length];
-        var div = document.createElement('div');
-        div.className = 'bt-cfg-grid';
-        div.style.marginBottom = '4px';
-        div.innerHTML =
-          '<div class="bt-cfg-item"><label><span class="reason-tag" style="color:'+c+'">TP'+(i+1)+'</span> 盈利%</label><input type="number" class="sbt-tier-pct" step="0.5" value="'+(t.profit_pct*100).toFixed(1)+'"></div>'+
-          '<div class="bt-cfg-item"><label><span class="reason-tag" style="color:'+c+'">TP'+(i+1)+'</span> 卖出%</label><input type="number" class="sbt-tier-ratio" step="5" value="'+(t.sell_ratio*100)+'"></div>';
-        container.appendChild(div);
-      });
-    }
-    if (cfg.start_date) document.getElementById('sbt-start').value = cfg.start_date;
-    document.getElementById('sbt-end').value = new Date().toISOString().slice(0, 10);
-    const stratSel = document.getElementById('sbt-strategy');
-    if (stratSel && cfg.strategy_name) stratSel.value = cfg.strategy_name;
-    const precSel = document.getElementById('sbt-precision');
-    if (precSel && cfg.intraday_freq) precSel.value = cfg.intraday_freq;
-    // 策略类型 Radio 回填 + 互斥切换 + TDX 公式名回填
-    const stype = cfg.strategy_type || 'python';
-    const pyRadio = document.getElementById('sbt-type-python');
-    const tdxRadio = document.getElementById('sbt-type-tdx');
-    if (stype === 'tdx' && tdxRadio) {
-      tdxRadio.checked = true;
-      if (pyRadio) pyRadio.checked = false;
-      const tdxInput = document.getElementById('sbt-tdx-formula');
-      if (tdxInput && cfg.strategy_name) tdxInput.value = cfg.strategy_name;
-    } else {
-      if (pyRadio) pyRadio.checked = true;
-      if (tdxRadio) tdxRadio.checked = false;
-    }
-    onBtStrategyTypeChange(stype);
-    const sp = cfg.signal_params || {};
-    document.getElementById('sbt-qs').checked = !sp.disable_quality_sort;
+    _populateBtConfigUI(data.config);
     addLog('ok', '已加载回测配置');
   } catch (e) {
     addLog('error', '加载回测配置失败: ' + e.message);
   }
+}
+
+// 「系统配置」按钮：一键从系统设置页保存的最新风控参数拉取，覆盖当前面板。
+// 仅填充面板，不落盘；用户确认后点「保存配置」才持久化。
+async function loadBtConfigFromSystem() {
+  try {
+    const resp = await fetch('/api/backtest/simple-config');
+    const data = await resp.json();
+    if (data.status !== 'ok') { addLog('error', '读取系统配置失败'); return; }
+    const sys = data.system_config || data.config;
+    _populateBtConfigUI(sys);
+    addLog('ok', '已从系统设置拉取参数（点「保存配置」可持久化）');
+  } catch (e) {
+    addLog('error', '读取系统配置失败: ' + e.message);
+  }
+}
+
+// 把一份回测配置对象填充到面板（供自动加载 / 系统配置拉取共用）
+function _populateBtConfigUI(cfg) {
+  if (!cfg) return;
+  // 填充普通字段
+  const map = {
+    'sbt-capital': 'initial_capital', 'sbt-pos-size': 'position_size',
+    'sbt-min-buy': 'min_buy_amt', 'sbt-cooldown': 'same_stock_cooldown',
+    'sbt-hs': 'hard_stop', 'sbt-ta': 'trail_activate', 'sbt-td': 'trail_dd',
+    'sbt-ted': 'time_exit_days', 'sbt-tep': 'time_exit_profit',
+    'sbt-tfd': 'time_force_days', 'sbt-lsh': 'loss_streak_halve',
+    'sbt-lsp': 'loss_streak_pause', 'sbt-pd': 'pause_days',
+    'sbt-fd-profit': 'first_day_exit_min_profit', 'sbt-fd-days': 'first_day_exit_days',
+  };
+  for (const [elId, key] of Object.entries(map)) {
+    if (cfg[key] !== undefined) {
+      const el = document.getElementById(elId);
+      if (el) {
+        if (typeof cfg[key] === 'number' && cfg[key] < 1 && cfg[key] > -1) {
+          el.value = (cfg[key] * 100).toFixed(1);
+        } else {
+          el.value = cfg[key];
+        }
+      }
+    }
+  }
+  // ATR 配置
+  const atrCb = document.getElementById('sbt-atr');
+  if (atrCb && cfg.use_atr_trail !== undefined) atrCb.checked = cfg.use_atr_trail;
+  const atrMul = document.getElementById('sbt-atr-mul');
+  if (atrMul && cfg.atr_trail_multiplier !== undefined) atrMul.value = cfg.atr_trail_multiplier;
+  // 填充多档止盈
+  var tiers = cfg.take_profit_tiers || [];
+  var container = document.getElementById('sbt-tiers-container');
+  if (container && tiers.length > 0) {
+    container.innerHTML = '';
+    var colors = ['#d29922','#3fb950','#58a6ff','#a371f7','#f59e0b'];
+    tiers.forEach(function(t, i) {
+      var c = colors[i % colors.length];
+      var div = document.createElement('div');
+      div.className = 'bt-cfg-grid';
+      div.style.marginBottom = '4px';
+      div.innerHTML =
+        '<div class="bt-cfg-item"><label><span class="reason-tag" style="color:'+c+'">TP'+(i+1)+'</span> 盈利%</label><input type="number" class="sbt-tier-pct" step="0.5" value="'+(t.profit_pct*100).toFixed(1)+'"></div>'+
+        '<div class="bt-cfg-item"><label><span class="reason-tag" style="color:'+c+'">TP'+(i+1)+'</span> 卖出%</label><input type="number" class="sbt-tier-ratio" step="5" value="'+(t.sell_ratio*100)+'"></div>';
+      container.appendChild(div);
+    });
+  }
+  if (cfg.start_date) document.getElementById('sbt-start').value = cfg.start_date;
+  document.getElementById('sbt-end').value = new Date().toISOString().slice(0, 10);
+  const stratSel = document.getElementById('sbt-strategy');
+  if (stratSel && cfg.strategy_name) stratSel.value = cfg.strategy_name;
+  const precSel = document.getElementById('sbt-precision');
+  if (precSel && cfg.intraday_freq) precSel.value = cfg.intraday_freq;
+  // 策略类型 Radio 回填 + 互斥切换 + TDX 公式名回填
+  const stype = cfg.strategy_type || 'python';
+  const pyRadio = document.getElementById('sbt-type-python');
+  const tdxRadio = document.getElementById('sbt-type-tdx');
+  if (stype === 'tdx' && tdxRadio) {
+    tdxRadio.checked = true;
+    if (pyRadio) pyRadio.checked = false;
+    const tdxInput = document.getElementById('sbt-tdx-formula');
+    if (tdxInput && cfg.strategy_name) tdxInput.value = cfg.strategy_name;
+  } else {
+    if (pyRadio) pyRadio.checked = true;
+    if (tdxRadio) tdxRadio.checked = false;
+  }
+  onBtStrategyTypeChange(stype);
+  const sp = cfg.signal_params || {};
+  const qsEl = document.getElementById('sbt-qs');
+  if (qsEl) qsEl.checked = !sp.disable_quality_sort;
 }
 
 function onBtStrategyTypeChange(type) {

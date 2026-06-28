@@ -237,7 +237,7 @@
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
             <h3 style="margin:0">日线收盘价回测 <span style="font-size:11px;color:var(--text2);font-weight:400">（独立配置，不影响实盘）</span></h3>
             <div style="display:flex; gap:8px">
-              <button class="btn btn-sm" onclick="loadBtSimpleConfig()" style="font-size:12px">系统配置</button>
+              <button class="btn btn-sm" onclick="loadBtConfigFromSystem()" style="font-size:12px">系统配置</button>
               <button class="btn btn-sm" style="border-color:var(--orange);color:var(--orange);font-size:12px" onclick="resetBtSimpleConfig()">重置</button>
               <button class="btn btn-primary btn-sm" id="btn-simple-bt-save" onclick="saveBtSimpleConfig()" style="font-size:12px">保存配置</button>
               <button class="btn btn-success btn-sm" id="btn-simple-bt-run" onclick="runSimpleBacktest()" style="font-size:13px;font-weight:bold">开始回测</button>
@@ -459,12 +459,17 @@
 
               <div class="form-group">
                 <label>回测策略</label>
-                <select id="ai-bt-strategy" class="input">
+                <select id="ai-bt-strategy" class="input" onchange="aiOnStrategyChange()">
                   <option value="trend_climbing_v1">趋势攀爬 v1 (Trend Climbing)</option>
                   <option value="bollinger_revert_v1">布林回复 v1 (Bollinger Revert)</option>
                   <option value="macd">MACD 基础策略</option>
                   <option value="均线唯美平滑发散策略">均线唯美平滑发散策略</option>
                 </select>
+              </div>
+              <div class="form-group" id="ai-tdx-formula-group" style="display:none">
+                <label>通达信公式名</label>
+                <input type="text" id="ai-formula-name" class="input" placeholder="如 QUANTQQ">
+                <div style="font-size:11px;color:var(--text2);margin-top:4px">用通达信公式作为买入信号源，AI 优化止盈止损参数</div>
               </div>
               <div class="form-group">
                 <label>市场范围</label>

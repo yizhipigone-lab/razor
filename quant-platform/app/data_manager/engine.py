@@ -4,7 +4,7 @@ import time
 import json
 import requests
 import baostock as bs
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pytdx2.hq import TdxHq_API

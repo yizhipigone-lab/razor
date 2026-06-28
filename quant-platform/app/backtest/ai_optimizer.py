@@ -137,6 +137,53 @@ def _summarize_result(params: dict, trades: list) -> dict:
     }
 
 
+def _safe_float(v, default=0.0):
+    """容错版 float：字符串/None/NaN 都不会崩，TDX 模式下 score/wfe 可能缺失"""
+    try:
+        f = float(v)
+        if f != f:  # NaN
+            return default
+        return f
+    except (TypeError, ValueError):
+        return default
+
+
+def _ai_params_to_tdx_params(ai_params: dict, base_params: dict) -> dict:
+    """AI 优化参数(百分比格式) → run_tdx_backtest 的 params(小数 + tiers 结构)
+
+    AI 优化器搜索空间用百分比命名 (hard_stop_loss_pct=-7.0)，
+    但 run_tdx_backtest 内部 exit_rule_engine 读小数命名 (hard_stop=-0.07)。
+    两套量纲/命名不一致，不转换会导致所有 trial fallback 默认值 → AI 优化空转。
+    转换逻辑参照 api/backtest.py 的 ai/apply mapping (反向)。
+    """
+    p = dict(base_params)  # 含 start_date/end_date/strategy_name/intraday_freq/资金仓位
+    if "hard_stop_loss_pct" in ai_params:
+        p["hard_stop"] = ai_params["hard_stop_loss_pct"] / 100.0
+    if "trailing_activate_pct" in ai_params:
+        p["trail_activate"] = ai_params["trailing_activate_pct"] / 100.0
+    if "trailing_drawdown_pct" in ai_params:
+        p["trail_dd"] = ai_params["trailing_drawdown_pct"] / 100.0
+    if "time_exit_days" in ai_params:
+        p["time_exit_days"] = int(ai_params["time_exit_days"])
+    # breakeven_* exit_rules 内部 _pct() 自动转，直接透传
+    for k in ("breakeven_threshold_pct", "breakeven_stop_pnl_pct"):
+        if k in ai_params:
+            p[k] = ai_params[k]
+    # 多档止盈：tp1/tp2/tp3 → take_profit_tiers(小数)
+    if "tp1_profit" in ai_params and "tp2_profit" in ai_params:
+        tiers = [
+            {"profit_pct": ai_params["tp1_profit"] / 100.0,
+             "sell_ratio": ai_params.get("tp1_ratio", 0.33)},
+            {"profit_pct": ai_params["tp2_profit"] / 100.0,
+             "sell_ratio": ai_params.get("tp2_ratio", 0.33)},
+        ]
+        if "tp3_profit" in ai_params:
+            tiers.append({"profit_pct": ai_params["tp3_profit"] / 100.0,
+                          "sell_ratio": ai_params.get("tp3_ratio", 0.34)})
+        p["take_profit_tiers"] = tiers
+    return p
+
+
 def _lhs_sample(search_space: dict, n: int) -> List[dict]:
     """
     拉丁超立方采样：确保 n 组参数在每个维度上都均匀分布，
@@ -185,10 +232,13 @@ class AIBacktestOptimizer:
       Phase 7: LLM 最终报告
     """
 
-    def __init__(self, use_llm: bool = True, n_exploration: int = 12, n_bayesian: int = 50):
+    def __init__(self, use_llm: bool = True, n_exploration: int = 12, n_bayesian: int = 50,
+                 strategy_type: str = "python"):
         self.use_llm = use_llm
         self.n_exploration = n_exploration
         self.n_bayesian = n_bayesian
+        self.strategy_type = strategy_type   # "python" | "tdx"
+        self._formula_name = None            # TDX 模式下的通达信公式名
         self.llm = LLMAdvisor(use_llm=use_llm, timeout=60)
 
         # 信号缓存（跨所有 trial 复用）
@@ -213,6 +263,22 @@ class AIBacktestOptimizer:
         use_hot_concept: bool = False,
         hot_concept_top_n: int = 5,
     ) -> bool:
+        # ── TDX 模式：跳过 parquet/load_strategy，信号与数据由 run_tdx_backtest 内部处理 ──
+        if self.strategy_type == "tdx":
+            log_cb(f"🔄 [Phase 1] TDX 模式：公式 {self._formula_name} 预跑校验（此步骤只需执行一次）...")
+            self._code_to_name = {}
+            try:
+                probe = self._run_trial_tdx({}, start, end)  # 用默认参数预跑
+            except Exception as e:
+                log_cb(f"❌ [Phase 1] TDX 预跑失败: {e}")
+                log.error(traceback.format_exc())
+                return False
+            if not probe:
+                log_cb(f"⚠️ 公式 {self._formula_name} 在 {start} ~ {end} 区间内无信号/交易")
+                return False
+            log_cb(f"✅ [Phase 1] TDX 预跑成功：{len(probe)} 笔交易（公式 {self._formula_name}）")
+            return True
+
         log_cb("🔄 [Phase 1] 加载日线数据 + 生成策略信号（此步骤只需执行一次）...")
         try:
             use_filtered = bool(index_filter or min_mv is not None or max_mv is not None)
@@ -343,7 +409,11 @@ class AIBacktestOptimizer:
         """
         用给定参数执行一次回测（仅使用 [start, end] 区间内的信号）。
         v4.0: 使用 1 分钟线逐 bar 仿真。
+        TDX 模式: 提前分流到 _run_trial_tdx，复用 run_tdx_backtest 全套仿真。
         """
+        if self.strategy_type == "tdx":
+            return self._run_trial_tdx(params, start, end)
+
         if self._cached_signals is None:
             return []
 
@@ -363,6 +433,46 @@ class AIBacktestOptimizer:
                 all_trades.append(trade)
 
         return all_trades
+
+    def _run_trial_tdx(self, params: dict, start: date, end: date) -> list:
+        """TDX 模式单 trial：调 run_tdx_backtest，从 trades_json 抽 pnl。
+
+        信号源、数据加载、止盈止损仿真(5m/日线降级、T+1、涨跌停)全部复用
+        run_tdx_backtest 的现有逻辑，保证与 TDX 单次回测结果一致。
+        """
+        from app.backtest.tdx_runner import run_tdx_backtest
+
+        base = {
+            "start_date": start, "end_date": end,
+            "strategy_name": self._formula_name,       # 公式名（关键，传给 TdxBridge）
+            "intraday_freq": self._intraday_freq or "daily",
+            "initial_capital": self._initial_capital or 1000000,
+            "position_size": self._position_size or 50000,
+        }
+        tdx_params = _ai_params_to_tdx_params(params, base)
+        try:
+            result = run_tdx_backtest(tdx_params, stop_event=None,
+                                      stock_names=self._code_to_name)
+        except Exception as e:
+            log.warning(f"TDX trial 执行失败: {e}")
+            return []
+
+        if not result or result.get("status") not in ("ok", None):
+            return []
+
+        trades = []
+        for t in result.get("trades", []):
+            try:
+                trades.append({
+                    "code": t["code"], "name": t.get("name", ""),
+                    "entry_price": t["entry_px"], "exit_price": t["exit_px"],
+                    "hold_days": t.get("hold_days", 0),
+                    "pnl_pct": t["ret_pct"],          # tdx_runner 已算好，直接用
+                    "buy_date": t["entry_date"],
+                })
+            except (KeyError, TypeError):
+                continue
+        return trades
 
     def _build_numpy_index(self):
         """从 _cached_bars 构建信号列表，一次构建所有 trial 复用。
@@ -605,8 +715,8 @@ class AIBacktestOptimizer:
             "",
             f"## 概览",
             f"- 总探索次数: {n_total}",
-            f"- 最优平盈率: {top10[0]['avg_pnl']:+.2f}%" if top10 else "- 无有效结果",
-            f"- 最优胜率: {top10[0]['win_rate']:.1f}%" if top10 else "",
+            f"- 最优平盈率: {_safe_float(top10[0].get('avg_pnl'),0):+.2f}%" if top10 else "- 无有效结果",
+            f"- 最优胜率: {_safe_float(top10[0].get('win_rate'),0):.1f}%" if top10 else "",
             f"- 最优 PF: {top10[0].get('profit_factor', 'N/A')}" if top10 else "",
             "",
             "## Top-5 参数组合",
@@ -615,7 +725,7 @@ class AIBacktestOptimizer:
         for i, r in enumerate(top10[:5]):
             wfe = r.get("wfe", "N/A")
             status = r.get("wfe_status", "")
-            lines.append(f"### #{i+1} | 平盈率: {r['avg_pnl']:+.2f}% | 胜率: {r['win_rate']:.1f}% | WFE: {wfe} {status}")
+            lines.append(f"### #{i+1} | 平盈率: {_safe_float(r.get('avg_pnl'),0):+.2f}% | 胜率: {_safe_float(r.get('win_rate'),0):.1f}% | WFE: {wfe} {status}")
             lines.append(f"```")
             for k, v in r.get("params", {}).items():
                 lines.append(f"  {k}: {v}")
@@ -652,7 +762,7 @@ class AIBacktestOptimizer:
             score = summary["score"]
             log_cb(
                 f"  探索 {i+1:02d}/{self.n_exploration} | "
-                f"score={score:.3f} | 平盈率={pnl:+.2f}% | 胜率={summary['win_rate']:.1f}% | "
+                f"score={_safe_float(score,0):.3f} | 平盈率={_safe_float(pnl,0):+.2f}% | 胜率={_safe_float(summary['win_rate'],0):.1f}% | "
                 f"PF={summary.get('profit_factor', 0):.2f}"
             )
         return results
@@ -823,8 +933,8 @@ class AIBacktestOptimizer:
                     "oos_pnl": round(avg_oos, 3),
                     "n_splits": valid_splits,
                 })
-                log_cb(f"  WFO #{rank+1}: WFE={wfe:.2f}±{wfe_std:.2f} {status} "
-                       f"({valid_splits}折 | IS={avg_is:+.2f}% OOS={avg_oos:+.2f}%)")
+                log_cb(f"  WFO #{rank+1}: WFE={_safe_float(wfe,0):.2f}±{_safe_float(wfe_std,0):.2f} {status} "
+                       f"({valid_splits}折 | IS={_safe_float(avg_is,0):+.2f}% OOS={_safe_float(avg_oos,0):+.2f}%)")
             elif valid_splits == 1:
                 # 只有 1 折也记录，但标记为参考
                 wfe = round(oos_pnls[0] / is_pnls[0], 3) if is_pnls[0] != 0 else 0
@@ -837,7 +947,7 @@ class AIBacktestOptimizer:
                     "oos_pnl": round(float(oos_pnls[0]), 3),
                     "n_splits": 1,
                 })
-                log_cb(f"  WFO #{rank+1}: WFE={wfe:.2f} ⚠️ 仅1折（参考）")
+                log_cb(f"  WFO #{rank+1}: WFE={_safe_float(wfe,0):.2f} ⚠️ 仅1折（参考）")
             else:
                 wfo_results.append({"rank": rank + 1, "wfe": "N/A", "wfe_status": "无有效折",
                                     "oos_pnl": None})
@@ -869,6 +979,8 @@ class AIBacktestOptimizer:
         atr_stop_multiplier: float = 2.5,
         use_hot_concept: bool = False,
         hot_concept_top_n: int = 5,
+        strategy_type: str = None,
+        formula_name: str = None,
     ):
         global _stop_flag
         _stop_flag = False
@@ -886,6 +998,12 @@ class AIBacktestOptimizer:
         self._streak_pause = streak_pause
         self._pause_days = pause_days
         self._intraday_freq = intraday_freq
+
+        # TDX 模式：覆盖 strategy_type 并确定公式名（缺省回退到 __init__ 的值）
+        if strategy_type:
+            self.strategy_type = strategy_type
+        if self.strategy_type == "tdx":
+            self._formula_name = formula_name or strategy_name
 
         def log_cb(msg: str):
             log.info(msg)
@@ -929,10 +1047,13 @@ class AIBacktestOptimizer:
                 return
 
             # 计算 Regime 分布
+            # TDX 模式：每次 _run_trial 都调 TdxBridge worker(开销大)，
+            # 且信号源固定、regime 分析意义有限 → 跳过这轮重复回测，避免数十次额外 worker 调用
             all_trades_so_far = []
-            for r in exploration_results:
-                trades = self._run_trial(r["params"], start, end)
-                all_trades_so_far.extend(trades)
+            if self.strategy_type != "tdx":
+                for r in exploration_results:
+                    trades = self._run_trial(r["params"], start, end)
+                    all_trades_so_far.extend(trades)
             regime_summary = regime_detector.summarize_trades_by_regime(all_trades_so_far, regime_map)
             log_cb(f"📊 市场状态分析：{regime_summary}")
 
@@ -985,8 +1106,15 @@ class AIBacktestOptimizer:
                 reverse=True,
             )
             top10 = all_results[:10]
-            log_cb(f"🏆 Top-10 IS 平盈率: {top10[0]['avg_pnl']:+.2f}% "
-                   f"(score={top10[0]['score']:.3f} valid_score={top10[0].get('valid_score', 'N/A')})")
+            # 容错：score/avg_pnl/wfe 字段在 TDX 模式或 WFO 跳过时可能缺失或为字符串
+            _t0 = top10[0]
+            _avg = _safe_float(_t0.get('avg_pnl'), 0)
+            _sc = _safe_float(_t0.get('score'), -999)
+            _vs = _t0.get('valid_score', 'N/A')
+            if not isinstance(_vs, (int, float)):
+                _vs = 'N/A'
+            log_cb(f"🏆 Top-10 IS 平盈率: {_avg:+.2f}% "
+                   f"(score={_sc:.3f} valid_score={_vs})")
 
             # ─── Phase 6: WFO 验证 ───────────────────────
             _update_state(phase="wfo")
@@ -1010,7 +1138,7 @@ class AIBacktestOptimizer:
             top10 = sorted(top10, key=_sort_key, reverse=True)
             best_params = top10[0]["params"] if top10 else None
             _update_state(top10=top10, best_params=best_params)
-            log_cb(f"🎯 WFE 选优后: 平盈率={top10[0]['avg_pnl']:+.2f}% score={top10[0]['score']:.3f} WFE={top10[0].get('wfe', 'N/A')}")
+            log_cb(f"🎯 WFE 选优后: 平盈率={_safe_float(top10[0].get('avg_pnl'),0):+.2f}% score={_safe_float(top10[0].get('score'),-999):.3f} WFE={top10[0].get('wfe', 'N/A')}")
             _update_state(top10=top10, wfo_results=wfo_results)
 
             # 计算最终 Regime 摘要（基于全部回测）
@@ -1029,7 +1157,7 @@ class AIBacktestOptimizer:
                 report = self._generate_basic_report(top10, wfo_results, final_regime, n_total)
             _update_state(llm_report=report)
             log_cb("✅ 分析报告已生成")
-            log_cb(f"🎉 AI 回测优化完成！共 {n_total} 次探索，最优平盈率 {top10[0]['avg_pnl']:+.2f}%")
+            log_cb(f"🎉 AI 回测优化完成！共 {n_total} 次探索，最优平盈率 {_safe_float(top10[0].get('avg_pnl'),0):+.2f}%")
             _update_state(running=False, phase="done")
 
         except Exception as e:
