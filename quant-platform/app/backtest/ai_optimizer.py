@@ -69,22 +69,25 @@ def _update_state(**kwargs):
 # 工具函数
 # ────────────────────────────────────────────────────────
 
-def _calmar_score(trades: list) -> float:
-    """L23 修复: 风险调整收益 (mean - 0.5*std),避免高方差过拟合
+def _calmar_score(trades: list, min_trades: int = 8, dd_penalty: float = 0.1) -> float:
+    """风险调整收益评分（§3.3 增强）。
 
-    原实现: np.mean(pnls) 只看均值,容易选出"高均值但高方差"的过拟合参数
-    修复: 引入波动率惩罚,平衡收益与风险;系数 0.5 经验值,Sharpe 简化版
+    = mean(pnl) - 0.5*std(pnl) - dd_penalty*max_drawdown
+    - 波动率惩罚(0.5*std): 避免"高均值高方差"过拟合
+    - 回撤惩罚(dd_penalty*max_dd): 避免选出"高收益但深回撤"的脆弱参数
+    - 最小交易数门槛: n<min_trades 重罚(-999), 防小样本偶然高分过拟合
+    系数为经验值, 可后续提到 config。
     """
-    if len(trades) < 8:
+    if len(trades) < min_trades:
         return -999.0
     pnls = np.array([t["pnl_pct"] for t in trades], dtype=float)
     if len(pnls) < 2:
         return float(np.mean(pnls))
     mean = np.mean(pnls)
     std = np.std(pnls, ddof=1)
-    if std < 1e-6:
-        return float(mean)
-    return float(mean - 0.5 * std)
+    max_dd = _compute_max_drawdown(trades)
+    vol_term = 0.5 * std if std >= 1e-6 else 0.0
+    return float(mean - vol_term - dd_penalty * max_dd)
 
 
 def _profit_factor(trades: list) -> float:
@@ -95,7 +98,7 @@ def _profit_factor(trades: list) -> float:
     wins = [p for p in pnls if p > 0]
     losses = [p for p in pnls if p <= 0]
     if not losses or sum(losses) == 0:
-        return float('inf') if wins else 0.0
+        return 99.0 if wins else 0.0  # §3.3: 全胜无亏损用大常数代替 inf(JSON安全/前端友好)
     return round(abs(sum(wins) / sum(losses)), 4)
 
 
@@ -132,7 +135,7 @@ def _summarize_result(params: dict, trades: list) -> dict:
         "max_dd":  round(_compute_max_drawdown(trades), 3),
         "n_trades":len(trades),
         "pnl_std": round(float(np.std(pnls)), 3),
-        "profit_factor": round(abs(gain_sum / loss_sum), 2) if loss_sum != 0 else float('inf'),
+        "profit_factor": round(abs(gain_sum / loss_sum), 2) if loss_sum != 0 else 99.0,
         "total_return": round(float(sum(pnls)), 2),
     }
 
@@ -184,13 +187,16 @@ def _ai_params_to_tdx_params(ai_params: dict, base_params: dict) -> dict:
     return p
 
 
-def _lhs_sample(search_space: dict, n: int) -> List[dict]:
+def _lhs_sample(search_space: dict, n: int, seed: int = None) -> List[dict]:
     """
     拉丁超立方采样：确保 n 组参数在每个维度上都均匀分布，
     避免聚集在某一角落。
+
+    §3.3(寻优-M1): 用局部 default_rng(seed) 替代 np.random.seed(42)。
+    - 不再污染进程全局 numpy 随机状态(原 seed(42) 影响同进程其它模块)
+    - seed=None 时每次探索点不同(真探索); 传固定 seed 可复现
     """
-    # L23 修复: 固定随机种子,保证可复现
-    np.random.seed(42)
+    rng = np.random.default_rng(seed)
     from app.backtest.llm_advisor import FALLBACK_SEARCH_SPACE
     keys = list(search_space.keys())
     samples = []
@@ -207,10 +213,18 @@ def _lhs_sample(search_space: dict, n: int) -> List[dict]:
             lo, hi = hi - 1e-6, hi
         is_int = isinstance(bounds.get("min"), int) and isinstance(bounds.get("max"), int)
         intervals = np.linspace(lo, hi, n + 1)
-        vals = [np.random.uniform(intervals[i], intervals[i + 1]) for i in range(n)]
-        np.random.shuffle(vals)
+        vals = [rng.uniform(intervals[i], intervals[i + 1]) for i in range(n)]
+        rng.shuffle(vals)
+        # §3.3: step 量化(若提供且合法)。step >= 区间宽度时忽略(防退化成单点)。
+        step = bounds.get("step")
+        valid_step = isinstance(step, (int, float)) and step > 0 and step < (hi - lo)
         for i, v in enumerate(vals):
-            samples[i][key] = int(round(v)) if is_int else round(v, 4)
+            if is_int:
+                samples[i][key] = int(round(v))
+            elif valid_step:
+                samples[i][key] = round(lo + round((v - lo) / step) * step, 4)
+            else:
+                samples[i][key] = round(v, 4)
 
     return samples
 
@@ -819,7 +833,12 @@ class AIBacktestOptimizer:
                 if is_int:
                     params[key] = trial.suggest_int(key, int(lo), int(hi))
                 else:
-                    params[key] = trial.suggest_float(key, lo, hi)
+                    # §3.3: step 量化(合法时)。step>=区间宽度则忽略(防退化)。
+                    step = bounds.get("step")
+                    if isinstance(step, (int, float)) and 0 < step < (hi - lo):
+                        params[key] = trial.suggest_float(key, lo, hi, step=step)
+                    else:
+                        params[key] = trial.suggest_float(key, lo, hi)
 
             # 约束优化：如果 LLM 给出的空间范围异常，进行强制修正/剪枝
             tp1 = params.get("tp1_profit", 5.0)

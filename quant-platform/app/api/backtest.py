@@ -293,7 +293,15 @@ async def ai_backtest_apply(body: dict):
             lo, hi = hi, lo
         if is_int:
             lo, hi = int(lo), int(hi)
-        step = 0.5 if isinstance(v, float) else 1
+        # §3.3: step 按参数类型选取。ratio 类(比例,0~1)用 0.05 且 clip≤1.0; pct 类 0.5; 整数 1
+        if is_int:
+            step = 1
+        elif k.endswith("_ratio"):
+            step = 0.05
+            hi = min(hi, 1.0)
+            lo = min(lo, hi)
+        else:
+            step = 0.5
         _new_space[k] = {"min": round(lo, 2) if not is_int else lo,
                          "max": round(hi, 2) if not is_int else hi,
                          "step": step}
