@@ -91,7 +91,9 @@ def download_daily_bars(code: str, years: int = 1) -> pd.DataFrame:
                 df = df.rename(columns={'trade_date': 'date', 'vol': 'volume'})
                 df['date'] = pd.to_datetime(df['date'])
                 # Tushare amount 字段单位是元，无需转换（#7 修复）
-                df = df[['date','open','high','low','close','volume','amount']].sort_values('date')
+                # 数据-C3: pro_bar(qfq) 已是前复权价, 标记 adj_factor=1.0 防读取层二次复权
+                df['adj_factor'] = 1.0
+                df = df[['date','open','high','low','close','volume','amount','adj_factor']].sort_values('date')
                 return df
     except Exception as e:
         log.debug(f"Tushare D1 {code} 失败: {e}，尝试使用 TDX 兜底")
@@ -109,7 +111,8 @@ def download_daily_bars(code: str, years: int = 1) -> pd.DataFrame:
                 df['date'] = pd.to_datetime(df['date'])
                 # 通达信金额在有的主站不显示，用估算法
                 df['amount'] = df['close'] * df['volume'] * 100
-                return df[['date','open','high','low','close','volume','amount']]
+                df['adj_factor'] = 1.0  # 数据-C3: TDX category=4 已前复权
+                return df[['date','open','high','low','close','volume','amount','adj_factor']]
     except Exception as e:
         log.debug(f"TDX D1 {code} 失败: {e}")
     
@@ -126,7 +129,8 @@ def download_daily_bars(code: str, years: int = 1) -> pd.DataFrame:
                 df = pd.DataFrame(k_list, columns=['date','open','close','high','low','volume','ext'])
                 df['date'] = pd.to_datetime(df['date'])
                 df['amount'] = df['close'].astype(float) * df['volume'].astype(float) * 100
-                return df[['date','open', 'high', 'low', 'close', 'volume', 'amount']]
+                df['adj_factor'] = 1.0  # 数据-C3: 腾讯 qfqday 已前复权
+                return df[['date','open', 'high', 'low', 'close', 'volume', 'amount', 'adj_factor']]
     except Exception:
         log.warning(f"腾讯 HTTP 日线下载失败 {code}")
     return None
