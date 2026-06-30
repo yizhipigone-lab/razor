@@ -20,6 +20,9 @@ from core.logger import get_logger
 
 log = get_logger("SimEngine")
 
+# P0-4: 加载期一致性校验 — 检测到可疑(疑似回测污染)的 equity_curve 时置位，供 API 查询
+_BAD_EQUITY_CURVE_DETECTED = False
+
 _stock_name_cache = {}
 
 def _get_stock_name(code: str) -> str:
@@ -134,6 +137,7 @@ class SimTraderEngine:
             self.positions = self._store.load_positions()
             self.trades = self._store.load_trades()
             self.equity_curve = self._store.load_equity_curve()
+            self._validate_loaded_state()
         else:
             self.cash = INITIAL_CAPITAL
             self.positions: Dict[str, Position] = {}
@@ -198,6 +202,36 @@ class SimTraderEngine:
             self.trades = self._store.load_trades()
             self.positions = self._store.load_positions()
             self.equity_curve = self._store.load_equity_curve()
+
+    def _validate_loaded_state(self):
+        """P0-4: 加载期一致性校验 — 拦截疑似回测污染的 equity_curve。
+        守规则3: 只丢弃可疑曲线 + 告警, 不崩溃、不阻断启动(保留 cash/positions/trades)。
+        背景: 2026-06 TDX 回测数据(首日 equity=2.14倍本金)曾整盘覆盖运行态 state.json。"""
+        global _BAD_EQUITY_CURVE_DETECTED
+        try:
+            ec = self.equity_curve
+            if not ec:
+                return
+            # 校验1: 首条 equity 超过初始资金 1.10 倍 -> 疑似回测污染(实盘首日不可能)
+            first_eq = float(ec[0].get('equity', 0) or 0)
+            if first_eq > INITIAL_CAPITAL * 1.10:
+                log.error(
+                    f"⚠️ 拒绝采用可疑 equity_curve: 首条 equity={first_eq:,.0f} "
+                    f"超过 INITIAL_CAPITAL({INITIAL_CAPITAL:,}) 的 1.10 倍, "
+                    f"疑似被 TDX 回测数据污染。已丢弃曲线, 保留 cash/positions/trades。")
+                self.equity_curve = []
+                _BAD_EQUITY_CURVE_DETECTED = True
+                return
+            # 校验2: state.cash 与最近曲线 cash 偏差 >5% -> 仅告警(不丢弃)
+            last_cash = float(ec[-1].get('cash', 0) or 0)
+            if last_cash > 0 and self.cash > 0:
+                dev = abs(self.cash - last_cash) / self.cash
+                if dev > 0.05:
+                    log.warning(
+                        f"⚠️ state.cash({self.cash:,.0f}) 与最近 equity_curve.cash"
+                        f"({last_cash:,.0f}) 偏差 {dev:.1%} (>5%), 请人工核对数据来源。")
+        except Exception as e:
+            log.warning(f"[加载校验] 跳过(异常不阻断启动): {e}")
 
     def _fill_missing_snapshots(self):
         """补齐 equity_curve 中缺失的交易日快照。
