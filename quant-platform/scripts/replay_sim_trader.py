@@ -122,6 +122,35 @@ def build_snapshots_by_date(bars):
     return snaps
 
 
+def make_deferred_store(out_path):
+    """回放专用 store: 缓冲 _save(), 由脚本显式 flush(), 避免引擎每笔买卖都全量写盘
+    (execute_buy/sell 内部各调一次 _save, 一天数十次全量JSON写 -> I/O风暴 + Windows锁竞态)。
+    继承 JsonSimStore, 仅拦截 _save; flush() 时才真正落盘一次。"""
+    from app.sim_trader.store import JsonSimStore
+
+    class DeferredStore(JsonSimStore):
+        def __init__(self, path):
+            super().__init__(path=path)
+            self._defer = True
+
+        def _save(self):
+            if getattr(self, "_defer", False):
+                return  # 缓冲: 不落盘
+            super()._save()
+
+        def flush(self):
+            self._defer = False
+            try:
+                super()._save()
+            finally:
+                self._defer = True
+
+    store = DeferredStore(str(out_path))
+    store._data = {}
+    store.flush()
+    return store
+
+
 def select_signals(bridge, d: date, snapshot: dict, lookback_days: int):
     """调 TDX execute_screen 取当日 QUANTQQ 信号, 返回 [(code, close_price), ...]。
     与 cron_jobs.py:430 选股逻辑一致: matched 代码 + snapshot 收盘价。"""
@@ -165,12 +194,12 @@ def replay_one_day(engine, d, trading_dates, snapshot, signals, sc):
             engine._store.save_state(engine.cash, engine.consecutive_losses,
                                      engine.pause_until, engine._trade_count)
         engine.positions = {k: v for k, v in engine.positions.items() if v.is_active}
-        # 维护"昨日快照"供次日除权跳空保护(P3-2: 累积不重置)
+        # 维护"昨日快照"供次日除权跳空保护(P3-2: 累积不重置), 仅内存, 不落盘
+        # (回放是连续内存演进, prev_day_snap 只供次日 check_stops 用; 持久化它是冷启动才需要)
         engine._prev_snap = {k: dict(v) for k, v in snapshot.items()}
         engine._prev_day_snap = copy.deepcopy(engine._prev_snap)
         if engine._store:
-            engine._store.save_prev_day_snap(engine._prev_day_snap)
-            engine._store.save_positions(engine.positions)
+            engine._store.save_positions(engine.positions)  # 缓冲, 不立即写盘
 
     # ── 买入阶段 ──
     if sc.AUTO_BUY and signals:
@@ -192,6 +221,8 @@ def replay_one_day(engine, d, trading_dates, snapshot, signals, sc):
                                         source="import")
         engine._store.save_state(engine.cash, engine.consecutive_losses,
                                  engine.pause_until, engine._trade_count)
+        # 一天结束: 显式 flush 一次(把当日所有缓冲的买卖/净值落盘)
+        engine._store.flush()
         engine.equity_curve = engine._store.load_equity_curve()
     return eq, buy_count, sell_count
 
@@ -235,11 +266,8 @@ def main():
     from app.tqsdk.bridge import TdxBridge
     bridge = TdxBridge()
 
-    # 独立 store(指向 imports), 不碰运行态
-    store = None if args.dry_run else JsonSimStore(path=str(out_json))
-    if store is not None:
-        store._data = {}
-        store._save()
+    # 独立 store(指向 imports, 缓冲写盘), 不碰运行态
+    store = None if args.dry_run else make_deferred_store(out_json)
     engine = SimTraderEngine(store=store)
     engine.cash = args.initial_capital
 
@@ -279,9 +307,10 @@ def main():
         out_csv.write_text("\n".join(csv_lines) + "\n", encoding="utf-8")
         if err_lines:
             err_log.write_text("".join(err_lines), encoding="utf-8")
-        # store 已逐日落盘 equity_curve/trades/positions/state, 此处确保 state 终值落盘
+        # store 已逐日 flush 落盘 equity_curve/trades/positions/state, 此处确保 state 终值落盘
         store.save_state(engine.cash, engine.consecutive_losses,
                          engine.pause_until, engine._trade_count)
+        store.flush()
 
     # ── 摘要 + 锚点校验 ──
     print("\n" + "=" * 64)

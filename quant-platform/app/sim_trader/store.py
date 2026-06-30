@@ -229,6 +229,8 @@ class SimTraderStore:
 
 class JsonSimStore:
     """JSON 文件持久化（无 DuckDB 依赖，无锁）"""
+    _save_seq = 0  # P1-1c: 全局自增序号, 保证 tmp 文件名唯一(防多写者踩踏)
+
     def __init__(self, path: str = None):
         from pathlib import Path as _P
         self._path = _P(path or str(_P(__file__).parent.parent.parent / "output" / "sim_trader" / "state.json"))
@@ -242,13 +244,31 @@ class JsonSimStore:
                 self._data = {}
 
     def _save(self):
-        # P1-1: 原子写 — 先写 .tmp 再 os.replace, 避免半截文件损坏(2026-06污染事件根因之一)
-        tmp = str(self._path) + '.tmp'
+        # P1-1: 原子写 — 先写唯一 .tmp 再 os.replace, 避免半截文件损坏(2026-06污染事件根因之一)
+        # P1-1b: Windows 下 os.replace 遇目标被瞬时占用(杀毒/同步/服务读)会抛 WinError 32, 加重试退避。
+        # P1-1c: tmp 名带 pid+自增序号, 避免同进程多次/多实例 _save 复用同一 tmp 互相踩踏(WinError 2)。
+        import time as _time
+        JsonSimStore._save_seq += 1
+        tmp = f"{self._path}.{os.getpid()}.{JsonSimStore._save_seq}.tmp"
         with open(tmp, 'w', encoding='utf-8') as f:
             json.dump(self._data, f, ensure_ascii=False, indent=2, default=str)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(tmp, str(self._path))
+        last_err = None
+        for attempt in range(10):
+            try:
+                os.replace(tmp, str(self._path))
+                return
+            except PermissionError as e:  # WinError 32: 目标被占用
+                last_err = e
+                _time.sleep(0.1 * (attempt + 1))
+        # 重试耗尽: 清理 tmp 并抛出, 由调用方决定(回放脚本会记录该日失败)
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except OSError:
+            pass
+        raise last_err
 
     def load_state(self) -> dict:
         s = self._data.get('state', {})
