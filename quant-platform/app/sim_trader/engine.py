@@ -290,13 +290,16 @@ class SimTraderEngine:
                     total_mv += pos.remaining_shares * close_px
 
                 equity = self.cash + total_mv
-                self.equity_curve.append({
-                    'date': str(d), 'equity': equity,
-                    'cash': self.cash, 'positions': self.position_count,
-                })
-                # 持久化
+                # P1-2: 单路径落盘(去重+统一'pos'键), source 标记为 fill_missing 便于追溯
                 if self._store:
-                    self._store.save_equity_point(d, equity, self.cash, self.position_count)
+                    self._store.save_equity_point(d, equity, self.cash,
+                                                  self.position_count, source='fill_missing')
+                    self.equity_curve = self._store.load_equity_curve()
+                else:
+                    self.equity_curve.append({
+                        'date': str(d), 'equity': equity,
+                        'cash': self.cash, 'pos': self.position_count,
+                    })
                 log.info(f"[快照补录] {d} 净值={equity:,.0f}（启动时自动补齐）")
                 d += timedelta(days=1)
         except Exception as e:
@@ -570,6 +573,13 @@ class SimTraderEngine:
 
         if sells:
             log.info(f"[卖出阶段] 共执行 {len(sells)} 笔卖出")
+        # P1-4: 先落盘现金(save_state), 再清理并落盘持仓。
+        # 语义"先确保卖出所得现金落袋, 再处理持仓", 配合 P1-1 原子写, 杜绝
+        # "现金已增加但持仓未删"导致的重复计算窗口。
+        if self._store:
+            self._store.save_state(
+                self.cash, self.consecutive_losses,
+                self.pause_until, self._trade_count)
         # 清理已平仓
         self.positions = {k: v for k, v in self.positions.items() if v.is_active}
         # 保存当日快照供次日除权跳空保护
@@ -581,9 +591,6 @@ class SimTraderEngine:
         if self._store:
             self._store.save_prev_day_snap(self._prev_day_snap)
             self._store.save_positions(self.positions)
-            self._store.save_state(
-                self.cash, self.consecutive_losses,
-                self.pause_until, self._trade_count)
 
     # ── 记录 ──────────────────────────────────
 
@@ -605,19 +612,19 @@ class SimTraderEngine:
         eq = self.total_equity(snapshot)
         log.info(f"[快照] 日期={today} 权益={eq:,.0f} 现金={self.cash:,.0f} 持仓={self.position_count}")
         _safe_broadcast({"type":"sim_trader_log","action":"snapshot","date":str(today),"time":datetime.now().strftime('%H:%M:%S'),"equity":round(eq,0),"cash":round(self.cash,0),"positions":self.position_count})
-        # 同一天只保留最新一条，防止重复
-        entry = {
-            'date': today,
-            'equity': eq,
-            'cash': self.cash,
-            'positions': self.position_count,
-        }
-        if self.equity_curve and str(self.equity_curve[-1].get('date')) == str(today):
-            self.equity_curve[-1] = entry
-        else:
-            self.equity_curve.append(entry)
+        # P1-2: 统一经 save_equity_point 单路径落盘(键名 'pos', 同日去重),
+        # 消除原"内存append('positions'键) + save_equity_point('pos'键)"对同一list双写产生的重复记录。
         if self._store:
             self._store.save_equity_point(today, eq, self.cash, self.position_count)
             self._store.save_state(
                 self.cash, self.consecutive_losses,
                 self.pause_until, self._trade_count)
+            # 内存曲线与 store 同步(加载后两者为同一引用; 此处确保无 store 分支外的一致性)
+            self.equity_curve = self._store.load_equity_curve()
+        else:
+            # 无 store(纯内存模式): 自行维护, 同日去重, 统一 'pos' 键
+            entry = {'date': str(today), 'equity': eq, 'cash': self.cash, 'pos': self.position_count}
+            if self.equity_curve and str(self.equity_curve[-1].get('date')) == str(today):
+                self.equity_curve[-1] = entry
+            else:
+                self.equity_curve.append(entry)
