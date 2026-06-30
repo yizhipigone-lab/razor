@@ -3,6 +3,7 @@
 所有持仓/交易/引擎状态变化即时写入 DuckDB，服务器重启可恢复。
 """
 import json
+import os
 from datetime import date
 from typing import Optional, Dict, List
 from pathlib import Path
@@ -241,8 +242,13 @@ class JsonSimStore:
                 self._data = {}
 
     def _save(self):
-        with open(self._path, 'w', encoding='utf-8') as f:
+        # P1-1: 原子写 — 先写 .tmp 再 os.replace, 避免半截文件损坏(2026-06污染事件根因之一)
+        tmp = str(self._path) + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
             json.dump(self._data, f, ensure_ascii=False, indent=2, default=str)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, str(self._path))
 
     def load_state(self) -> dict:
         s = self._data.get('state', {})
@@ -274,19 +280,35 @@ class JsonSimStore:
         from app.sim_trader.engine import Position
         result = {}
         for code, p in self._data.get('positions', {}).items():
-            result[code] = Position(
+            pos = Position(
                 code=code, entry_date=date.fromisoformat(p['entry_date']),
                 entry_price=float(p['entry_price']), shares=int(p['shares']),
                 cost=float(p['cost']), strategy_name=p.get('strategy_name', ''),
                 entry_time=p.get('entry_time', '15:00'),
             )
+            # P1-5: 补读完整运行态字段, 缺失时回退 __post_init__ 默认值
+            if 'peak_price' in p:
+                pos.peak_price = float(p['peak_price'])
+            if 'remaining_shares' in p:
+                pos.remaining_shares = int(p['remaining_shares'])
+            pos.tp1_triggered = bool(p.get('tp1_triggered', pos.tp1_triggered))
+            pos.tp2_triggered = bool(p.get('tp2_triggered', pos.tp2_triggered))
+            pos.is_active = bool(p.get('is_active', pos.is_active))
+            result[code] = pos
         return result
 
     def save_positions(self, positions: Dict[str, "Position"]):
+        # P1-5: 补全序列化字段 — is_active/peak_price/remaining_shares/tp1/tp2
+        # (历史只存6字段, 冷启动后 peak_price/remaining_shares 会丢, 导致止盈止损状态错乱)
         self._data['positions'] = {
             code: {'entry_date': str(p.entry_date), 'entry_price': p.entry_price,
                    'shares': p.shares, 'cost': p.cost, 'strategy_name': p.strategy_name,
-                   'entry_time': getattr(p, 'entry_time', '15:00')}
+                   'entry_time': getattr(p, 'entry_time', '15:00'),
+                   'peak_price': getattr(p, 'peak_price', p.entry_price),
+                   'remaining_shares': getattr(p, 'remaining_shares', p.shares),
+                   'tp1_triggered': getattr(p, 'tp1_triggered', False),
+                   'tp2_triggered': getattr(p, 'tp2_triggered', False),
+                   'is_active': getattr(p, 'is_active', True)}
             for code, p in positions.items()
         }
         self._save()
@@ -320,11 +342,19 @@ class JsonSimStore:
             ))
         return result
 
-    def save_equity_point(self, d: date, equity: float, cash: float, positions: int):
+    def save_equity_point(self, d: date, equity: float, cash: float, positions: int,
+                          source: str = 'record'):
+        # P1-3: source 字段标记来源(record/import/manual), 便于追溯
+        # P1-6: 即时落盘(去掉原 %10==0 延迟), 配合 P1-1 原子写, 不再丢失最近1-9个净值点
+        # P1-2: 同一天只保留最新一条(去重), 统一 'pos' 键, 消除双写路径产生的重复记录
         pts = self._data.setdefault('equity_curve', [])
-        pts.append({'date': str(d), 'equity': equity, 'cash': cash, 'pos': positions})
-        if len(pts) % 10 == 0:
-            self._save()
+        entry = {'date': str(d), 'equity': equity, 'cash': cash, 'pos': positions,
+                 'source': source}
+        if pts and str(pts[-1].get('date')) == str(d):
+            pts[-1] = entry
+        else:
+            pts.append(entry)
+        self._save()
 
     def load_equity_curve(self) -> List[Dict]:
         return self._data.get('equity_curve', [])
