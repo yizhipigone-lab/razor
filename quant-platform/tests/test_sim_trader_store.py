@@ -196,3 +196,74 @@ def test_load_validation_empty_curve_ok(tmp_store):
     assert engine.equity_curve == []
     assert engine.cash == INITIAL_CAPITAL
     assert eng_mod._BAD_EQUITY_CURVE_DETECTED is False
+
+
+# ── 净值虚高修复: total_equity 估值优先级 + 覆盖率 + source标记 ──
+
+def _mk_engine_with_position():
+    engine = SimTraderEngine()  # 无store纯内存
+    engine.cash = 100_000
+    pos = Position(code="000001", entry_date=date(2026, 3, 2),
+                   entry_price=10.0, shares=1000, cost=10_000)
+    pos.remaining_shares = 1000
+    pos.current_price = 15.0  # 上次已知市价
+    engine.positions["000001"] = pos
+    return engine
+
+
+def test_total_equity_uses_snapshot_price():
+    """有当前价时用 snapshot 价格。"""
+    e = _mk_engine_with_position()
+    assert e.total_equity({"000001": {"close": 20.0}}) == 100_000 + 1000 * 20
+
+
+def test_total_equity_missing_price_uses_current_not_entry():
+    """净值虚高修复: snapshot 缺价时用上次市价(15), 而非买入价(10)。"""
+    e = _mk_engine_with_position()
+    eq = e.total_equity({})  # 空 snapshot
+    assert eq == 100_000 + 1000 * 15   # 用 current_price=15
+    assert eq != 100_000 + 1000 * 10   # 不是 entry_price=10
+
+
+def test_total_equity_no_current_falls_back_entry():
+    """既无 snapshot 又无 current_price 时, 才兜底 entry_price。"""
+    e = _mk_engine_with_position()
+    e.positions["000001"].current_price = 0.0  # 无上次市价
+    eq = e.total_equity({})
+    assert eq == 100_000 + 1000 * 10   # 兜底 entry_price
+
+
+def test_equity_price_coverage():
+    """覆盖率: 有价/总持仓。"""
+    e = _mk_engine_with_position()
+    assert e.equity_price_coverage({}) == (0, 1)                    # 空 -> 0覆盖
+    assert e.equity_price_coverage({"000001": {"close": 20}}) == (1, 1)
+    assert e.equity_price_coverage({"000001": {"close": 0}}) == (0, 1)  # 价<=0不算
+
+
+def test_record_marks_partial_when_price_missing(tmp_store):
+    """净值可信度: 持仓缺实时报价时, equity_curve 标记 source=partial。"""
+    engine = SimTraderEngine(store=tmp_store)
+    engine.cash = 100_000
+    pos = Position(code="000001", entry_date=date(2026, 3, 2),
+                   entry_price=10.0, shares=1000, cost=10_000)
+    pos.remaining_shares = 1000
+    pos.current_price = 12.0
+    engine.positions["000001"] = pos
+    engine.record(date(2026, 3, 3), snapshot={})  # 空行情 -> partial
+    ec = tmp_store.load_equity_curve()
+    assert ec[-1]["source"] == "partial"
+
+
+def test_record_marks_record_when_price_complete(tmp_store):
+    """行情齐全时 source=record(正常)。"""
+    engine = SimTraderEngine(store=tmp_store)
+    engine.cash = 100_000
+    pos = Position(code="000001", entry_date=date(2026, 3, 2),
+                   entry_price=10.0, shares=1000, cost=10_000)
+    pos.remaining_shares = 1000
+    engine.positions["000001"] = pos
+    engine.record(date(2026, 3, 3), snapshot={"000001": {"close": 11.0}})
+    ec = tmp_store.load_equity_curve()
+    assert ec[-1]["source"] == "record"
+
