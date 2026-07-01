@@ -379,19 +379,29 @@ async def sim_trader_trades(page: int = 1, limit: int = 50):
         )
         for p in holding_positions:
             cur_px = p.entry_price
+            prev_close = 0.0  # 昨收价(用于今日盈亏/当日涨跌幅)
             f = daily_dir / f"{p.code}.parquet"
             if f.exists():
                 df_snap = pd.read_parquet(str(f), columns=['date', 'close'])
                 df_snap['date'] = pd.to_datetime(df_snap['date']).dt.date
-                df_snap = df_snap.sort_values('date')
-                row = df_snap[df_snap['date'] == today]
-                if row.empty:
+                df_snap = df_snap.sort_values('date').reset_index(drop=True)
+                # 定位当前价所在行(今日; 无今日则取最近一个交易日)
+                idx = df_snap.index[df_snap['date'] == today]
+                if len(idx) == 0:
                     past = df_snap[df_snap['date'] < today]
-                    if not past.empty:
-                        row = past.iloc[[-1]]
-                if not row.empty:
-                    cur_px = float(row.iloc[0]['close'])
+                    cur_idx = past.index[-1] if not past.empty else None
+                else:
+                    cur_idx = idx[0]
+                if cur_idx is not None:
+                    cur_px = float(df_snap.iloc[cur_idx]['close'])
+                    # 昨收 = 当前价行的前一交易日收盘
+                    if cur_idx >= 1:
+                        prev_close = float(df_snap.iloc[cur_idx - 1]['close'])
             ret = (cur_px / p.entry_price - 1) * 100
+            # 今日盈亏 = 剩余股 × (当前价 - 昨收); 当日涨跌幅 = (当前价 - 昨收)/昨收
+            rem_shares = p.remaining_shares if getattr(p, 'remaining_shares', 0) else p.shares
+            today_pnl = round(rem_shares * (cur_px - prev_close), 0) if prev_close > 0 else None
+            day_chg_pct = round((cur_px / prev_close - 1) * 100, 2) if prev_close > 0 else None
             holding.append({
                 'code': p.code, 'name': names.get(p.code, ''),
                 'entry': str(p.entry_date), 'entry_time': getattr(p, 'entry_time', '15:00'),
@@ -402,6 +412,9 @@ async def sim_trader_trades(page: int = 1, limit: int = 50):
                 'reason': '', 'hold_days': (today - p.entry_date).days,
                 'entry_reason': p.strategy_name, 'exit_timing': '',
                 'status': '持仓中',
+                'prev_close': prev_close,          # 昨收(供前端实时算涨跌幅)
+                'today_pnl': today_pnl,            # 今日浮盈亏
+                'day_chg_pct': day_chg_pct,        # 当日涨跌幅
             })
     except Exception:
         pass
@@ -417,6 +430,7 @@ async def sim_trader_trades(page: int = 1, limit: int = 50):
             'profit': round(t.profit_amount, 0), 'reason': t.exit_reason,
             'hold_days': t.hold_days, 'entry_reason': t.entry_reason,
             'exit_timing': t.exit_timing, 'status': '已平仓',
+            'prev_close': 0.0, 'today_pnl': None, 'day_chg_pct': None,  # 已平仓无当日概念
         }
         for t in closed_sorted
     ]
