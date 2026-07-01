@@ -190,6 +190,7 @@ async def sim_trader_status():
     # 优先 QMT 实时行情，失败回退 Parquet
     active_codes = [p.code for p in engine.active_positions()]
     snapshot = {}
+    prev_close_map = {}   # 昨收价, 供今日盈亏/涨跌幅计算
     missing = set(active_codes)
 
     if active_codes:
@@ -202,11 +203,14 @@ async def sim_trader_status():
                     price = float(row.get('price', 0))
                     if price > 0:
                         snapshot[code] = {'close': price}
+                        lc = float(row.get('last_close', 0) or 0)
+                        if lc > 0:
+                            prev_close_map[code] = lc
                         missing.discard(code)
         except Exception as e:
             log.warning(f"QMT实时行情失败: {e}")
 
-    # 回退：从 Parquet 读取今日收盘价
+    # 回退：从 Parquet 读取今日收盘价 + 昨收价
     if missing:
         try:
             daily_dir = ROOT_DIR / "data" / "parquet" / "daily"
@@ -215,15 +219,30 @@ async def sim_trader_status():
                 if f.exists():
                     df = pd.read_parquet(str(f), columns=['date', 'close'])
                     df['date'] = pd.to_datetime(df['date']).dt.date
-                    row = df[df['date'] == today]
-                    if not row.empty:
-                        snapshot[code] = {'close': float(row.iloc[0]['close'])}
+                    df = df.sort_values('date').reset_index(drop=True)
+                    idx = df.index[df['date'] == today]
+                    cur_idx = idx[0] if len(idx) else (len(df) - 1 if len(df) else None)
+                    if cur_idx is not None:
+                        snapshot[code] = {'close': float(df.iloc[cur_idx]['close'])}
+                        if cur_idx >= 1:
+                            prev_close_map[code] = float(df.iloc[cur_idx - 1]['close'])
         except Exception as e:
             log.warning(f"Parquet回退失败: {e}")
 
     positions = []
     for p in engine.active_positions():
         cur_price = snapshot.get(p.code, {}).get('close', p.entry_price)
+        # 今日盈亏口径: 当日买入用买入价基准, 过夜持仓用昨收价基准
+        prev_close = prev_close_map.get(p.code, 0)
+        bought_today = (p.entry_date == today)
+        base_px = p.entry_price if bought_today else prev_close
+        rem = p.remaining_shares if getattr(p, 'remaining_shares', 0) else p.shares
+        if base_px and base_px > 0:
+            today_pnl = round(rem * (cur_price - base_px), 0)
+            day_chg_pct = round((cur_price / base_px - 1) * 100, 2)
+        else:
+            today_pnl = None
+            day_chg_pct = None
         positions.append({
             'code': p.code,
             'name': names.get(p.code, ''),
@@ -236,6 +255,10 @@ async def sim_trader_status():
             'profit_pct': round((cur_price / p.entry_price - 1) * 100, 2),
             'market_value': round(p.remaining_shares * cur_price, 2),
             'strategy_name': p.strategy_name,
+            'prev_close': prev_close,           # 昨收价
+            'today_base': base_px or 0,         # 今日盈亏基准价(当日买入=买入价, 过夜=昨收)
+            'today_pnl': today_pnl,             # 今日浮盈亏
+            'day_chg_pct': day_chg_pct,         # 当日涨跌幅
         })
 
     total_unrealized_pnl = sum(
@@ -398,10 +421,16 @@ async def sim_trader_trades(page: int = 1, limit: int = 50):
                     if cur_idx >= 1:
                         prev_close = float(df_snap.iloc[cur_idx - 1]['close'])
             ret = (cur_px / p.entry_price - 1) * 100
-            # 今日盈亏 = 剩余股 × (当前价 - 昨收); 当日涨跌幅 = (当前价 - 昨收)/昨收
+            # 今日盈亏口径: 当日买入的用买入价基准(现价-买入价), 过夜持仓用昨收价基准(现价-昨收)
             rem_shares = p.remaining_shares if getattr(p, 'remaining_shares', 0) else p.shares
-            today_pnl = round(rem_shares * (cur_px - prev_close), 0) if prev_close > 0 else None
-            day_chg_pct = round((cur_px / prev_close - 1) * 100, 2) if prev_close > 0 else None
+            bought_today = (p.entry_date == today)
+            base_px = p.entry_price if bought_today else prev_close
+            if base_px and base_px > 0:
+                today_pnl = round(rem_shares * (cur_px - base_px), 0)
+                day_chg_pct = round((cur_px / base_px - 1) * 100, 2)
+            else:
+                today_pnl = None
+                day_chg_pct = None
             holding.append({
                 'code': p.code, 'name': names.get(p.code, ''),
                 'entry': str(p.entry_date), 'entry_time': getattr(p, 'entry_time', '15:00'),
@@ -412,7 +441,8 @@ async def sim_trader_trades(page: int = 1, limit: int = 50):
                 'reason': '', 'hold_days': (today - p.entry_date).days,
                 'entry_reason': p.strategy_name, 'exit_timing': '',
                 'status': '持仓中',
-                'prev_close': prev_close,          # 昨收(供前端实时算涨跌幅)
+                'prev_close': prev_close,          # 昨收价
+                'today_base': base_px or 0,        # 今日盈亏基准价(当日买入=买入价, 过夜=昨收), 供前端实时算
                 'today_pnl': today_pnl,            # 今日浮盈亏
                 'day_chg_pct': day_chg_pct,        # 当日涨跌幅
             })
@@ -430,7 +460,7 @@ async def sim_trader_trades(page: int = 1, limit: int = 50):
             'profit': round(t.profit_amount, 0), 'reason': t.exit_reason,
             'hold_days': t.hold_days, 'entry_reason': t.entry_reason,
             'exit_timing': t.exit_timing, 'status': '已平仓',
-            'prev_close': 0.0, 'today_pnl': None, 'day_chg_pct': None,  # 已平仓无当日概念
+            'prev_close': 0.0, 'today_base': 0, 'today_pnl': None, 'day_chg_pct': None,  # 已平仓无当日概念
         }
         for t in closed_sorted
     ]

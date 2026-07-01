@@ -99,8 +99,11 @@ class IntradayMonitor:
                 try:
                     from datetime import date as _d
                     if not hasattr(self, '_last_record_date') or self._last_record_date != _d.today():
-                        # #9 修复: 优先用 _prev_day_snap(稳定的"昨日"快照),兜底用 _prev_snap
-                        snap = self.engine._prev_day_snap or self.engine._prev_snap or {}
+                        # 根源修复: 用 QMT 实时行情构建今日 snapshot(而非昨日快照),
+                        # 避免净值按昨收/买入价估值导致失真(2026-07盘中record虚高根因)。
+                        # QMT 不可用时回退昨日快照, total_equity 再用 current_price 兜底。
+                        snap = self.engine.build_live_snapshot() \
+                               or self.engine._prev_day_snap or self.engine._prev_snap or {}
                         self.engine.record(_d.today(), snap)
                         self._last_record_date = _d.today()
                 except Exception:

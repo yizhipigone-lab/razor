@@ -108,10 +108,18 @@ async function loadSimTraderStatus() {
       const positions = r.positions || [];
       if (tbody) {
         tbody.innerHTML = positions.length > 0
-          ? positions.sort(function(a, b) { return (b.entry_date || '').localeCompare(a.entry_date || ''); }).map(p =>
-            '<tr class="pos-row" data-code="' + p.code + '" data-entry="' + (p.entry_price || 0) + '" data-shares="' + (p.remaining || p.shares || 0) + '"><td>' + p.code + '</td><td>' + (p.name || '') + '</td><td>' + (p.entry_date || '--') + '</td><td>' + (p.entry_price || 0).toFixed(2) + '</td><td class="pos-price">' + (p.current_price || 0).toFixed(2) + '</td><td class="pos-pct" style="color:' + ((p.profit_pct || 0) >= 0 ? 'var(--red)' : 'var(--green)') + '">' + ((p.profit_pct || 0) >= 0 ? '+' : '') + (p.profit_pct || 0).toFixed(2) + '%</td><td>' + (p.remaining || p.shares || 0) + '</td><td class="pos-mv">' + Number(p.market_value || 0).toLocaleString() + '</td></tr>'
-          ).join('')
-          : '<tr><td colspan="8" style="text-align:center;color:var(--text2)">暂无持仓</td></tr>';
+          ? positions.sort(function(a, b) { return (b.entry_date || '').localeCompare(a.entry_date || ''); }).map(function(p) {
+            var tp = p.today_pnl, dc = p.day_chg_pct;
+            var tpColor = (tp || 0) >= 0 ? 'var(--red)' : 'var(--green)';
+            var tpCell = (tp != null)
+              ? '<td class="today-pnl" style="color:' + tpColor + '">' + (tp >= 0 ? '+' : '') + Math.round(tp).toLocaleString() + '</td>'
+              : '<td class="today-pnl" style="color:var(--text2)">--</td>';
+            var dcCell = (dc != null)
+              ? '<td class="day-chg" style="color:' + tpColor + '">' + (dc >= 0 ? '+' : '') + dc.toFixed(2) + '%</td>'
+              : '<td class="day-chg" style="color:var(--text2)">--</td>';
+            return '<tr class="pos-row" data-code="' + p.code + '" data-entry="' + (p.entry_price || 0) + '" data-shares="' + (p.remaining || p.shares || 0) + '" data-basepx="' + (p.today_base || 0) + '"><td>' + p.code + '</td><td>' + (p.name || '') + '</td><td>' + (p.entry_date || '--') + '</td><td>' + (p.entry_price || 0).toFixed(2) + '</td><td class="pos-price">' + (p.current_price || 0).toFixed(2) + '</td><td class="pos-pct" style="color:' + ((p.profit_pct || 0) >= 0 ? 'var(--red)' : 'var(--green)') + '">' + ((p.profit_pct || 0) >= 0 ? '+' : '') + (p.profit_pct || 0).toFixed(2) + '%</td>' + tpCell + dcCell + '<td>' + (p.remaining || p.shares || 0) + '</td><td class="pos-mv">' + Number(p.market_value || 0).toLocaleString() + '</td></tr>';
+          }).join('')
+          : '<tr><td colspan="10" style="text-align:center;color:var(--text2)">暂无持仓</td></tr>';
       }
     }
     // 订阅持仓股票的实时行情
@@ -213,7 +221,7 @@ async function loadSimTrades(page) {
             const mktVal = Math.round(shares * t.exit_px);  // 市值 = 数量 × 当前价/卖出价
             const statusColor = isHolding ? 'var(--accent)' : 'var(--text2)';
             const rowClass = isHolding ? ' class="pos-row"' : '';
-            const rowData = isHolding ? ' data-code="' + t.code + '" data-entry="' + (t.entry_px || 0) + '" data-shares="' + shares + '" data-preclose="' + (t.prev_close || 0) + '" data-type="trade"' : '';
+            const rowData = isHolding ? ' data-code="' + t.code + '" data-entry="' + (t.entry_px || 0) + '" data-shares="' + shares + '" data-basepx="' + (t.today_base || 0) + '" data-type="trade"' : '';
             const pctColor = t.ret_pct >= 0 ? 'var(--up)' : 'var(--down)';
             // 买入列：日期+时间 / 价格
             var buyCell = '<span style="font-size:11px">' + (t.entry || '') + '</span><br><span style="color:var(--text2);font-size:10px">' + (t.entry_time||'') + ' @</span> <b>' + entryPx + '</b>';
@@ -2389,14 +2397,14 @@ function updatePositionRow(tr, info, entryPrice, shares) {
     if (mv2El) {
         mv2El.textContent = Math.round(price * shares).toLocaleString();
     }
-    // 今日盈亏 / 实时涨跌（基于昨收价 data-preclose 实时计算）
-    const preClose = parseFloat(tr.getAttribute('data-preclose') || 0)
-                     || parseFloat(info.lastClose || info.preClose || 0);
+    // 今日盈亏 / 实时涨跌（基于今日基准价 data-basepx: 当日买入=买入价, 过夜=昨收）
+    const basePx = parseFloat(tr.getAttribute('data-basepx') || 0)
+                   || parseFloat(info.lastClose || info.preClose || 0);
     const tpEl = tr.querySelector('.today-pnl');
     const dcEl = tr.querySelector('.day-chg');
-    if (preClose > 0) {
-        const dayChg = (price - preClose) / preClose * 100;
-        const todayPnl = (price - preClose) * shares;
+    if (basePx > 0) {
+        const dayChg = (price - basePx) / basePx * 100;
+        const todayPnl = (price - basePx) * shares;
         const dcColor = dayChg >= 0 ? '#ef232a' : '#14b143';
         if (tpEl) {
             tpEl.textContent = (todayPnl >= 0 ? '+' : '') + Math.round(todayPnl).toLocaleString();
