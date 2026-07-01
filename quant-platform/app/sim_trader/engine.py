@@ -350,6 +350,38 @@ class SimTraderEngine:
     def position_count(self) -> int:
         return len(self.active_positions())
 
+    def build_live_snapshot(self) -> dict:
+        """用 QMT 实时行情为当前持仓构建 snapshot(全局规则: 行情优先用QMT)。
+        返回 {code: {'close': 现价, 'preClose': 昨收, ...}}。
+        供盘中监控器 record 用, 替代"昨日快照", 避免净值失真。
+        QMT 不可用时返回空 dict, 调用方(record/total_equity)会用 current_price 兜底。"""
+        codes = [p.code for p in self.active_positions()]
+        if not codes:
+            return {}
+        try:
+            from app.trader.gateways.qmt import qmt_gateway
+            quotes = qmt_gateway.get_realtime_quotes(codes) or {}
+        except Exception as e:
+            log.debug(f"[实时快照] QMT 获取失败: {e}")
+            return {}
+        snap = {}
+        for code in codes:
+            q = quotes.get(code) or quotes.get(code.split('.')[0]) or {}
+            if not isinstance(q, dict):
+                continue
+            price = float(q.get('lastPrice', 0) or q.get('price', 0) or 0)
+            if price <= 0:
+                continue
+            pre = float(q.get('lastClose', 0) or q.get('preClose', 0) or 0)
+            snap[code] = {
+                'open': float(q.get('open', price) or price),
+                'high': float(q.get('high', price) or price),
+                'low': float(q.get('low', price) or price),
+                'close': price,
+                'preClose': pre,
+            }
+        return snap
+
     def total_equity(self, snapshot: dict) -> float:
         """snapshot: {code: {'close': float, ...}}
         净值虚高修复: 估值优先级 snapshot当前价 > pos.current_price(上次已知市价) > entry_price(兜底)。
