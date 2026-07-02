@@ -1,15 +1,15 @@
 """
-通达信 QUANTQQ 公式选股 API
+通达信 TDX 公式选股 API
 """
-import json
 import threading
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core.logger import get_logger
+from core.settings import settings
 from database.duckdb_manager import db
 from server.websocket.manager import sync_broadcast
 from app.utils.threading import run_in_thread
@@ -22,11 +22,15 @@ _stop_lock = threading.Lock()
 
 _BT_CONFIG_FILE = Path(__file__).resolve().parent.parent.parent / "output" / "backtest_config.json"
 
+# WS 单次广播结果上限，超过则只推 count，前端按需拉取详情
+_WS_BROADCAST_LIMIT = 200
+
 
 class ScreenRequest(BaseModel):
     start_date: str = ""
     end_date: str = ""
     stock_list_override: list = None
+    formula_name: str = Field(default="", max_length=100)
 
 
 class BacktestRequest(BaseModel):
@@ -37,11 +41,11 @@ class BacktestRequest(BaseModel):
 # ── 1. 执行选股 ──
 
 @router.post("/api/tqsdk/screen")
-async def start_screen(body: dict):
-    end_time = body.get("end_date", "")
-    start_time = body.get("start_date", "")
-    stock_list_override = body.get("stock_list_override")
-    formula_name = (body.get("formula_name") or "").strip()  # 新增：前端传入的公式名
+async def start_screen(req: ScreenRequest):
+    end_time = req.end_date
+    start_time = req.start_date
+    stock_list_override = req.stock_list_override
+    formula_name = (req.formula_name or "").strip()
 
     # TDX 格式 YYYYMMDD 转 DuckDB 格式 YYYY-MM-DD
     def _fmt_date(d):
@@ -58,8 +62,9 @@ async def start_screen(body: dict):
     def _resolve_formula_name():
         if formula_name:
             return formula_name
-        from core.settings import settings
         return settings.get("tqsdk", "formula_name", default="QUANTQQ") or "QUANTQQ"
+
+    resolved_formula = _resolve_formula_name()
 
     with _stop_lock:
         if "tqsdk" in _stop_events:
@@ -68,56 +73,99 @@ async def start_screen(body: dict):
 
     def _run():
         try:
-            from app.tqsdk.bridge import TdxBridge
+            from app.tqsdk.bridge import TdxBridge, _is_signal_value
             bridge = TdxBridge()
 
-            # ── 确定需要扫描的交易日列表 ──
+            # ── 严格交易日历：日历不可用直接报错，不降级 ──
             from app.api.sim_trader import _load_trading_calendar
             cal = _load_trading_calendar()
-            scan_dates = []
-            if start_time and start_time != end_time:
-                sd = date.fromisoformat(db_start)
-                ed = date.fromisoformat(db_end)
-                d = sd
-                while d <= ed:
-                    if d in cal or d.weekday() < 5:
-                        scan_dates.append(d)
-                    d += timedelta(days=1)
-                if not cal:
-                    scan_dates = [d for d in scan_dates if d.weekday() < 5]
-            else:
-                scan_dates = [date.today()]
+            if not cal:
+                sync_broadcast({
+                    "type": "tqsdk_screen_done",
+                    "status": "error",
+                    "message": "交易日历加载失败，无法选股。请检查 baostock 连接后重试。",
+                })
+                return
 
-            if len(scan_dates) == 0:
-                scan_dates = [date.today()]
+            # 判断是单日还是区间
+            is_range = bool(start_time and start_time != end_time)
 
-            log.info(f"TDX 区间选股: {scan_dates[0]} ~ {scan_dates[-1]}, 共 {len(scan_dates)} 个交易日, 公式: {_resolve_formula_name()}")
             sync_broadcast({
                 "type": "tqsdk_progress",
-                "step": 0, "total": len(scan_dates) + 2,
-                "msg": f"区间选股 {scan_dates[0]} ~ {scan_dates[-1]}, 共 {len(scan_dates)} 天, 公式: {_resolve_formula_name()}"
+                "step": 0, "total": 3,
+                "msg": (f"区间选股 {db_start} ~ {db_end}" if is_range else f"单日选股 {db_end}")
+                      + f", 公式: {resolved_formula}"
             })
 
-            all_matched = {}  # code -> first_date
-            total = len(scan_dates)
-            for i, d in enumerate(scan_dates):
-                stop = _stop_events.get("tqsdk")
-                if stop and stop.is_set():
-                    sync_broadcast({"type": "tqsdk_screen_done", "status": "stopped"})
-                    return
+            stop = _stop_events.get("tqsdk")
+            if stop and stop.is_set():
+                sync_broadcast({"type": "tqsdk_screen_done", "status": "stopped"})
+                return
 
-                d_str = d.strftime("%Y%m%d")
+            all_matched = {}  # code -> first_date
+
+            if is_range:
+                # ── 区间模式：一次 subprocess 拿整个区间信号 ──
+                sd = date.fromisoformat(db_start)
+                ed = date.fromisoformat(db_end)
+                # 仅用于日志展示的交易日数
+                scan_dates = [d for d in (sd + timedelta(i) for i in range((ed - sd).days + 1)) if d in cal]
                 sync_broadcast({
                     "type": "tqsdk_progress",
-                    "step": i + 1, "total": total,
-                    "msg": f"扫描 {d} ({i+1}/{total})..."
+                    "step": 1, "total": 3,
+                    "msg": f"调用 TDX 区间扫描（{len(scan_dates)} 个交易日）..."
                 })
 
+                end_str = end_time.replace("-", "")
+                start_str = start_time.replace("-", "")
+                result = bridge.execute_screen_range(
+                    end_time=end_str,
+                    start_time=start_str,
+                    kline_count=500,
+                    stock_list_override=stock_list_override,
+                    formula_name=formula_name,
+                )
+
+                if result.get("status") != "ok":
+                    sync_broadcast({
+                        "type": "tqsdk_screen_done",
+                        "status": "error",
+                        "message": result.get("message", "TDX 区间扫描失败"),
+                    })
+                    return
+
+                # 区间结果里 signals: {code: {Date:[...], <var>:[...]}}，取每个 code 的首个信号日
+                signals = result.get("signals", {})
+                for code, d in signals.items():
+                    dates = d.get("Date", [])
+                    var_name = next((k for k in d.keys() if k != "Date"), "ZP")
+                    zps = d.get(var_name, [])
+                    for dt, v in zip(dates, zps):
+                        if _is_signal_value(v):
+                            if code not in all_matched:
+                                all_matched[code] = str(dt)
+                            break  # 只取首个信号日
+            else:
+                # ── 单日模式 ──
+                d = date.fromisoformat(db_end)
+                if d not in cal:
+                    sync_broadcast({
+                        "type": "tqsdk_screen_done",
+                        "status": "error",
+                        "message": f"{db_end} 非交易日",
+                    })
+                    return
+                sync_broadcast({
+                    "type": "tqsdk_progress",
+                    "step": 1, "total": 3,
+                    "msg": f"调用 TDX 单日扫描 {d}..."
+                })
+                d_str = d.strftime("%Y%m%d")
                 result = bridge.execute_screen(
                     end_time=d_str,
                     stock_list_override=stock_list_override,
                     lookback_days=500,
-                    formula_name=formula_name,  # 传递前端传入的公式名
+                    formula_name=formula_name,
                 )
                 if result.get("status") == "ok":
                     for code in result.get("matched", []):
@@ -127,18 +175,19 @@ async def start_screen(body: dict):
             matched = list(all_matched.keys())
             sync_broadcast({
                 "type": "tqsdk_progress",
-                "step": total + 1, "total": total + 2,
-                "msg": f"选股完成，{len(scan_dates)}天共 {len(matched)} 只，正在保存..."
+                "step": 2, "total": 3,
+                "msg": f"选股完成，共 {len(matched)} 只，正在保存..."
             })
 
-            # 补充股票名称和板块
+            # 补充股票名称和板块（参数化查询，防 SQL 注入）
             stock_details = []
             if matched:
                 try:
+                    codes_clean = [c.split(".")[0] for c in matched]
+                    placeholders = ",".join(["?"] * len(codes_clean))
                     detail_df = db.conn.execute(
-                        "SELECT code, name, sector FROM stocks WHERE code IN ({})".format(
-                            ",".join(f"'{c.split('.')[0]}'" for c in matched)
-                        )
+                        f"SELECT code, name, sector FROM stocks WHERE code IN ({placeholders})",
+                        codes_clean,
                     ).fetchdf()
                     detail_map = {}
                     for _, row in detail_df.iterrows():
@@ -156,7 +205,7 @@ async def start_screen(body: dict):
 
             # 持久化（用真实公式名，不硬编码）
             history_id = db.save_tqsdk_screen_history(
-                formula_name=_resolve_formula_name(),  # 改：之前硬编码 "QUANTQQ"
+                formula_name=resolved_formula,
                 formula_arg="",
                 start_date=db_start,
                 end_date=db_end,
@@ -165,13 +214,16 @@ async def start_screen(body: dict):
                 stock_details=stock_details,
             )
 
+            # WS 广播：结果超限时只推 count，前端按需拉详情，避免大 payload 阻塞
+            broadcast_results = stock_details[:_WS_BROADCAST_LIMIT]
             sync_broadcast({
                 "type": "tqsdk_screen_done",
                 "status": "ok",
                 "result_id": history_id,
                 "count": len(matched),
-                "results": stock_details,
-                "formula_name": _resolve_formula_name(),
+                "results": broadcast_results,
+                "truncated": len(matched) > _WS_BROADCAST_LIMIT,
+                "formula_name": resolved_formula,
             })
 
         except Exception as e:
@@ -186,7 +238,7 @@ async def start_screen(body: dict):
                 _stop_events.pop("tqsdk", None)
 
     run_in_thread(_run)
-    return {"status": "started", "formula_name": _resolve_formula_name()}
+    return {"status": "started", "formula_name": resolved_formula}
 
 
 # ── 2. 停止选股 ──
@@ -265,12 +317,9 @@ async def run_tqsdk_bt(body: dict):
             start = params.get("start_date", "2023-01-01")
             end = params.get("end_date", str(_date.today()))
 
-            # 如果传了 formula_name，临时覆盖 settings 让 bridge 读到
+            # 如果传了 formula_name，通过 settings.set 覆盖（不直接戳内部字典）
             if formula_name:
-                from core.settings import settings as _settings
-                if "tqsdk" not in _settings._data:
-                    _settings._data["tqsdk"] = {}
-                _settings._data["tqsdk"]["formula_name"] = formula_name
+                settings.set("tqsdk", "formula_name", formula_name, save=False)
                 params["strategy_name"] = formula_name  # 同时给 params 用
                 log.info(f"回测公式覆盖: {formula_name}")
 
@@ -313,10 +362,10 @@ async def run_tqsdk_bt(body: dict):
 
             stock_names = {}
             try:
+                placeholders = ",".join(["?"] * len(stock_list))
                 df_names = db.conn.execute(
-                    "SELECT code, name FROM stocks WHERE code IN ({})".format(
-                        ",".join(f"'{c}'" for c in stock_list)
-                    )
+                    f"SELECT code, name FROM stocks WHERE code IN ({placeholders})",
+                    stock_list,
                 ).fetchdf()
                 stock_names = dict(zip(df_names["code"], df_names["name"]))
             except Exception:

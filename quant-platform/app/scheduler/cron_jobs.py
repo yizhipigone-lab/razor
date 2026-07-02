@@ -412,19 +412,21 @@ class DataPipelineScheduler:
             bars = load_all_bars()
             bars, snapshot = augment_bars_with_realtime(bars, today)
 
-            # ── 选股：通过 TDX 桥接获取 QUANTQQ 信号 ──
+            # ── 选股：通过 TDX 桥接获取当前配置的公式信号 ──
             signals = []
             if engine.auto_scan:
                 try:
-                    from app.tqsdk.bridge import TdxBridge
+                    from app.tqsdk.bridge import TdxBridge, _get_formula_name
+                    formula_name = _get_formula_name()
                     bridge = TdxBridge()
                     sig_result = bridge.execute_screen(
                         end_time=today.strftime('%Y%m%d'),
                         lookback_days=500,
+                        formula_name=formula_name,
                     )
                     if sig_result.get('status') == 'ok':
                         matched = sig_result.get('matched', [])
-                        log.info(f'CronScheduler | [模拟盘] QUANTQQ选股: {len(matched)}只')
+                        log.info(f'CronScheduler | [模拟盘] {formula_name}选股: {len(matched)}只')
                         for code in matched:
                             code_num = code.split('.')[0] if '.' in code else code
                             px = snapshot.get(code_num, {}).get('close', 0)
@@ -567,7 +569,9 @@ class DataPipelineScheduler:
             self._update_signal_state(state_path, today, signals, "failed", reason)
             return
 
-        # 构造请求
+        # 构造请求(策略名从 settings 动态读取,Plan B)
+        from app.tqsdk.bridge import _get_formula_name
+        formula_name = _get_formula_name()
         signal_items = []
         for code, price in signals:
             code_fmt = format_code(code) if '.' not in code else code
@@ -579,7 +583,7 @@ class DataPipelineScheduler:
 
         payload = {
             "signals": signal_items,
-            "strategy": "QUANTQQ",
+            "strategy": formula_name,
             "source": "TDX",
         }
         headers = {
@@ -767,7 +771,7 @@ if __name__ == "__main__":
     """
     Task Worker 独立启动入口
     用法: python -m app.scheduler.cron_jobs
-    在 Docker 多服务架构中由 task-worker 容器调用
+    在多服务架构中由后台任务调用
     """
     import signal
 

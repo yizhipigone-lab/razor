@@ -3,6 +3,7 @@
 路由聚合 + 生命周期管理 + 启动互斥(§16.8)。
 端口 8001,NSSM 守护。
 """
+import asyncio
 import os
 import socket
 import time
@@ -709,7 +710,7 @@ def _verify_token(auth_header: str, config) -> bool:
     return parts[1] == config.buy_signal_token
 
 
-async def _process_one_signal(signal, semaphore, lock_wait_sec: int = 5) -> dict:
+async def _process_one_signal(signal, semaphore, lock_wait_sec: int = 5, strategy_name: str = "QUANTQQ") -> dict:
     """处理单个买入信号(在信号量控制下并发)"""
     from .schemas import OrderIntent
     from .buy_volume import _calc_buy_volume
@@ -771,7 +772,7 @@ async def _process_one_signal(signal, semaphore, lock_wait_sec: int = 5) -> dict
             volume=volume,
             price=order_price,
             price_type=price_type,
-            strategy_name="QUANTQQ",
+            strategy_name=strategy_name,
             terminal="TDX",
             client_order_id=client_order_id,
             reason=f"TDX选股买入信号",
@@ -792,7 +793,6 @@ async def buy_signal(req: dict, authorization: str = ""):
 
     v1.2.2:鉴权 + 去重 + 时点策略 + 并发信号量3 + 心跳
     """
-    import asyncio
     from .schemas import BuySignalRequest, BuySignalResult, SignalResult
 
     config = _state.get("config")
@@ -847,8 +847,10 @@ async def buy_signal(req: dict, authorization: str = ""):
         logger.info(f"信号去重: {len(signal_req.signals)} → {len(unique_signals)}")
 
     # 并发处理:信号量3(§10.1)
+    # 策略名从请求 payload 传入(由 cron_jobs/sim_trader 动态填充)
+    _strategy = getattr(signal_req, 'strategy', 'QUANTQQ') or 'QUANTQQ'
     semaphore = asyncio.Semaphore(3)
-    tasks = [_process_one_signal(s, semaphore, lock_wait_sec=5) for s in unique_signals]
+    tasks = [_process_one_signal(s, semaphore, lock_wait_sec=5, strategy_name=_strategy) for s in unique_signals]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     # 汇总结果
