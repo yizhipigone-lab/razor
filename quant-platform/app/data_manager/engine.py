@@ -401,13 +401,33 @@ def batch_download_all(freq: str = "daily", years: int = 1, mode: str = "increme
         _results_lock = threading.Lock()
         results = {}  # {code: DataFrame}
 
+        # Tushare 限流锁 (1次/分钟 → 实际设为 1.2秒间隔更保险)
+        _tushare_lock = threading.Lock()
+        _last_tushare_call = [0.0]  # 最后一次 Tushare 调用时间 (秒)
+
+        def _rate_limit_tushare():
+            """Tushare 限流: 最小间隔 1.2 秒"""
+            import os
+            # 如果没配置 TUSHARE_KEY, 直接走 TDX, 不需要限流
+            if not os.getenv("TUSHARE_KEY"):
+                return
+            with _tushare_lock:
+                elapsed = time.time() - _last_tushare_call[0]
+                if elapsed < 1.2:
+                    time.sleep(1.2 - elapsed)
+                _last_tushare_call[0] = time.time()
+
         def _worker(c):
             try:
                 if mode == "incremental":
                     last_dt = db.get_last_date(c, freq)
                     if last_dt:
                         # count=80 覆盖至少一个交易日（240分钟/5=48根，冗余防假期）
-                        df = download_bars(c, freq, count=max(80, (date.today() - last_dt).days * 50))
+                        # 修复日期类型不匹配: pd.Timestamp 转为 date
+                        last_date = last_dt.date() if isinstance(last_dt, pd.Timestamp) else last_dt
+                        days_diff = (date.today() - last_date).days
+                        _rate_limit_tushare()  # Tushare 限流
+                        df = download_bars(c, freq, count=max(80, days_diff * 50))
                         if df is not None and not df.empty:
                             # 数据-C1: daily 用 date 列, min5 用 datetime 列(统一后)
                             _tcol = 'date' if freq == 'daily' else 'datetime'
@@ -419,6 +439,7 @@ def batch_download_all(freq: str = "daily", years: int = 1, mode: str = "increme
                         return True
 
                 count_to_get = 1000
+                _rate_limit_tushare()  # Tushare 限流
                 df_full = download_bars(c, freq, count=count_to_get)
                 if df_full is not None and not df_full.empty:
                     with _results_lock:
