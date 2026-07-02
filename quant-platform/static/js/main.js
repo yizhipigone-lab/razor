@@ -14,6 +14,8 @@ function connectWS() {
       window._quotePollTimer = null;
       console.log('[优化] WebSocket 已连接，停止 HTTP 行情轮询');
     }
+    // 发送行情订阅（broadcaster 需要收到 subscribe 才推送 market_quotes）
+    _sendQuoteSubscribe();
   };
   ws.onclose = () => {
     wsReady = false;
@@ -29,6 +31,33 @@ function connectWS() {
   ws.onmessage = (e) => handleWS(JSON.parse(e.data));
 }
 connectWS();
+
+// ── 行情订阅：收集页面上的 codes 并通过 WS 发送 subscribe ──
+// 注：data-code 现已统一为裸码（如 "300120"），后端行情源内部会
+//     用 format_code 自动补后缀，所以发裸码给 broadcaster 是安全的。
+//     返回的 data key 为带后缀格式（如 "300120.SZ"），
+//     前端通过 findQuote 容错匹配。
+function _sendQuoteSubscribe() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  var codes = [];
+  // 指数
+  ['000001.SH','399001.SZ','399006.SZ','000905.SH','000510.SH'].forEach(function(c) { codes.push(c); });
+  // 自选股
+  document.querySelectorAll('#watchlist-tbody tr.wl-row').forEach(function(tr) {
+    var c = tr.getAttribute('data-code');
+    if (c) codes.push(c);
+  });
+  // 持仓
+  document.querySelectorAll('#sim-pos-tbody tr.pos-row').forEach(function(tr) {
+    var c = tr.getAttribute('data-code');
+    if (c) codes.push(c);
+  });
+  codes = [...new Set(codes)];
+  if (codes.length > 0) {
+    ws.send(JSON.stringify({type: 'subscribe', data: {codes: codes}}));
+    console.log('[订阅] 已发送 ' + codes.length + ' 只股票行情订阅');
+  }
+}
 
 // 指数 HTTP 兜底加载（WebSocket 无数据时）
 function setIndex(id, data) {
@@ -143,6 +172,7 @@ async function loadSimTraderStatus() {
     }
     // 订阅持仓股票的实时行情
     if (window.marketUpdater) window.marketUpdater.resubscribe();
+    _sendQuoteSubscribe();
   } catch(e) { console.error('loadSimTraderStatus:', e); }
 }
 function renderStages(tiers) { /* stub */ }
@@ -1110,11 +1140,23 @@ async function loadReportsList() {
         listEl.innerHTML = '<p style="color:var(--text2);text-align:center;padding:20px">暂无历史报告</p>';
       } else {
         listEl.innerHTML = data.map(function(rep) {
+          var score = rep.score;
+          var scoreBadge = '';
+          if (score !== null && score !== undefined && score !== '') {
+            var sc = Number(score);
+            var scColor = sc >= 70 ? 'var(--red)' : (sc >= 50 ? 'var(--yellow)' : 'var(--green)');
+            scoreBadge = '<span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;color:#fff;background:' + scColor + ';margin-left:4px">' + sc + '</span>';
+          }
+          var summaryLine = rep.summary ? '<div style="font-size:11px;color:var(--text2);margin-top:3px;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + rep.summary + '</div>' : '';
+          // 紧凑分项得分条
+          var subscoreLine = _renderSubscoreBar(rep.subscores);
           return '<div class="strategy-item" onclick="viewReport(' + rep.id + ')" style="cursor:pointer">' +
             '<div style="display:flex;justify-content:space-between;align-items:center">' +
-              '<span style="font-weight:600;font-size:13px">' + rep.code + ' ' + (rep.name || '') + '</span>' +
+              '<span style="font-weight:600;font-size:13px">' + rep.code + ' ' + (rep.name || '') + scoreBadge + '</span>' +
               '<button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:10px" onclick="event.stopPropagation();deleteReport(' + rep.id + ',\'' + rep.code + '\')">🗑️</button>' +
             '</div>' +
+            summaryLine +
+            subscoreLine +
             '<div style="font-size:11px;color:var(--text2);margin-top:2px">' + (rep.created_at || '') + '</div>' +
           '</div>';
         }).join('');
@@ -1134,6 +1176,111 @@ function loadReportsPage(delta) {
   loadReportsList();
 }
 
+// 分项得分维度配置（顺序固定，与提示词评分维度一致）
+var SUBSCORE_DIMS = [
+  { key: '基本面', short: '基', max: 30 },
+  { key: '技术面', short: '技', max: 25 },
+  { key: '估值',   short: '估', max: 20 },
+  { key: '风险',   short: '风', max: 15 },
+  { key: '行业景气', short: '行', max: 10 }
+];
+
+function _subscoreColor(ratio) {
+  // ratio = 得分/满分，>=0.8红(强) / >=0.5黄 / <0.5绿(弱)
+  if (ratio >= 0.8) return 'var(--red)';
+  if (ratio >= 0.5) return 'var(--yellow)';
+  return 'var(--green)';
+}
+
+function _renderSubscoreBar(subscores) {
+  if (!subscores || typeof subscores !== 'object') return '';
+  var parts = SUBSCORE_DIMS.map(function(dim) {
+    var val = subscores[dim.key];
+    if (val === null || val === undefined) return '';
+    var sc = Number(val);
+    var ratio = sc / dim.max;
+    var color = _subscoreColor(ratio);
+    return '<span style="display:inline-flex;align-items:center;gap:1px" title="' + dim.key + ':' + sc + '/' + dim.max + '">' +
+      '<span style="color:var(--text2);font-size:10px">' + dim.short + '</span>' +
+      '<span style="color:' + color + ';font-size:11px;font-weight:700">' + sc + '</span>' +
+    '</span>';
+  }).filter(Boolean);
+  if (parts.length === 0) return '';
+  return '<div style="display:flex;gap:6px;margin-top:3px;flex-wrap:wrap">' + parts.join('') + '</div>';
+}
+
+var _radarChartInstance = null;
+
+function _renderRadarChart(containerEl, subscores, score) {
+  if (!subscores || typeof subscores !== 'object') return;
+  if (typeof echarts === 'undefined') return;  // ECharts 未加载则跳过
+
+  // 准备数据：按固定维度顺序，缺失维度填 0
+  var indicators = SUBSCORE_DIMS.map(function(dim) {
+    return { name: dim.key, max: dim.max };
+  });
+  var values = SUBSCORE_DIMS.map(function(dim) {
+    var v = subscores[dim.key];
+    return (v !== null && v !== undefined) ? Number(v) : 0;
+  });
+
+  // 注入雷达图容器
+  var radarBox = document.createElement('div');
+  radarBox.style.cssText = 'display:flex;gap:16px;align-items:center;background:var(--bg1);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:16px';
+  var radarDiv = document.createElement('div');
+  radarDiv.style.cssText = 'width:200px;height:200px;flex-shrink:0';
+  radarBox.appendChild(radarDiv);
+
+  // 右侧总分大字 + 分项明细
+  var detailDiv = document.createElement('div');
+  detailDiv.style.cssText = 'flex:1;font-size:12px';
+  var scoreColor = score !== null && score !== undefined ?
+    (Number(score) >= 70 ? 'var(--red)' : (Number(score) >= 50 ? 'var(--yellow)' : 'var(--green)')) : 'var(--text1)';
+  var detailHtml = '<div style="margin-bottom:8px"><span style="font-size:11px;color:var(--text2)">综合总分</span><br>' +
+    '<span style="font-size:28px;font-weight:700;color:' + scoreColor + '">' + (score ?? '--') + '</span>' +
+    '<span style="font-size:12px;color:var(--text2)">/100</span></div>';
+  detailHtml += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px">';
+  SUBSCORE_DIMS.forEach(function(dim) {
+    var v = subscores[dim.key];
+    var sc = (v !== null && v !== undefined) ? Number(v) : 0;
+    var ratio = sc / dim.max;
+    var color = _subscoreColor(ratio);
+    detailHtml += '<div><span style="color:var(--text2)">' + dim.key + '</span> ' +
+      '<span style="color:' + color + ';font-weight:700">' + sc + '</span>' +
+      '<span style="color:var(--text2);font-size:10px">/' + dim.max + '</span></div>';
+  });
+  detailHtml += '</div>';
+  detailDiv.innerHTML = detailHtml;
+  radarBox.appendChild(detailDiv);
+
+  containerEl.insertBefore(radarBox, containerEl.firstChild);
+
+  // 销毁旧实例，绘制新雷达图
+  if (_radarChartInstance) {
+    try { _radarChartInstance.dispose(); } catch(e) {}
+  }
+  _radarChartInstance = echarts.init(radarDiv);
+  _radarChartInstance.setOption({
+    radar: {
+      indicator: indicators,
+      radius: 70,
+      axisName: { color: 'var(--text2)', fontSize: 11 },
+      splitArea: { areaStyle: { color: ['rgba(255,255,255,0.02)', 'rgba(255,255,255,0.05)'] } },
+      splitLine: { lineStyle: { color: 'var(--border)' } },
+      axisLine: { lineStyle: { color: 'var(--border)' } }
+    },
+    series: [{
+      type: 'radar',
+      data: [{
+        value: values,
+        areaStyle: { color: 'rgba(255,159,67,0.25)' },
+        lineStyle: { color: 'var(--accent)', width: 2 },
+        itemStyle: { color: 'var(--accent)' }
+      }]
+    }]
+  });
+}
+
 async function viewReport(id) {
   try {
     var r = await fetch('/api/reports/content/' + id).then(function(resp) { return resp.json(); });
@@ -1142,8 +1289,10 @@ async function viewReport(id) {
       document.getElementById('report-viewer-container').style.display = 'flex';
       document.getElementById('viewer-report-title').textContent =
         r.data.code + ' ' + (r.data.name || '') + ' — AI 深度报告';
-      document.getElementById('viewer-report-content').innerHTML =
-        marked.parse(r.data.content || '');
+      var contentEl = document.getElementById('viewer-report-content');
+      contentEl.innerHTML = marked.parse(r.data.content || '');
+      // 渲染分项雷达图（插在正文最上方）
+      _renderRadarChart(contentEl, r.data.subscores, r.data.score);
     }
   } catch (e) {
     console.error('viewReport failed:', e);
@@ -1189,6 +1338,89 @@ function downloadViewerMD() {
   var content = document.getElementById('viewer-report-content')?.innerText || '';
   _downloadMD(title, content);
 }
+
+// ─── P3-3: 批量听诊 ───────────────────────────────────────
+function closeModal() {
+  var modal = document.getElementById('generic-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function openBatchReportModal() {
+  var html = '<div style="padding:20px">' +
+    '<p style="color:var(--text2);font-size:12px;margin-bottom:10px">输入股票代码，用逗号或换行分隔。单次最多20只，每只约30-60秒。</p>' +
+    '<textarea id="batch-report-input" placeholder="600519,000858,000333\n或每行一个代码" style="width:100%;height:140px;background:var(--bg1);border:1px solid var(--border);border-radius:6px;padding:10px;font-size:13px;color:var(--text1);font-family:inherit;resize:vertical"></textarea>' +
+    '<div id="batch-report-msg" style="font-size:12px;margin-top:8px;min-height:18px"></div>' +
+    '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">' +
+      '<button class="btn btn-ghost btn-sm" onclick="closeModal()">取消</button>' +
+      '<button class="btn btn-primary btn-sm" onclick="submitBatchReport()">开始批量生成</button>' +
+    '</div>' +
+  '</div>';
+  showModal('📦 批量听诊', html);
+}
+
+async function submitBatchReport() {
+  var raw = document.getElementById('batch-report-input')?.value || '';
+  var msgEl = document.getElementById('batch-report-msg');
+
+  // 解析代码：支持逗号、空格、换行、中文逗号分隔
+  var codes = raw.split(/[\s,，;；]+/)
+    .map(function(c) { return c.trim().split('.')[0]; })
+    .filter(function(c) { return /^\d{6}$/.test(c); });
+  // 去重
+  codes = Array.from(new Set(codes));
+
+  if (codes.length === 0) {
+    if (msgEl) { msgEl.textContent = '❌ 未识别到有效代码（需6位数字）'; msgEl.style.color = 'var(--red)'; }
+    return;
+  }
+  if (codes.length > 20) {
+    if (msgEl) { msgEl.textContent = '❌ 最多20只，当前 ' + codes.length + ' 只'; msgEl.style.color = 'var(--red)'; }
+    return;
+  }
+
+  if (msgEl) { msgEl.textContent = '⏳ 提交中...'; msgEl.style.color = 'var(--yellow)'; }
+
+  try {
+    var r = await fetch('/api/agents/analyze/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ codes: codes })
+    }).then(function(resp) { return resp.json(); });
+
+    if (r.status === 'started') {
+      var acc = r.accepted.length;
+      var rej = r.rejected.length;
+      if (msgEl) {
+        msgEl.innerHTML = '✅ 已提交 ' + acc + ' 只' + (rej > 0 ? '，拒绝 ' + rej + ' 只' : '') + '<br>' +
+          '<span style="color:var(--text2);font-size:11px">生成中，请稍后在历史快照查看结果（每1.5秒自动刷新可点🔄刷新）</span>';
+        msgEl.style.color = 'var(--green)';
+      }
+      // 启动列表轮询刷新
+      _startBatchListRefresh();
+      setTimeout(closeModal, 2500);
+    } else {
+      if (msgEl) { msgEl.textContent = '❌ ' + (r.message || '提交失败'); msgEl.style.color = 'var(--red)'; }
+    }
+  } catch (e) {
+    if (msgEl) { msgEl.textContent = '❌ 网络错误: ' + e.message; msgEl.style.color = 'var(--red)'; }
+  }
+}
+
+var _batchRefreshTimer = null;
+var _batchRefreshCount = 0;
+function _startBatchListRefresh() {
+  if (_batchRefreshTimer) clearInterval(_batchRefreshTimer);
+  _batchRefreshCount = 0;
+  _batchRefreshTimer = setInterval(function() {
+    _batchRefreshCount++;
+    loadReportsList();
+    // 最多刷新 40 次（约 1 分钟），覆盖单批生成周期
+    if (_batchRefreshCount >= 40) {
+      clearInterval(_batchRefreshTimer);
+      _batchRefreshTimer = null;
+    }
+  }, 1500);
+}
 async function searchStockForReport() {
   var q = document.getElementById('new-report-search')?.value?.trim();
   if (!q) return;
@@ -1230,7 +1462,7 @@ async function generateAIReport(code, name, el) {
     var taskId = startResp.task_id;
     if (!taskId) {
       // 兼容旧版同步返回
-      _showReportInViewer(code, name, startResp.report || '');
+      _showReportInViewer(code, name, { content: startResp.report || '', score: null, subscores: null });
       if (el) { el.innerHTML = '<span style="color:var(--green)">✅ 已生成</span>'; }
       loadReportsList();
       return;
@@ -1255,7 +1487,7 @@ async function generateAIReport(code, name, el) {
           _reportPollTimer = null;
           var reportResp = await fetch('/api/reports/content/' + r.report_id).then(function(resp) { return resp.json(); });
           if (reportResp.status === 'ok' && reportResp.data) {
-            _showReportInViewer(code, name, reportResp.data.content || '');
+            _showReportInViewer(code, name, reportResp.data);
             loadReportsList();
           }
           if (el) { el.innerHTML = '<span style="color:var(--green)">✅ 已生成</span>'; }
@@ -1282,11 +1514,17 @@ async function generateAIReport(code, name, el) {
   }
 }
 
-function _showReportInViewer(code, name, content) {
+function _showReportInViewer(code, name, data) {
+  var content = (typeof data === 'string') ? data : (data.content || '');
+  var score = (typeof data === 'object' && data) ? data.score : null;
+  var subscores = (typeof data === 'object' && data) ? data.subscores : null;
   document.getElementById('report-empty-state').style.display = 'none';
   document.getElementById('report-viewer-container').style.display = 'flex';
   document.getElementById('viewer-report-title').textContent = code + ' ' + name + ' — AI 深度报告';
-  document.getElementById('viewer-report-content').innerHTML = marked.parse(content);
+  var contentEl = document.getElementById('viewer-report-content');
+  contentEl.innerHTML = marked.parse(content);
+  // 渲染分项雷达图（插在正文最上方）
+  _renderRadarChart(contentEl, subscores, score);
 }
 
 function openNewReportSearch() {
@@ -1332,6 +1570,7 @@ async function loadWatchlist() {
     }
     // 重新订阅行情，确保新增自选股被纳入
     if (window.marketUpdater) window.marketUpdater.resubscribe();
+    _sendQuoteSubscribe();
   } catch(e) {}
 }
 async function removeWatchlist(code) {
@@ -1432,8 +1671,46 @@ async function queryHotStockScore() {
     }
   } catch(e) { addLog('error', '查询失败'); }
 }
-function doTdxTranslate() { /* stub */ }
-function closeTdxModal() { /* stub */ }
+function openTdxModal() {
+  var modal = document.getElementById('tdx-modal');
+  if (modal) modal.style.display = 'flex';
+}
+function closeTdxModal() {
+  var modal = document.getElementById('tdx-modal');
+  if (modal) modal.style.display = 'none';
+}
+async function doTdxTranslate() {
+  var input = document.getElementById('tdx-formula-input');
+  if (!input || !input.value || !input.value.trim()) {
+    addLog('warn', '请先粘贴通达信公式');
+    return;
+  }
+  var name = prompt('请输入策略名称(字母/数字/下划线/中文):', 'TdxStrategy');
+  if (!name || !name.trim()) return;
+  name = name.trim();
+
+  try {
+    var res = await fetch('/api/factory/translate_tdx', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ formula: input.value, name: name })
+    }).then(function(r) { return r.json(); });
+
+    if (res.status === 'ok' && res.code) {
+      addLog('ok', '通达信公式转译成功');
+      if (window.monacoEditor) {
+        window.monacoEditor.setValue(res.code);
+      } else {
+        addLog('warn', '编辑器未就绪，转译代码未回填');
+      }
+      closeTdxModal();
+    } else {
+      addLog('error', '转译失败: ' + (res.message || res.detail || '未知错误'));
+    }
+  } catch (e) {
+    addLog('error', '转译请求异常: ' + e.message);
+  }
+}
 function closeConstituentModal() { /* stub */ }
 // ─── Reports 页面搜索函数 ──────────────────────────────────────
 let _reportSearchIdx = -1;
@@ -1518,7 +1795,7 @@ function switchTab(name) {
   if (name === 'ai-backtest') { loadBacktestCapitalDefaults(); initAIBacktest(); }
   if (name === 'radar') loadHotSectorData();
   if (name === 'sim-trader') { loadSimTraderStatus(); initLogDates(); loadSimLogs(); loadSimRiskParams(); loadSimSwitches(); loadSimMonitor(); loadSimStrategy(); loadSimTrades(); renderSimEquityChart(); renderSimCalendar(); renderSimStockAnalysis(); }
-  if (name === 'live-trader') { loadLiveStatus(); loadLiveAsset(); loadLivePositions(); loadLiveOrders(); loadLiveGates(); }
+  if (name === 'live-trader') { loadLiveStatus(); loadLiveAsset(); loadLivePositions(); loadLiveOrders(); loadLiveGates(); loadScanInterval(); }
   if (name === 'tqsdk') { initTqsdkTab(); }
 }
 
@@ -1668,11 +1945,12 @@ async function pollLiveQuotes() {
     if (d['399001.SZ']) setIndex('sz', d['399001.SZ']);
     if (d['399006.SZ']) setIndex('cy', d['399006.SZ']);
 
-    // 更新自选股和持仓行
+    // 更新自选股和持仓行（用 findQuote 容错匹配裸码/带后缀）
     document.querySelectorAll('#watchlist-tbody tr.wl-row, #sim-pos-tbody tr.pos-row').forEach(function(tr) {
       var c = tr.getAttribute('data-code');
-      if (!c || !d[c]) return;
-      var q = d[c];
+      if (!c) return;
+      var q = findQuote(d, c);
+      if (!q) return;
       var pEl = tr.querySelector('.live-price') || tr.querySelector('.pos-price');
       var pctEl = tr.querySelector('.live-pct') || tr.querySelector('.pos-pct');
       if (pEl && q.price > 0) {
@@ -1887,28 +2165,6 @@ document.addEventListener('DOMContentLoaded', () => {
   loadStrategies();
 });
 
-
-async function startScan() {
-  const strategy = document.getElementById('scan-strategy').value;
-  const payload = {
-    strategy,
-    exchanges: Array.from(scanExchanges),
-    sectors: Array.from(scanSelectedSectors),
-    is_hot: document.getElementById('scan-hot') ? document.getElementById('scan-hot').checked : false,
-    advanced_factors: {
-      min_mcap: document.getElementById('fac-mcap').value,
-      max_pe: document.getElementById('fac-pe').value
-    }
-  };
-  addLog('info', '正在启动全量市场扫描...');
-  fetch('/api/screener/start', {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(payload)
-  }).then(r => r.json()).then(res => {
-     if(res.status==='ok') toggleTaskButtons('scan', true);
-     else addLog('error', res.message);
-  }).catch(e => addLog('error', '发送扫描请求失败: ' + e));
-}
 
 // ─── UI 辅助 ──────────────────────────────────────────────────
 function toggleCollapse(id) {
@@ -2536,12 +2792,15 @@ function findQuote(data, code) {
     if (data[bare]) return data[bare];
     code = bare;
   }
-  // 按前缀判断交易所：6开头→上海，0/3开头→深圳
+  // 按前缀判断交易所：6开头→上海，0/3开头→深圳，8/4开头→北交所
   if (code.startsWith('6')) {
     return data[code + '.SH'] || null;
   }
   if (code.startsWith('0') || code.startsWith('3')) {
     return data[code + '.SZ'] || null;
+  }
+  if (code.startsWith('8') || code.startsWith('4')) {
+    return data[code + '.BJ'] || data[code + '.SZ'] || null;
   }
   return null;
 }
@@ -2594,23 +2853,26 @@ function updatePositionRow(tr, info, entryPrice, shares) {
     if (mv2El) {
         mv2El.textContent = Math.round(price * shares).toLocaleString();
     }
-    // 今日盈亏 / 实时涨跌（基于今日基准价 data-basepx: 当日买入=买入价, 过夜=昨收）
+    // 今日盈亏（基于今日基准价 data-basepx: 当日买入=买入价, 过夜=昨收）
     const basePx = parseFloat(tr.getAttribute('data-basepx') || 0)
-                   || parseFloat(info.lastClose || info.preClose || 0);
+                   || parseFloat(info.lastClose || info.preClose || info.last_close || 0);
+    // 实时涨跌：始终以昨收价为基准（市场概念，与个人买入价无关）
+    const prevClose = parseFloat(info.lastClose || info.preClose || info.last_close || 0);
     const tpEl = tr.querySelector('.today-pnl');
     const dcEl = tr.querySelector('.day-chg');
     if (basePx > 0) {
-        const dayChg = (price - basePx) / basePx * 100;
         const todayPnl = (price - basePx) * shares;
-        const dcColor = dayChg >= 0 ? '#ef232a' : '#14b143';
+        const tpColor = todayPnl >= 0 ? '#ef232a' : '#14b143';
         if (tpEl) {
             tpEl.textContent = (todayPnl >= 0 ? '+' : '') + Math.round(todayPnl).toLocaleString();
-            tpEl.style.color = dcColor;
+            tpEl.style.color = tpColor;
         }
-        if (dcEl) {
-            dcEl.textContent = (dayChg >= 0 ? '+' : '') + dayChg.toFixed(2) + '%';
-            dcEl.style.color = dcColor;
-        }
+    }
+    if (dcEl && prevClose > 0) {
+        const dayChg = (price - prevClose) / prevClose * 100;
+        const dcColor = dayChg >= 0 ? '#ef232a' : '#14b143';
+        dcEl.textContent = (dayChg >= 0 ? '+' : '') + dayChg.toFixed(2) + '%';
+        dcEl.style.color = dcColor;
     }
 }
 
@@ -5288,18 +5550,23 @@ function oneClickBacktestHistory(id) {
 function _oneClickBacktestWithCodes(codes) {
   if (!codes || codes.length === 0) { alert('股票列表为空'); return; }
 
-  // 切换到回测 tab，自动选中 QUANTQQ
+  // 切换到回测 tab，自动选中当前选股公式
   switchTab('backtest');
 
   setTimeout(function() {
     var stratSel = document.getElementById('sbt-strategy');
-    if (stratSel) stratSel.value = 'QUANTQQ';
+    var formulaEl = document.getElementById('tqsdk-formula');
+    var formulaName = (formulaEl && formulaEl.value) ? formulaEl.value.trim() : '';
+    if (stratSel) {
+      // 优先用当前选股公式名，回退 QUANTQQ
+      stratSel.value = formulaName || 'QUANTQQ';
+    }
 
     var startEl = document.getElementById('tqsdk-start');
     var endEl = document.getElementById('tqsdk-end');
     if (startEl) document.getElementById('sbt-start').value = startEl.value || '2023-01-01';
     if (endEl) document.getElementById('sbt-end').value = endEl.value || '';
 
-    addLog('ok', '已切换到回测 tab，策略=QUANTQQ (' + codes.length + '只候选)');
+    addLog('ok', '已切换到回测 tab，策略=' + (formulaName || 'QUANTQQ') + ' (' + codes.length + '只候选)');
   }, 300);
 }

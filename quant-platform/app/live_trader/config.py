@@ -80,6 +80,9 @@ class LiveTraderConfig:
     buy_signal_enabled: bool = True          # 冗余开关(buy-signal 端点检查)
     buy_signal_cutoff: str = "14:59"         # buy-signal 截止时点(14:59 后拒收)
 
+    # ===== 离场扫描 =====
+    exit_scan_interval_sec: float = 60.0    # 离场扫描间隔(默认60s,可调低至10s)
+
 
 def load_config() -> LiveTraderConfig:
     """加载实盘配置(从环境变量 + app_setting.json live_trader 段)
@@ -122,6 +125,7 @@ def load_config() -> LiveTraderConfig:
         buy_signal_token=cfg_dict.get("buy_signal_token", ""),
         buy_signal_enabled=cfg_dict.get("buy_signal_enabled", True),
         buy_signal_cutoff=cfg_dict.get("buy_signal_cutoff", "14:59"),
+        exit_scan_interval_sec=float(cfg_dict.get("exit_scan_interval_sec", 60.0)),
     )
 
     # fail-fast 校验(§16.4)

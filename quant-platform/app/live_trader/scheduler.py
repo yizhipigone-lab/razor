@@ -1,7 +1,7 @@
 """实盘定时调度服务(§5.7 / §5.9 / §17.3 / §6 EOD 归档)
 
 后台 asyncio 任务,负责:
-- 离场扫描(60s 间隔,交易时段)
+- 离场扫描(可配置间隔,默认60s,交易时段)
 - 对账(4 时点:09:35/11:30/14:55/15:05)
 - EOD 归档(15:01)
 - 资产备份(5 分钟间隔,交易时段)
@@ -38,6 +38,9 @@ class LiveScheduler:
         self._today: str = ""
         self._executed_today: set = set()
 
+        # 离场扫描间隔(可运行时修改,默认从 config 读取)
+        self._exit_scan_interval: float = getattr(config, 'exit_scan_interval_sec', 60.0)
+
     def start(self) -> None:
         """启动调度任务"""
         if self._task and not self._task.done():
@@ -50,6 +53,16 @@ class LiveScheduler:
         if self._task and not self._task.done():
             self._task.cancel()
             logger.info("调度服务停止")
+
+    def set_scan_interval(self, seconds: float) -> None:
+        """运行时修改离场扫描间隔(前端保存后立即生效,不阻塞)"""
+        seconds = max(10.0, min(300.0, float(seconds)))  # 限制 [10, 300]
+        self._exit_scan_interval = seconds
+        logger.info(f"离场扫描间隔已更新: {seconds}s")
+
+    def get_scan_interval(self) -> float:
+        """获取当前离场扫描间隔"""
+        return self._exit_scan_interval
 
     async def _loop(self) -> None:
         """主循环(30s 间隔检查)"""
@@ -134,8 +147,8 @@ class LiveScheduler:
                 self.audit.log("scheduler_activate", reason="交易日自动解除 kill switch")
 
     def _run_exit_scan(self) -> None:
-        """离场扫描(60s 间隔)"""
-        if time.time() - self._last_scan_time < 60:
+        """离场扫描(可配置间隔,默认60s)"""
+        if time.time() - self._last_scan_time < self._exit_scan_interval:
             return
         if not self.exit_monitor:
             return
