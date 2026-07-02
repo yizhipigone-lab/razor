@@ -1,10 +1,15 @@
-# tqsdk_bridge_worker.py - TDX QUANTQQ 公式选股 Worker
+# tqsdk_bridge_worker.py - TDX 公式选股 Worker
 # 由 quant-platform 后端通过 subprocess 调用
+#
+# 注意: _is_signal_value 与 app/tqsdk/bridge.py 中的实现保持逻辑一致。
+# worker 运行在 TDX 子进程内无法 import 仓库模块，故重复定义（DRY 让位于进程隔离）。
 
 import json
 import sys
 import os
 import tempfile
+from datetime import datetime, timedelta
+
 import numpy as np
 import pandas as pd
 
@@ -295,7 +300,6 @@ def _do_range(task, stock_list, output_var):
     tdx_codes_full = _to_tdx_codes(tdx_codes)
 
     # 计算需要的K线数量
-    from datetime import datetime
     try:
         end_dt = datetime.strptime(end_time, "%Y%m%d")
         start_dt = datetime.strptime(start_time, "%Y%m%d") if start_time else end_dt.replace(year=end_dt.year-1)
@@ -383,13 +387,11 @@ def _do_fetch_intraday(task):
 
     tdx_codes = _to_tdx_codes(codes)
 
-    from datetime import datetime, timedelta
     if not start_date:
         end_dt = datetime.strptime(end_time, "%Y%m%d")
         start_dt = end_dt - timedelta(days=120)
         start_date = start_dt.strftime("%Y%m%d")
 
-    from datetime import datetime, timedelta
     try:
         end_dt = datetime.strptime(end_time, "%Y%m%d")
         start_dt = datetime.strptime(start_date, "%Y%m%d")
@@ -459,12 +461,23 @@ def _do_fetch_intraday(task):
 
 
 def _to_tdx_codes(codes):
-    """将代码转为 tq 格式（如 000001 → 000001.SZ）"""
+    """将代码转为 tq 格式（如 000001 → 000001.SZ，830789 → 830789.BJ）
+
+    后缀规则:
+      - 6/9 开头 → .SH (上交所)
+      - 8/4 开头 → .BJ (北交所)
+      - 其余    → .SZ (深交所)
+    """
     tdx_codes = []
     for c in codes:
         code_num = c.split(".")[0] if "." in c else c
         prefix = code_num[:1]
-        suffix = ".SH" if prefix in ("6", "9") else ".SZ"
+        if prefix in ("6", "9"):
+            suffix = ".SH"
+        elif prefix in ("8", "4"):
+            suffix = ".BJ"
+        else:
+            suffix = ".SZ"
         tdx_codes.append(f"{code_num}{suffix}")
     return tdx_codes
 

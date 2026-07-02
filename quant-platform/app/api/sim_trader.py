@@ -242,9 +242,12 @@ async def sim_trader_status():
         rem = p.remaining_shares if getattr(p, 'remaining_shares', 0) else p.shares
         if base_px and base_px > 0:
             today_pnl = round(rem * (cur_price - base_px), 0)
-            day_chg_pct = round((cur_price / base_px - 1) * 100, 2)
         else:
             today_pnl = None
+        # 当日涨跌幅：始终以昨收价为基准（市场概念，与个人买入价无关）
+        if prev_close and prev_close > 0:
+            day_chg_pct = round((cur_price / prev_close - 1) * 100, 2)
+        else:
             day_chg_pct = None
         positions.append({
             'code': p.code,
@@ -339,20 +342,22 @@ async def sim_trader_execute():
                 engine.sell_phase(today, snapshot, trading_dates)
                 sell_count = len([t for t in engine._today_trades if t.exit_date == today])
 
-            # 买入：通过 TDX 桥接获取 QUANTQQ 信号
+            # 买入：通过 TDX 桥接获取当前配置的公式信号
             buy_count = 0
             log.info(f"买入检查: auto_buy={engine.auto_buy} auto_scan={engine.auto_scan}")
             if engine.auto_buy and engine.auto_scan:
                 try:
-                    from app.tqsdk.bridge import TdxBridge
+                    from app.tqsdk.bridge import TdxBridge, _get_formula_name
+                    formula_name = _get_formula_name()
                     bridge = TdxBridge()
                     sig_result = bridge.execute_screen(
                         end_time=signal_date.strftime('%Y%m%d'),
                         lookback_days=500,
+                        formula_name=formula_name,
                     )
                     if sig_result.get('status') == 'ok':
                         matched = sig_result.get('matched', [])
-                        log.info(f'QUANTQQ选股: {len(matched)}只')
+                        log.info(f'{formula_name}选股: {len(matched)}只')
                         from app.sim_trader.config import SAME_STOCK_COOLDOWN
                         paused = engine.pause_until is not None and today <= engine.pause_until
                         if not paused and matched:
@@ -384,7 +389,7 @@ async def sim_trader_execute():
                             except Exception as e:
                                 log.warning(f'手动触发信号转发失败: {e}')
                 except Exception as e:
-                    log.warning(f'QUANTQQ选股失败: {e}')
+                    log.warning(f'{formula_name}选股失败: {e}')
 
             engine.record(today, snapshot)
             sync_broadcast({'type': 'sim_trader_update', 'today': str(today), 'buy_count': buy_count, 'sell_count': sell_count,
@@ -455,9 +460,12 @@ async def sim_trader_trades(page: int = 1, limit: int = 50):
             base_px = p.entry_price if bought_today else prev_close
             if base_px and base_px > 0:
                 today_pnl = round(rem_shares * (cur_px - base_px), 0)
-                day_chg_pct = round((cur_px / base_px - 1) * 100, 2)
             else:
                 today_pnl = None
+            # 当日涨跌幅：始终以昨收价为基准（市场概念，与个人买入价无关）
+            if prev_close and prev_close > 0:
+                day_chg_pct = round((cur_px / prev_close - 1) * 100, 2)
+            else:
                 day_chg_pct = None
             holding.append({
                 'code': p.code, 'name': names.get(p.code, ''),
