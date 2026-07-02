@@ -226,12 +226,13 @@ def _cleanup_dryrun_residue(store, config, audit) -> None:
     QMT 实际没有但本地有的 managed=true 持仓(dry-run mock 下单残留)。
 
     规则:
-    - 拉本地所有持仓 + QMT 实际持仓
-    - 本地 managed=true 但 QMT 没有的 → 删除(dry-run 残留)
+    - 拉本地所有持仓 + QMT 实际持仓(QMT 查询做 3 次重试取并集,对抗
+      xtquant 缓存抖动导致的"部分结果")
+    - 本地 managed=true 但 QMT 没有的 → 候选残留
     - 保留持仓(managed=false,ETF)不动,即使 QMT 没有也不删(可能是临时查不到)
-    - 删除前写 audit 记录
-    - live 模式下发现残留 → 告警(可能是上次 dry-run 未清理)
-    - dry-run 模式下发现残留 → 直接清理(每次 dry-run 启动都清)
+    - dry-run 模式:候选残留直接清理(mock 数据,安全)
+    - live 模式:**绝不自动删除**(防止 QMT 查询抖动误删真实持仓,2026-07-02 事故),
+      只告警 + 写 audit,人工核查后手动清理
     """
     if not store or not store._conn:
         return
@@ -240,18 +241,26 @@ def _cleanup_dryrun_residue(store, config, audit) -> None:
         if not local_positions:
             return
 
-        # QMT 实际持仓代码集合
+        # QMT 实际持仓代码集合(3 次重试取并集,任一次查到即视为 QMT 有)
         qmt_codes = set()
         qmt = _state.get("qmt")
         if qmt and qmt.connected:
-            qmt_positions = qmt.query_positions()
-            for p in (qmt_positions or []):
-                code = p.get("code", "")
-                if code:
-                    from app.utils.xtquant_compat import format_code
-                    qmt_codes.add(format_code(code) if '.' not in code else code)
+            from app.utils.xtquant_compat import format_code
+            import time as _time
+            for attempt in range(3):
+                qmt_positions = qmt.query_positions()
+                for p in (qmt_positions or []):
+                    code = p.get("code", "")
+                    if code:
+                        qmt_codes.add(format_code(code) if '.' not in code else code)
+                # 已覆盖本地全部 managed 代码即可提前结束
+                local_managed = {p.get("code", "") for p in local_positions if p.get("managed", True)}
+                if local_managed <= qmt_codes:
+                    break
+                if attempt < 2:
+                    _time.sleep(0.2)
 
-        # 找残留:本地 managed=true 但 QMT 没有
+        # 找候选残留:本地 managed=true 但 QMT 三次都没查到
         residue = []
         for p in local_positions:
             code = p.get("code", "")
@@ -263,29 +272,51 @@ def _cleanup_dryrun_residue(store, config, audit) -> None:
             logger.info("dry-run 残留清理:无残留")
             return
 
-        # 清理
-        for code in residue:
-            store._conn.execute("DELETE FROM live_positions WHERE code = ?", [code])
-            audit.log("dryrun_residue_cleanup", code=code,
-                     reason=f"QMT无此持仓,本地残留已删除 vol={p.get('volume',0) if code==p.get('code','') else '?'}")
-            logger.warning(f"清理 dry-run 残留持仓: {code}")
-
-        # dry-run 模式:清理残留委托和成交(mock 数据)
+        # dry-run 模式:清理残留委托和成交(mock 数据),并删残留持仓
         if config.mode == "dry-run":
+            for code in residue:
+                vol = next((p.get("volume", 0) for p in local_positions if p.get("code") == code), 0)
+                store._conn.execute("DELETE FROM live_positions WHERE code = ?", [code])
+                audit.log("dryrun_residue_cleanup", code=code,
+                         reason=f"QMT无此持仓,本地残留已删除 vol={vol}")
+                logger.warning(f"清理 dry-run 残留持仓: {code}")
             store._conn.execute("DELETE FROM live_orders WHERE mode = 'dry-run'")
             store._conn.execute("DELETE FROM live_deals WHERE mode = 'dry-run'")
             logger.info("dry-run 模式:清理 dry-run 残留委托和成交")
-        else:
-            # live 模式:发现 managed=true 残留 → 告警(不应出现)
-            logger.error(f"live 模式发现 {len(residue)} 个残留持仓(已清理,需人工核查原因)")
-            notifier = _state.get("notifier")
-            if notifier:
-                notifier.kill_switch_activated(
-                    f"live启动发现dry-run残留持仓{len(residue)}个,已清理",
-                    "dryrun_residue_check"
-                )
+            logger.info(f"dry-run 残留清理完成:删除 {len(residue)} 个残留持仓")
+            return
 
-        logger.info(f"dry-run 残留清理完成:删除 {len(residue)} 个残留持仓")
+        # live 模式:绝不自动删除(防误删真实持仓),只告警 + audit
+        for code in residue:
+            vol = next((p.get("volume", 0) for p in local_positions if p.get("code") == code), 0)
+            # 是否有 live 成交记录(有则更可能是真实持仓,强力提示人工核查)
+            has_live_deal = False
+            try:
+                row = store._conn.execute(
+                    "SELECT 1 FROM live_deals WHERE code = ? AND mode = 'live' LIMIT 1", [code]
+                ).fetchone()
+                has_live_deal = bool(row)
+            except Exception:
+                pass
+            audit.log("live_residue_suspect", code=code,
+                      reason=f"QMT三次未查到但本地 managed 持仓 vol={vol} live_deal={has_live_deal}(未自动删除,待人工核查)")
+            logger.error(
+                f"live 模式疑似残留(未自动删除): {code} vol={vol} "
+                f"live_deal={has_live_deal} —— 需人工核查(QMT 查询可能抖动,或为 dry-run 残留)"
+            )
+
+        notifier = _state.get("notifier")
+        kill_switch = _state.get("kill_switch")
+        reason = (f"live启动发现{len(residue)}个疑似残留持仓(未自动删除): "
+                  f"{', '.join(residue)}。QMT三次查询未覆盖,需人工核查")
+        if notifier:
+            try:
+                notifier.kill_switch_activated(reason, "live_residue_check")
+            except Exception:
+                pass
+        if kill_switch and not kill_switch.is_active():
+            kill_switch.activate(reason=reason, source="live_residue_check")
+        logger.error(f"live 模式发现 {len(residue)} 个疑似残留持仓(未自动删除,已激活 kill switch,需人工核查): {residue}")
     except Exception as e:
         logger.error(f"dry-run 残留清理失败: {e}")
 
@@ -369,7 +400,7 @@ async def deals(limit: int = 50):
 
 @app.get("/live/quotes")
 async def quotes(codes: str):
-    """行情查询(Docker 端 qmt_gateway 调用,替代旧 qmt_proxy:8081)"""
+    """行情查询(API 服务端 qmt_gateway 调用,替代旧 qmt_proxy:8081)"""
     qmt = _state.get("qmt")
     if not qmt:
         raise HTTPException(503, "QMT 未初始化")
@@ -519,7 +550,7 @@ def place_order_service(intent, source: str = "WEB", lock_wait_sec: int = 30) ->
     # 格式化代码
     code_fmt = format_code(intent.code) if '.' not in intent.code else intent.code
 
-    # source=TDX 时,用 QMT 实时价覆盖 Docker 传的价格
+    # source=TDX 时,用 QMT 实时价覆盖信号源传的价格
     actual_price = intent.price
     if source == "TDX" and qmt and qmt.connected:
         try:
@@ -757,7 +788,7 @@ async def _process_one_signal(signal, semaphore, lock_wait_sec: int = 5) -> dict
 
 @app.post("/live/buy-signal")
 async def buy_signal(req: dict, authorization: str = ""):
-    """买入信号批量接收端点(Docker→Windows)
+    """买入信号批量接收端点(API 服务→实盘服务)
 
     v1.2.2:鉴权 + 去重 + 时点策略 + 并发信号量3 + 心跳
     """
@@ -900,7 +931,7 @@ async def cancel_by_source(terminal: str = "TDX"):
 @app.get("/live/buy-signal/pending")
 async def pending_signals():
     """拉取待处理信号(Windows 端主动拉取模式,备用)"""
-    # 当前采用 Docker 推送模式,pending 端点预留
+    # 当前采用信号推送模式(API 服务定时选股后推送),pending 端点预留
     return {"pending": [], "note": "当前为推送模式,无待拉取信号"}
 
 @app.post("/live/sync-positions")

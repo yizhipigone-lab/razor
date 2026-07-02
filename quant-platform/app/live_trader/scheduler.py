@@ -191,8 +191,8 @@ class LiveScheduler:
     def _check_signal_heartbeat(self) -> None:
         """14:55 信号心跳看门狗(v1.2.2 §5.2 + §10.6)
 
-        检查当日是否有 docker_tdx 心跳记录:
-        - 无心跳 → 告警(可能是 Docker 端选股失败或网络不通)
+        检查当日是否有 docker_tdx 心跳记录(历史命名,实际为 API 服务端信号):
+        - 无心跳 → 告警(可能是 API 服务端选股失败或网络不通)
         - 有心跳但 scan_status=error → 告警
         - 有心跳且 status=ok → 正常
         """
@@ -201,7 +201,7 @@ class LiveScheduler:
         try:
             hb = self.store.get_latest_heartbeat("docker_tdx")
             if hb is None:
-                msg = "14:55 看门狗:当日无信号心跳(可能 Docker 端选股未执行或网络不通)"
+                msg = "14:55 看门狗:当日无信号心跳(可能 API 服务端选股未执行或网络不通)"
                 logger.warning(msg)
                 if self.notifier:
                     self.notifier.send(f"⚠ {msg}")
