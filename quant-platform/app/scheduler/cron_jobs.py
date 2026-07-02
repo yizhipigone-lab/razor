@@ -547,10 +547,11 @@ class DataPipelineScheduler:
         from core.settings import settings
         signal_token = settings.get("live_trader", "buy_signal_token", default="")
 
-        # 转发前时点检查(§10.8):≥14:55 直接存 pending 不发
+        # 转发前时点检查(§10.8 + §4.7 对齐):≥14:59 才存 pending 不发
+        # (14:55-14:59 仍转发,让 Windows 端三档价格策略生效)
         now_str = dt.now().strftime("%H:%M")
-        if now_str >= "14:55":
-            reason = f"今日信号已过期({now_str} ≥ 14:55),存入 pending 不转发"
+        if now_str >= "14:59":
+            reason = f"今日信号已过期({now_str} ≥ 14:59),存入 pending 不转发"
             log.warning(f"CronScheduler | [信号转发] {reason}")
             self._update_signal_state(state_path, today, signals, "skipped", reason)
             return
@@ -614,6 +615,17 @@ class DataPipelineScheduler:
         # 解析响应(漏洞C修复)
         if resp.status_code == 401:
             reason = "鉴权失败:token 不匹配"
+            log.error(f"CronScheduler | [信号转发] {reason}")
+            self._update_signal_state(state_path, today, signals, "failed", reason)
+            return
+
+        # 非 200 状态码(403/503/500 等)直接归类为服务端错误
+        if resp.status_code != 200:
+            try:
+                body = resp.text[:500]
+            except Exception:
+                body = ""
+            reason = f"live_trader 返回 HTTP {resp.status_code}: {body}"
             log.error(f"CronScheduler | [信号转发] {reason}")
             self._update_signal_state(state_path, today, signals, "failed", reason)
             return

@@ -585,6 +585,20 @@ class LiveTraderStore:
             """, [date_type.today(), source, signal_count, scan_status, dt.now()])
         logger.info(f"心跳记录: source={source} count={signal_count} status={scan_status}")
 
+    def atomic_add_pending_buy(self, code: str, volume: int) -> bool:
+        """原子增加 pending_buy_volume(防 TOCTOU 竞态)
+
+        Returns True if position existed and was updated, False if not found.
+        """
+        assert self._conn is not None
+        with self._db_lock:
+            result = self._conn.execute(
+                "UPDATE live_positions SET pending_buy_volume = pending_buy_volume + ? "
+                "WHERE code = ?",
+                [volume, code]
+            )
+            return result.fetchone()[0] > 0
+
     def get_latest_heartbeat(self, source: str = "docker_tdx") -> Optional[Dict[str, Any]]:
         """获取指定 source 当日最新心跳(看门狗用)"""
         assert self._conn is not None

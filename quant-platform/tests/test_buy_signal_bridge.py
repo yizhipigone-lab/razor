@@ -60,6 +60,26 @@ class TestBuySignalRequest:
         )
         assert req.signals[0].code == "600000"
 
+    def test_dedup_with_mixed_code_formats(self):
+        """同股不同格式(600000 vs 600000.SH)应被去重(漏洞A+4.10)"""
+        from app.live_trader.schemas import BuySignalRequest, SignalItem
+        from app.utils.xtquant_compat import format_code
+        req = BuySignalRequest(
+            signals=[
+                SignalItem(code="600000", price=10.5),
+                SignalItem(code="600000.SH", price=10.8),  # 同股不同格式
+                SignalItem(code="000001.SZ", price=15.2),
+            ],
+        )
+        seen = set()
+        unique = []
+        for s in req.signals:
+            key = format_code(s.code) if '.' not in s.code else s.code
+            if key not in seen:
+                seen.add(key)
+                unique.append(s)
+        assert len(unique) == 2  # 600000.SH 和 000001.SZ
+
 
 # ===== 2. _calc_buy_volume 板块取整 =====
 
@@ -323,6 +343,39 @@ class TestHeartbeat:
             store = LiveTraderStore(config)
             hb = store.get_latest_heartbeat("docker_tdx")
             assert hb is None
+            store.close()
+
+    def test_atomic_add_pending_buy(self):
+        """原子增加 pending_buy_volume(防 TOCTOU 竞态,4.4)"""
+        from app.live_trader.store import LiveTraderStore
+        from app.live_trader.config import LiveTraderConfig
+        import tempfile, os
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "test.duckdb")
+            wal_path = os.path.join(tmpdir, "test.wal")
+            config = LiveTraderConfig(
+                qmt_account_id="test",
+                db_path=db_path,
+                wal_path=wal_path,
+            )
+            store = LiveTraderStore(config)
+            # 先创建持仓
+            store.upsert_position({
+                "code": "600000.SH", "volume": 100, "can_use_volume": 100,
+                "pending_buy_volume": 0, "managed": True,
+            })
+            # 原子加 50
+            ok = store.atomic_add_pending_buy("600000.SH", 50)
+            assert ok is True
+            pos = store.get_position("600000.SH")
+            assert pos["pending_buy_volume"] == 50
+            # 再加 30
+            store.atomic_add_pending_buy("600000.SH", 30)
+            pos = store.get_position("600000.SH")
+            assert pos["pending_buy_volume"] == 80
+            # 不存在的 code
+            ok = store.atomic_add_pending_buy("999999.SH", 100)
+            assert ok is False
             store.close()
 
 
