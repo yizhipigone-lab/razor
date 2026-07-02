@@ -4,8 +4,27 @@ const wsDot = document.getElementById('ws-dot');
 
 function connectWS() {
   ws = new WebSocket('ws://' + location.host + '/ws');
-  ws.onopen = () => { wsReady = true; wsDot.classList.add('connected'); addLog('info', 'WebSocket 已连接'); };
-  ws.onclose = () => { wsReady = false; wsDot.classList.remove('connected'); setTimeout(connectWS, 3000); };
+  ws.onopen = () => {
+    wsReady = true;
+    wsDot.classList.add('connected');
+    addLog('info', 'WebSocket 已连接');
+    // WebSocket 连上后，停止 HTTP 轮询
+    if (window._quotePollTimer) {
+      clearInterval(window._quotePollTimer);
+      window._quotePollTimer = null;
+      console.log('[优化] WebSocket 已连接，停止 HTTP 行情轮询');
+    }
+  };
+  ws.onclose = () => {
+    wsReady = false;
+    wsDot.classList.remove('connected');
+    setTimeout(connectWS, 3000);
+    // WebSocket 断开后，启动 HTTP 轮询兜底
+    if (!window._quotePollTimer) {
+      console.log('[兜底] WebSocket 断开，启动 HTTP 行情轮询');
+      startQuotePolling();
+    }
+  };
   ws.onerror = () => addLog('error', 'WebSocket 断开，重连中...');
   ws.onmessage = (e) => handleWS(JSON.parse(e.data));
 }
@@ -1322,6 +1341,7 @@ function switchTab(name) {
   if (name === 'ai-backtest') { loadBacktestCapitalDefaults(); initAIBacktest(); }
   if (name === 'radar') loadHotSectorData();
   if (name === 'sim-trader') { loadSimTraderStatus(); initLogDates(); loadSimLogs(); loadSimRiskParams(); loadSimSwitches(); loadSimMonitor(); loadSimStrategy(); loadSimTrades(); renderSimEquityChart(); renderSimCalendar(); renderSimStockAnalysis(); }
+  if (name === 'live-trader') { loadLiveStatus(); loadLiveAsset(); loadLivePositions(); loadLiveOrders(); loadLiveGates(); }
   if (name === 'tqsdk') { initTqsdkTab(); }
 }
 
@@ -1532,8 +1552,8 @@ async function pollLiveQuotes() {
     } catch(e) {}
   } catch(e) {}
 }
-// 页面加载后自动启动
-startQuotePolling();
+// 页面加载后不再自动启动轮询（v5.4 优化：只在 WebSocket 断开时才启动）
+// startQuotePolling();  // 已移到 ws.onclose 中
 
 async function _pollAIStatus() {
   try {
