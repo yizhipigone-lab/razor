@@ -5,7 +5,7 @@ try:
 except ImportError:
     talib = None
     from loguru import logger
-    logger.error("TA-Lib is not installed. Technical indicators will be disabled. Please check Dockerfile or install TA-Lib manually.")
+    logger.error("TA-Lib is not installed. Technical indicators will be disabled. Please install TA-Lib manually.")
 
 def enrich_with_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """

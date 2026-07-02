@@ -20,7 +20,7 @@ class QMTGateway:
     def __init__(self):
         self._connected = True # 代理模式默认永远"连结"（只要请求能通）
         import os
-        proxy_host = os.environ.get("QMT_PROXY_HOST", "host.docker.internal")
+        proxy_host = os.environ.get("LIVE_TRADER_HOST", os.environ.get("QMT_PROXY_HOST", "127.0.0.1"))
         # v5.4: 改为 live_trader:8001 (不再用 qmt_proxy:8081)
         self.proxy_url = f"http://{proxy_host}:8001/live"
 

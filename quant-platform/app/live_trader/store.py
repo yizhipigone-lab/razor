@@ -599,6 +599,7 @@ class LiveTraderStore:
             )
             return result.fetchone()[0] > 0
 
+    # 历史命名,实际为 API 服务端信号
     def get_latest_heartbeat(self, source: str = "docker_tdx") -> Optional[Dict[str, Any]]:
         """获取指定 source 当日最新心跳(看门狗用)"""
         assert self._conn is not None

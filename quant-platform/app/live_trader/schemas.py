@@ -193,12 +193,12 @@ class SyncIndexDailyRequest(BaseModel):
 class SignalItem(BaseModel):
     """单个买入信号"""
     code: str               # 股票代码(支持 600000 或 600000.SH)
-    price: float = 0.0      # Docker 端快照价格(会被 Windows QMT 实时价覆盖)
+    price: float = 0.0      # 信号源快照价格(会被 QMT 实时价覆盖)
     ts: str = ""            # 信号时间戳
 
 
 class BuySignalRequest(BaseModel):
-    """买入信号批量请求(Docker → Windows)"""
+    """买入信号批量请求(信号源 → 实盘服务)"""
     signals: List[SignalItem]
     strategy: str = "QUANTQQ"
     source: str = "TDX"     # 信号来源

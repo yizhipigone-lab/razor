@@ -49,7 +49,7 @@ INDEX_CODES = [
 
 
 def log_to_ui(msg, level="info", msg_type="log"):
-    """进程间通信：回送给 Docker Backend 的实时通道"""
+    """进程间通信：回送给 API 服务端的实时通道"""
     timestamp_msg = f"[IndexWorker] {msg}"
     print(timestamp_msg, flush=True)
     try:

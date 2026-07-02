@@ -161,12 +161,12 @@ async def sync_qmt_intra(body: dict):
             import requests
             payload = {"freq": freq, "days": days, "start_date": start_date, "end_date": end_date}
             import os
-            proxy_host = os.environ.get("QMT_PROXY_HOST", "host.docker.internal")
-            target_url = f"http://{proxy_host}:8081/api/sync/intra"
-            print(f">>> [DOCKER-NET] Dispatching to: {target_url}")
+            proxy_host = os.environ.get("LIVE_TRADER_HOST", os.environ.get("QMT_PROXY_HOST", "127.0.0.1"))
+            target_url = f"http://{proxy_host}:8001/live/sync/intra"
+            print(f">>> [PROXY-NET] Dispatching to: {target_url}")
             # 请求宿主机 Proxy 执行下载
             res = requests.post(target_url, json=payload, timeout=3)
-            print(f">>> [DOCKER-NET] Proxy Response Code: {res.status_code}")
+            print(f">>> [PROXY-NET] Proxy Response Code: {res.status_code}")
             if res.status_code == 200:
                 sync_broadcast({"type": "log", "level": "info", "msg": "Send command to QMT Proxy successfully"})
             else:
