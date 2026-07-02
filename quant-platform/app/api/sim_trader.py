@@ -139,6 +139,8 @@ async def save_sim_switches(body: dict):
             sc.MONITOR_MODE = str(body['monitor_mode'])
         if 'strategy_name' in body:
             sc.STRATEGY_NAME = str(body['strategy_name'])
+        if 'live_signal_mode' in body:
+            sc.LIVE_SIGNAL_MODE = str(body['live_signal_mode'])
         # 同步更新已创建的引擎和监控器实例
         if _engine is not None:
             from app.sim_trader.engine import SimTraderEngine
@@ -155,10 +157,11 @@ async def save_sim_switches(body: dict):
         sim['monitor_enabled'] = sc.MONITOR_ENABLED
         sim['monitor_mode'] = sc.MONITOR_MODE
         sim['strategy_name'] = sc.STRATEGY_NAME
+        sim['live_signal_mode'] = sc.LIVE_SIGNAL_MODE
         settings._data['sim_trader'] = sim
         settings.save()
 
-        log.info(f"执行开关已更新并持久化: SELL={sc.AUTO_SELL} SCAN={sc.AUTO_SCAN} BUY={sc.AUTO_BUY} MON={sc.MONITOR_ENABLED}/{sc.MONITOR_MODE} STRAT={sc.STRATEGY_NAME}")
+        log.info(f"执行开关已更新并持久化: SELL={sc.AUTO_SELL} SCAN={sc.AUTO_SCAN} BUY={sc.AUTO_BUY} MON={sc.MONITOR_ENABLED}/{sc.MONITOR_MODE} STRAT={sc.STRATEGY_NAME} LIVE_SIGNAL={sc.LIVE_SIGNAL_MODE}")
         return {"status": "ok", "message": "已保存"}
     except Exception as e:
         log.error(f"保存执行开关失败: {e}")
@@ -355,6 +358,23 @@ async def sim_trader_execute():
                                     continue
                                 if engine.execute_buy(today, code_num, px, strategy_name=f'手动-{STRATEGY_NAME}'):
                                     buy_count += 1
+
+                        # 手动触发也转发信号(一致性,§5.3)
+                        if matched:
+                            try:
+                                from app.sim_trader.config import LIVE_SIGNAL_MODE
+                                if LIVE_SIGNAL_MODE == "sim_and_live":
+                                    sig_list = []
+                                    for code in matched:
+                                        cn = code.split('.')[0] if '.' in code else code
+                                        px2 = snapshot.get(cn, {}).get('close', 0)
+                                        if px2 > 0:
+                                            sig_list.append((cn, px2))
+                                    if sig_list:
+                                        from app.scheduler.cron_jobs import pipeline_scheduler
+                                        pipeline_scheduler._forward_signals_to_live_trader(sig_list, today)
+                            except Exception as e:
+                                log.warning(f'手动触发信号转发失败: {e}')
                 except Exception as e:
                     log.warning(f'QUANTQQ选股失败: {e}')
 
@@ -509,8 +529,15 @@ async def sim_trader_equity():
             import urllib.request, json as _json
             from datetime import timedelta
             codes = ','.join(idx_code_map.values())
-            url = f'http://localhost:8081/api/quotes?codes={codes}'
-            resp = _json.loads(urllib.request.urlopen(url, timeout=5).read())
+            # 行情源：live_trader(8001)
+            resp = None
+            try:
+                url = f'http://localhost:8001/live/quotes?codes={codes}'
+                resp = _json.loads(urllib.request.urlopen(url, timeout=5).read())
+            except Exception:
+                pass
+            if not resp:
+                resp = {}
             for name, qmt_code in idx_code_map.items():
                 tick = resp.get(qmt_code, {})
                 px = float(tick.get('lastPrice', 0))
