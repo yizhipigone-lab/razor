@@ -64,6 +64,7 @@
   <button onclick="switchTab('settings')">⚙️ 系统设置</button>
   <button id="btn-tab-radar" onclick="switchTab('radar')" style="border-left: 1px solid var(--border); margin-left: 5px;">🔥 热点板块</button>
   <button id="btn-tab-sim" onclick="switchTab('sim-trader')" style="border-left: 1px solid var(--border); margin-left: 5px;">📈 交易控制</button>
+  <button id="btn-tab-live" onclick="switchTab('live-trader')" style="border-left: 1px solid var(--border); margin-left: 5px;">💹 实盘交易</button>
   <button id="btn-tab-tqsdk" onclick="switchTab('tqsdk')" style="border-left: 1px solid var(--border); margin-left: 5px;">📡 通达信选股</button>
 </nav>
 
@@ -1284,11 +1285,14 @@
             <span>选股: <b id="sim-scan-val" style="color:var(--text1)">--</b></span>
             <span>|</span>
             <span>买入: <b id="sim-buy-val" style="color:var(--text1)">--</b></span>
-          </div>
+          
+            <span>|</span>
+            <span>ʵ��ת��: <b id="sim-live-signal-val" style="color:var(--text1)">--</b></span></div>
           <div style="display:none; gap:8px; margin-top:4px" id="sim-switches-edit">
             <label style="font-size:11px">卖出 <select id="sim-edit-sell"><option value="true">开</option><option value="false">关</option></select></label>
             <label style="font-size:11px">选股 <select id="sim-edit-scan"><option value="true">开</option><option value="false">关</option></select></label>
             <label style="font-size:11px">买入 <select id="sim-edit-buy"><option value="true">开</option><option value="false">关</option></select></label>
+            <label style="font-size:11px">ʵ��ת�� <select id="sim-edit-live-signal"><option value="off">��</option><option value="sim_and_live">ģ��+ʵ��</option></select></label>
           </div>
         </div>
         <!-- 止盈止损参数 -->
@@ -1451,6 +1455,76 @@
         </div>
       </div>
 
+      <!-- Live Trader Tab: 实盘交易 -->
+      <div id="tab-live-trader">
+        <div class="card" style="margin-bottom: 12px;">
+          <h3 style="margin: 0 0 10px 0;">💹 实盘交易 live_trader</h3>
+          <div id="live-status-bar" style="display:flex; gap:24px; flex-wrap:wrap; font-size:13px; padding:8px 0; border-bottom:1px solid var(--border);">
+            <span>状态: <b id="live-conn">—</b></span>
+            <span>模式: <b id="live-mode">—</b></span>
+            <span>账号: <b id="live-account">—</b></span>
+            <span>资金: <b id="live-capital">—</b></span>
+            <span>Kill Switch: <b id="live-ks">—</b></span>
+            <span style="margin-left:auto;"><button onclick="loadLiveStatus()" style="padding:4px 12px;">刷新</button></span>
+          </div>
+          <div id="live-asset-bar" style="display:flex; gap:24px; flex-wrap:wrap; font-size:13px; padding:8px 0;">
+            <span>可用现金: <b id="live-cash">—</b></span>
+            <span>冻结: <b id="live-frozen">—</b></span>
+            <span>持仓市值: <b id="live-mv">—</b></span>
+            <span>总资产: <b id="live-total">—</b></span>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:12px;">
+          <div class="card">
+            <h4 style="margin:0 0 8px 0;">📊 持仓 <span style="font-size:11px;color:var(--text-muted);">(managed=false 为 ETF 保留,策略不动)</span></h4>
+            <table class="data-table" style="font-size:12px; width:100%;">
+              <thead><tr><th>代码</th><th>股数</th><th>可卖</th><th>均价</th><th>现价</th><th>市值</th><th>浮盈</th><th>类型</th></tr></thead>
+              <tbody id="live-positions-tbody"></tbody>
+            </table>
+          </div>
+          <div class="card">
+            <h4 style="margin:0 0 8px 0;">📋 委托 <span style="font-size:11px;color:var(--text-muted);">(最近 50 笔)</span></h4>
+            <table class="data-table" style="font-size:12px; width:100%;">
+              <thead><tr><th>时间</th><th>代码</th><th>方向</th><th>价格</th><th>股数</th><th>状态</th><th>模式</th></tr></thead>
+              <tbody id="live-orders-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:12px;">
+          <div class="card">
+            <h4 style="margin:0 0 8px 0;">🛡 风控闸门</h4>
+            <div id="live-gates" style="font-size:12px; line-height:1.8;">点"刷新"加载</div>
+          </div>
+          <div class="card">
+            <h4 style="margin:0 0 8px 0;">🔍 对账记录 <button onclick="runReconcile()" style="float:right;padding:2px 8px;font-size:11px;">手动对账</button></h4>
+            <div id="live-reconcile" style="font-size:12px; line-height:1.6;">点"手动对账"触发</div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:12px;">
+          <h4 style="margin:0 0 8px 0;">🎬 操作</h4>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button onclick="runExitScan()" style="padding:6px 16px;">触发离场扫描</button>
+            <button onclick="activateKillSwitch()" style="padding:6px 16px; background:#e74c3c; color:#fff; border:none;">🔴 激活 Kill Switch</button>
+            <button onclick="deactivateKillSwitch()" style="padding:6px 16px;">解除 Kill Switch</button>
+          </div>
+          <div style="margin-top:8px; font-size:11px; color:var(--text-muted);">
+            dry-run 模式下手动下单禁用(防误下单);离场扫描会模拟 mock 回报验证全链路
+          </div>
+        </div>
+
+        <div class="card">
+          <h4 style="margin:0 0 8px 0;">📜 审计回放</h4>
+          <div style="display:flex; gap:8px; margin-bottom:8px;">
+            <input id="live-replay-oid" placeholder="输入 order_id" style="padding:4px 8px; width:160px;">
+            <button onclick="replayOrder()" style="padding:4px 12px;">回放</button>
+          </div>
+          <pre id="live-replay-out" style="font-size:11px; max-height:200px; overflow:auto; background:var(--bg); padding:8px; border-radius:4px;">回放结果将显示在这里</pre>
+        </div>
+      </div>
+
       <!-- TQSDK Tab: 通达信选股 -->
       <div id="tab-tqsdk">
         <div class="card" style="margin-bottom: 12px;">
@@ -1551,5 +1625,6 @@
 </div>
 
     <script src="/static/js/main.js?v=35"></script>
+    <script src="/static/js/live_trader.js?v=1"></script>
 </body>
 </html>

@@ -513,6 +513,9 @@ class DataPipelineScheduler:
             log.info(f"CronScheduler | [模拟盘] 完成: 卖出{sell_count}笔 买入{buy_count}笔 "
                      f"净值{eq:,.0f} 持仓{engine.position_count}")
 
+            # 15:00 后清理过期信号状态(§5.4 TTL)
+            self._cleanup_signal_state()
+
         except Exception as e:
             log.error(f"CronScheduler | [模拟盘] 执行失败: {e}", exc_info=True)
 
@@ -712,6 +715,36 @@ class DataPipelineScheduler:
             with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(state, f, ensure_ascii=False, default=str, indent=2)
             os.replace(tmp_path, path)
+
+    def _cleanup_signal_state(self) -> None:
+        """15:00 清理过期信号状态(§5.4 TTL:当日 15:00 后补发无意义)
+
+        保留当日数据(审计可查),删除 3 天前的记录。
+        """
+        import json, os
+        from datetime import date as date_type, timedelta
+
+        state_path = os.path.join("data", "live_trader", "signal_state.json")
+        if not os.path.exists(state_path):
+            return
+
+        try:
+            with open(state_path, "r", encoding="utf-8") as f:
+                state = json.load(f)
+
+            cutoff = str(date_type.today() - timedelta(days=3))
+            old_keys = [k for k in state if k < cutoff]
+            if old_keys:
+                for k in old_keys:
+                    del state[k]
+                with self._state_lock:
+                    tmp_path = state_path + ".tmp"
+                    with open(tmp_path, "w", encoding="utf-8") as f:
+                        json.dump(state, f, ensure_ascii=False, default=str, indent=2)
+                    os.replace(tmp_path, state_path)
+                log.info(f"CronScheduler | [信号状态] 清理 {len(old_keys)} 天过期记录")
+        except (json.JSONDecodeError, Exception) as e:
+            log.warning(f"CronScheduler | [信号状态] 清理失败: {e}")
 
 
 # 全局单例
