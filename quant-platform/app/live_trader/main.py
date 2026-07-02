@@ -747,7 +747,10 @@ async def _process_one_signal(signal, semaphore, lock_wait_sec: int = 5) -> dict
         )
 
         # 调用 service(TDX source, lock_wait=5s)
-        result = place_order_service(intent, source="TDX", lock_wait_sec=lock_wait_sec)
+        # 用 asyncio.to_thread 避免阻塞事件循环(time.sleep in ClearanceLock)
+        result = await asyncio.to_thread(
+            place_order_service, intent, "TDX", lock_wait_sec
+        )
         result["code"] = code_fmt
         return result
 
@@ -799,12 +802,14 @@ async def buy_signal(req: dict, authorization: str = ""):
                      for s in signal_req.signals]
         )
 
-    # 漏洞A修复:信号去重(同 code 只保留第一条)
+    # 漏洞A修复:信号去重(同 code 只保留第一条,用 format_code 统一 key)
+    from app.utils.xtquant_compat import format_code
     seen_codes = set()
     unique_signals = []
     for s in signal_req.signals:
-        if s.code not in seen_codes:
-            seen_codes.add(s.code)
+        code_key = format_code(s.code) if '.' not in s.code else s.code
+        if code_key not in seen_codes:
+            seen_codes.add(code_key)
             unique_signals.append(s)
 
     if len(unique_signals) < len(signal_req.signals):
@@ -877,10 +882,16 @@ async def cancel_by_source(terminal: str = "TDX"):
         try:
             seq = order.get("seq", 0)
             if seq > 0 and qmt.connected:
-                qmt.cancel_order(seq)
-                cancelled.append(order.get("code", ""))
-                logger.info(f"撤单成功: {order.get('code')} seq={seq} terminal={terminal}")
+                ret = qmt.cancel_order(seq)
+                # 0=成功, -1=断开, -3=未找到, 其他=失败
+                if ret == 0:
+                    cancelled.append(order.get("code", ""))
+                    logger.info(f"撤单成功: {order.get('code')} seq={seq} terminal={terminal}")
+                else:
+                    skipped.append(order.get("code", ""))
+                    logger.warning(f"撤单未成功: {order.get('code')} seq={seq} ret={ret}")
         except Exception as e:
+            skipped.append(order.get("code", ""))
             logger.error(f"撤单失败: {order.get('code')} seq={seq}: {e}")
 
     return {"cancelled": cancelled, "skipped": skipped, "terminal": terminal}
@@ -891,6 +902,8 @@ async def pending_signals():
     """拉取待处理信号(Windows 端主动拉取模式,备用)"""
     # 当前采用 Docker 推送模式,pending 端点预留
     return {"pending": [], "note": "当前为推送模式,无待拉取信号"}
+
+@app.post("/live/sync-positions")
 async def sync_positions():
     """从 QMT 重新同步持仓到 live_positions(修复缺失持仓)"""
     qmt = _state.get("qmt")

@@ -255,18 +255,14 @@ class RiskGate:
     # ===== C1 在途预扣 =====
 
     def freeze_pending_buy(self, code: str, volume: int) -> None:
-        """C1:下单成功后冻在途买入预扣"""
+        """C1:下单成功后冻在途买入预扣(原子 SQL 更新,防 TOCTOU 竞态)"""
         if not self.store:
             return
         from app.utils.xtquant_compat import format_code
         code_fmt = format_code(code) if '.' not in code else code
-        pos = self.store.get_position(code_fmt)
-        if pos:
-            pos["pending_buy_volume"] = pos.get("pending_buy_volume", 0) + volume
-            self.store.upsert_position(pos)
-            logger.info(f"C1 冻结在途预扣: {code_fmt} +{volume} → {pos['pending_buy_volume']}")
-        else:
-            # 新持仓
+        # 原子更新:pending_buy_volume += volume(避免读-改-写竞态)
+        if not self.store.atomic_add_pending_buy(code_fmt, volume):
+            # 新持仓:不存在则创建
             self.store.upsert_position({
                 "code": code_fmt,
                 "volume": 0, "can_use_volume": 0, "frozen_volume": 0,
@@ -275,6 +271,7 @@ class RiskGate:
                 "float_profit": 0, "profit_rate": 0, "peak_price": 0,
                 "sell_count": 0, "managed": True, "strategy_name": "",
             })
+        logger.info(f"C1 冻结在途预扣: {code_fmt} +{volume}")
 
     # ===== 闸门 10:同股冷却 =====
 
