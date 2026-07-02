@@ -961,6 +961,38 @@ async def health():
     return {"status": "ok", "ts": datetime.now().isoformat()}
 
 
+@app.get("/live/config/scan-interval")
+async def get_scan_interval():
+    """获取当前离场扫描间隔(秒)"""
+    scheduler = _state.get("scheduler")
+    if not scheduler:
+        raise HTTPException(503, "调度服务未启动")
+    return {"interval_sec": scheduler.get_scan_interval()}
+
+
+@app.put("/live/config/scan-interval")
+async def set_scan_interval(body: dict):
+    """设置离场扫描间隔(秒)。保存后立即生效,不阻塞。范围:10~300"""
+    scheduler = _state.get("scheduler")
+    if not scheduler:
+        raise HTTPException(503, "调度服务未启动")
+    seconds = body.get("interval_sec")
+    if seconds is None:
+        raise HTTPException(400, "缺少 interval_sec 参数")
+    try:
+        seconds = float(seconds)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "interval_sec 必须为数字")
+    if seconds < 10 or seconds > 300:
+        raise HTTPException(400, "interval_sec 范围:10~300 秒")
+    # 立即生效(内存)
+    scheduler.set_scan_interval(seconds)
+    # 持久化到 settings(下次启动自动加载)
+    from core.settings import settings
+    settings.set("live_trader", "exit_scan_interval_sec", seconds, save=True)
+    return {"interval_sec": scheduler.get_scan_interval(), "saved": True}
+
+
 # ===== 子进程生命周期管理(从 qmt_proxy_server.py 迁移) =====
 
 import subprocess

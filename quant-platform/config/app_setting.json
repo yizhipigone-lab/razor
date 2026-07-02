@@ -205,6 +205,7 @@
     "buy_position_size": 10000,
     "buy_signal_token": "Qwer1234",
     "buy_signal_enabled": true,
-    "buy_signal_cutoff": "14:59"
+    "buy_signal_cutoff": "14:59",
+    "exit_scan_interval_sec": 60
   }
 }
