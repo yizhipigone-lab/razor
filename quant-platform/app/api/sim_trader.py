@@ -285,7 +285,15 @@ async def sim_trader_status():
         'auto_sell': engine.auto_sell,
         'auto_scan': engine.auto_scan,
         'auto_buy': engine.auto_buy,
+        'live_signal_mode': _get_live_signal_mode(),
     }
+
+def _get_live_signal_mode() -> str:
+    try:
+        from app.sim_trader.config import LIVE_SIGNAL_MODE
+        return LIVE_SIGNAL_MODE
+    except Exception:
+        return 'off'
 
 
 @router.post("/api/sim-trader/execute")

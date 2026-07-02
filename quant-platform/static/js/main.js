@@ -665,6 +665,12 @@ async function loadSimSwitches() {
       document.getElementById('sim-sell-val').textContent = r.auto_sell ? '开' : '关';
       document.getElementById('sim-scan-val').textContent = r.auto_scan ? '开' : '关';
       document.getElementById('sim-buy-val').textContent = r.auto_buy ? '开' : '关';
+      const lsVal = document.getElementById('sim-live-signal-val');
+      if (lsVal) {
+        const mode = r.live_signal_mode || 'off';
+        lsVal.textContent = mode === 'sim_and_live' ? '模拟+实盘' : '关';
+        lsVal.style.color = mode === 'sim_and_live' ? 'var(--red)' : 'var(--text1)';
+      }
     }
   } catch(e) {}
 }
@@ -680,6 +686,11 @@ function editSimSwitches() {
   document.getElementById('sim-edit-sell').value = document.getElementById('sim-sell-val').textContent === '开' ? 'true' : 'false';
   document.getElementById('sim-edit-scan').value = document.getElementById('sim-scan-val').textContent === '开' ? 'true' : 'false';
   document.getElementById('sim-edit-buy').value = document.getElementById('sim-buy-val').textContent === '开' ? 'true' : 'false';
+  const lsEdit = document.getElementById('sim-edit-live-signal');
+  if (lsEdit) {
+    const lsVal = document.getElementById('sim-live-signal-val');
+    lsEdit.value = (lsVal && lsVal.textContent !== '关') ? 'sim_and_live' : 'off';
+  }
 }
 
 async function saveSimSwitches() {
@@ -687,6 +698,7 @@ async function saveSimSwitches() {
     auto_sell: document.getElementById('sim-edit-sell').value === 'true',
     auto_scan: document.getElementById('sim-edit-scan').value === 'true',
     auto_buy: document.getElementById('sim-edit-buy').value === 'true',
+    live_signal_mode: (document.getElementById('sim-edit-live-signal') || {}).value || 'off',
   };
   try {
     const r = await fetch('/api/settings/sim-switches', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) }).then(r => r.json());
@@ -696,6 +708,11 @@ async function saveSimSwitches() {
     document.getElementById('sim-sell-val').textContent = body.auto_sell ? '开' : '关';
     document.getElementById('sim-scan-val').textContent = body.auto_scan ? '开' : '关';
     document.getElementById('sim-buy-val').textContent = body.auto_buy ? '开' : '关';
+    const lsVal = document.getElementById('sim-live-signal-val');
+    if (lsVal) {
+      lsVal.textContent = body.live_signal_mode === 'sim_and_live' ? '模拟+实盘' : '关';
+      lsVal.style.color = body.live_signal_mode === 'sim_and_live' ? 'var(--red)' : 'var(--text1)';
+    }
     // hide edit
     document.getElementById('sim-switches-display').style.display = 'flex';
     document.getElementById('sim-switches-edit').style.display = 'none';
@@ -1067,10 +1084,111 @@ function saveGatewaySettings() {
     if (msg) { msg.textContent = '保存失败'; msg.style.color = 'var(--red)'; }
   });
 }
-function loadReportsPage() { /* stub */ }
-function loadReportsList() { /* stub */ }
-function downloadModalMD() { /* stub */ }
-function downloadViewerMD() { /* stub */ }
+// ─── 报告仓库 ──────────────────────────────────────────────
+let currentReportPage = 1;
+const REPORT_PAGE_SIZE = 15;
+
+async function loadReportsList() {
+  var searchInput = document.getElementById('report-search');
+  var search = searchInput ? searchInput.value.trim() : '';
+  var offset = (currentReportPage - 1) * REPORT_PAGE_SIZE;
+  var listEl = document.getElementById('report-list');
+  if (!listEl) return;
+
+  listEl.innerHTML = '<p style="color:var(--text2);text-align:center;padding:20px">加载中...</p>';
+
+  try {
+    var r = await fetch(
+      '/api/reports/list?limit=' + REPORT_PAGE_SIZE + '&offset=' + offset + '&search=' + encodeURIComponent(search)
+    ).then(function(resp) { return resp.json(); });
+
+    if (r.status === 'ok' && r.data) {
+      var total = r.data.total || 0;
+      var data = r.data.data || [];
+
+      if (data.length === 0) {
+        listEl.innerHTML = '<p style="color:var(--text2);text-align:center;padding:20px">暂无历史报告</p>';
+      } else {
+        listEl.innerHTML = data.map(function(rep) {
+          return '<div class="strategy-item" onclick="viewReport(' + rep.id + ')" style="cursor:pointer">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center">' +
+              '<span style="font-weight:600;font-size:13px">' + rep.code + ' ' + (rep.name || '') + '</span>' +
+              '<button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:10px" onclick="event.stopPropagation();deleteReport(' + rep.id + ',\'' + rep.code + '\')">🗑️</button>' +
+            '</div>' +
+            '<div style="font-size:11px;color:var(--text2);margin-top:2px">' + (rep.created_at || '') + '</div>' +
+          '</div>';
+        }).join('');
+      }
+
+      var totalPages = Math.max(1, Math.ceil(total / REPORT_PAGE_SIZE));
+      var pageInfo = document.getElementById('rep-page-info');
+      if (pageInfo) pageInfo.textContent = currentReportPage + ' / ' + totalPages;
+    }
+  } catch (e) {
+    listEl.innerHTML = '<p style="color:var(--red);text-align:center;padding:20px">加载失败</p>';
+  }
+}
+
+function loadReportsPage(delta) {
+  currentReportPage = Math.max(1, currentReportPage + delta);
+  loadReportsList();
+}
+
+async function viewReport(id) {
+  try {
+    var r = await fetch('/api/reports/content/' + id).then(function(resp) { return resp.json(); });
+    if (r.status === 'ok' && r.data) {
+      document.getElementById('report-empty-state').style.display = 'none';
+      document.getElementById('report-viewer-container').style.display = 'flex';
+      document.getElementById('viewer-report-title').textContent =
+        r.data.code + ' ' + (r.data.name || '') + ' — AI 深度报告';
+      document.getElementById('viewer-report-content').innerHTML =
+        marked.parse(r.data.content || '');
+    }
+  } catch (e) {
+    console.error('viewReport failed:', e);
+  }
+}
+
+async function deleteReport(id, code) {
+  if (!confirm('确认删除 ' + code + ' 的报告？')) return;
+  try {
+    var r = await fetch('/api/reports/' + id, { method: 'DELETE' })
+      .then(function(resp) { return resp.json(); });
+    if (r.status === 'ok') {
+      loadReportsList();
+      var viewerTitle = document.getElementById('viewer-report-title')?.textContent || '';
+      if (viewerTitle.includes(code)) { closeAiReport(); }
+    } else {
+      alert('删除失败: ' + (r.message || '未知错误'));
+    }
+  } catch (e) {
+    alert('删除失败: ' + e.message);
+  }
+}
+
+function _downloadMD(title, content) {
+  var blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = title.replace(/[^\w一-鿿]/g, '_') + '.md';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+}
+
+function downloadModalMD() {
+  var title = document.getElementById('ai-title')?.textContent || 'ai_report';
+  var content = document.getElementById('ai-llm-report')?.textContent || '';
+  _downloadMD(title, content);
+}
+
+function downloadViewerMD() {
+  var title = document.getElementById('viewer-report-title')?.textContent || 'report';
+  var content = document.getElementById('viewer-report-content')?.innerText || '';
+  _downloadMD(title, content);
+}
 async function searchStockForReport() {
   var q = document.getElementById('new-report-search')?.value?.trim();
   if (!q) return;
@@ -1093,23 +1211,82 @@ async function searchStockForReport() {
   } catch(e) { resultsDiv.innerHTML = '<p style="color:var(--red)">检索失败</p>'; }
 }
 
+var _reportPollTimer = null;
+
 async function generateAIReport(code, name, el) {
-  if (el) { el.innerHTML = '<span style="color:var(--yellow)">⏳ 生成中...</span>'; el.onclick = null; }
+  if (el) { el.innerHTML = '<span style="color:var(--yellow)">⏳ 提交中...</span>'; el.onclick = null; }
   try {
-    var r = await fetch('/api/agents/analyze/' + encodeURIComponent(code) + '?name=' + encodeURIComponent(name)).then(function(resp) { return resp.json(); });
-    if (r.status === 'ok') {
-      // Show report in viewer
-      document.getElementById('report-empty-state').style.display = 'none';
-      var container = document.getElementById('report-viewer-container');
-      container.style.display = 'flex';
-      document.getElementById('viewer-report-title').textContent = code + ' ' + name + ' AI 深度报告';
-      document.getElementById('viewer-report-content').innerHTML = '<pre style="white-space:pre-wrap;font-size:13px;line-height:1.8">' + (r.report||'') + '</pre>';
-    } else {
+    var startResp = await fetch('/api/agents/analyze/' + encodeURIComponent(code) + '?name=' + encodeURIComponent(name), {
+      method: 'POST'
+    }).then(function(resp) { return resp.json(); });
+
+    if (startResp.status === 'error') {
       if (el) { el.innerHTML = '<span style="color:var(--red)">失败</span>'; el.onclick = function() { generateAIReport(code, name, el); }; }
+      if (startResp.message) { alert(startResp.message); }
+      return;
     }
+
+    // 异步任务模式：轮询进度
+    var taskId = startResp.task_id;
+    if (!taskId) {
+      // 兼容旧版同步返回
+      _showReportInViewer(code, name, startResp.report || '');
+      if (el) { el.innerHTML = '<span style="color:var(--green)">✅ 已生成</span>'; }
+      loadReportsList();
+      return;
+    }
+
+    if (el) { el.innerHTML = '<span style="color:var(--yellow)">⏳ 生成中 0%...</span>'; }
+
+    var pollCount = 0;
+    var maxPolls = 120;
+    if (_reportPollTimer) clearInterval(_reportPollTimer);
+
+    _reportPollTimer = setInterval(async function() {
+      pollCount++;
+      try {
+        var r = await fetch('/api/agents/task/' + taskId).then(function(resp) { return resp.json(); });
+        var pct = r.progress || 0;
+
+        if (el) { el.innerHTML = '<span style="color:var(--yellow)">⏳ 生成中 ' + pct + '%...</span>'; }
+
+        if (r.status === 'done') {
+          clearInterval(_reportPollTimer);
+          _reportPollTimer = null;
+          var reportResp = await fetch('/api/reports/content/' + r.report_id).then(function(resp) { return resp.json(); });
+          if (reportResp.status === 'ok' && reportResp.data) {
+            _showReportInViewer(code, name, reportResp.data.content || '');
+            loadReportsList();
+          }
+          if (el) { el.innerHTML = '<span style="color:var(--green)">✅ 已生成</span>'; }
+        } else if (r.status === 'error') {
+          clearInterval(_reportPollTimer);
+          _reportPollTimer = null;
+          if (el) { el.innerHTML = '<span style="color:var(--red)">失败</span>'; el.onclick = function() { generateAIReport(code, name, el); }; }
+          alert('报告生成失败: ' + (r.error || '未知错误'));
+        } else if (pollCount >= maxPolls) {
+          clearInterval(_reportPollTimer);
+          _reportPollTimer = null;
+          if (el) { el.innerHTML = '<span style="color:var(--red)">超时</span>'; }
+          alert('报告生成超时，请稍后在历史快照中查看');
+        }
+      } catch (e) {
+        clearInterval(_reportPollTimer);
+        _reportPollTimer = null;
+        if (el) { el.innerHTML = '<span style="color:var(--red)">网络错误</span>'; el.onclick = function() { generateAIReport(code, name, el); }; }
+      }
+    }, 1500);
+
   } catch(e) {
     if (el) { el.innerHTML = '<span style="color:var(--red)">网络错误</span>'; el.onclick = function() { generateAIReport(code, name, el); }; }
   }
+}
+
+function _showReportInViewer(code, name, content) {
+  document.getElementById('report-empty-state').style.display = 'none';
+  document.getElementById('report-viewer-container').style.display = 'flex';
+  document.getElementById('viewer-report-title').textContent = code + ' ' + name + ' — AI 深度报告';
+  document.getElementById('viewer-report-content').innerHTML = marked.parse(content);
 }
 
 function openNewReportSearch() {
