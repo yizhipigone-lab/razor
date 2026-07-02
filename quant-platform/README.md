@@ -81,7 +81,7 @@ start.bat
 | 功能 | 说明 | 入口 |
 |------|------|------|
 | dry-run / live 模式 | 模拟模式不真下单 | `LIVE_TRADER_MODE` 环境变量 |
-| 9 闸门风控 (RiskGate) | 单笔/仓位/日亏/连续拒绝等 9 层保护 | `app/live_trader/` |
+| 10 闸门风控 (RiskGate) | 单笔/仓位/日亏/连续拒绝/同股冷却等 10 层保护 | `app/live_trader/` |
 | Kill Switch | 三态(内存/文件/DB)紧急熔断 | 前端按钮 + API |
 | 离场扫描 | 8 条离场规则，可配置扫描间隔(10~300s) | `/live/config/scan-interval` |
 | 对账 | 三方比对(QMT/本地/成交)，4 时点自动+手动触发 | `/live/reconcile` |
@@ -95,10 +95,11 @@ start.bat
 
 | 功能 | 说明 | 入口 |
 |------|------|------|
-| 日线收盘价回测 | 简易回测引擎 | `app/backtest/` |
-| TDX 回测 | 通达信公式回测 | `app/backtest/` |
-| 严格回测 | 含 T+1/涨跌停/滑点 | `app/backtest/` |
-| 执行器 | 回测交易执行模拟 | `app/backtest/execution.py` |
+| 标准回测 | BacktestEngine 基础引擎 | `app/backtest/engine.py` |
+| 简易回测 | FastEngine 快速回测 | `app/backtest/simple_runner.py` |
+| TDX 回测 | 通达信公式回测 | `app/backtest/tdx_runner.py` |
+| 严格回测 | StrictEngine，含 T+1/涨跌停/滑点 | `app/backtest/strict_runner.py` |
+| 执行器 | 统一交易执行模拟层 | `app/backtest/execution.py` |
 
 > ⚠️ 四种回测引擎的成本/T+1/涨跌停处理各写各的，**结果不可互相对比**。
 

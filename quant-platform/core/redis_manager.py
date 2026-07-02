@@ -48,20 +48,44 @@ class MemoryCacheFallback:
             self._store.pop(key, None)
 
     def keys(self, pattern: str = "*") -> list[str]:
-        """简易 pattern 匹配（仅支持 * 通配符前缀/后缀）"""
-        import fnmatch
+        """简易 pattern 匹配（仅支持 * 通配符，与 Redis KEYS 最常用模式对齐）
+
+        支持: *, prefix*, *suffix, prefix*suffix
+        不支持: ?、[]、[a-z] 等 fnmatch 扩展语法（避免与 Redis KEYS 行为不一致）
+        """
         with self._lock:
             # 先清理过期
             expired = [k for k, v in self._store.items() if not v.is_alive()]
             for k in expired:
                 del self._store[k]
-            return [k for k in self._store if fnmatch.fnmatch(k, pattern)]
 
-    def hset(self, name: str, mapping: dict):
-        """模拟 Redis HSET：以 hash_key 格式存储"""
+            # 仅支持 * 通配符的简单匹配，与 Redis KEYS 行为对齐
+            if pattern == "*":
+                return list(self._store.keys())
+
+            # 将 pattern 拆为前缀和后缀
+            parts = pattern.split("*")
+            if len(parts) == 2:
+                prefix, suffix = parts
+                return [k for k in self._store
+                        if k.startswith(prefix) and k.endswith(suffix)]
+            elif len(parts) == 1:
+                # 无通配符，精确匹配
+                return [k for k in self._store if k == pattern]
+            else:
+                # 多段 * 通配，回退到全量过滤（性能差但正确）
+                import fnmatch
+                return [k for k in self._store if fnmatch.fnmatch(k, pattern)]
+
+    def hset(self, name: str, mapping: dict, ttl_seconds: int = 86400):
+        """模拟 Redis HSET：以 hash_key 格式存储
+
+        注意：Redis 原生 HSET 无 TTL，但内存缓存需要 TTL 防内存泄漏。
+        默认 86400s(24h)，调用方可通过 ttl_seconds 覆盖。
+        """
         with self._lock:
             for field, val in mapping.items():
-                self._store[f"{name}::{field}"] = _MemoryCacheEntry(str(val), 86400)
+                self._store[f"{name}::{field}"] = _MemoryCacheEntry(str(val), ttl_seconds)
 
     def hgetall(self, name: str) -> dict:
         """模拟 Redis HGETALL"""
@@ -174,7 +198,7 @@ class RedisManager:
         return False
 
     def publish_signal(self, channel: str, data: dict):
-        """发布信号到指定频道（Redis 不可用时静默跳过，pub/sub 本身是尽力而为）"""
+        """发布信号到指定频道（Redis 不可用时记录错误日志，pub/sub 本身是尽力而为）"""
         client = self.get_client()
         if client:
             try:
@@ -182,7 +206,7 @@ class RedisManager:
                 client.publish(channel, msg)
                 log.debug(f"Redis Publish | Channel: {channel} | Msg: {msg[:100]}...")
             except Exception as e:
-                log.debug(f"Redis 发布信号失败: {e}")
+                log.error(f"Redis 发布信号失败: {e}")
 
     def hset_all(self, name: str, mapping: dict):
         """批量设置哈希表内容（Redis 不可用时写入内存缓存）"""
@@ -253,4 +277,23 @@ class RedisManager:
 # 全局单例
 redis_manager = RedisManager()
 # 延迟连接：不在模块加载时主动连接 Redis，等第一次 get_client() 时再连
-redis_client = None
+# 兼容旧代码 from core.redis_manager import redis_client 后直接使用：
+# redis_client 现在是 property 代理，自动获取实际连接
+class _RedisClientProxy:
+    """延迟代理：兼容旧代码 `from core.redis_manager import redis_client` 后直接使用。
+    每次属性访问时动态获取真实 Redis 客户端，避免 eager init。
+    如果 Redis 不可用，属性访问会抛 AttributeError（与 None 行为一致）。
+    """
+    def __getattr__(self, name):
+        client = redis_manager.get_client()
+        if client is None:
+            raise AttributeError(
+                f"Redis 不可用，无法访问 redis_client.{name}。"
+                "请使用 redis_manager.cache_get/cache_set 等降级方法。"
+            )
+        return getattr(client, name)
+
+    def __bool__(self):
+        return redis_manager.get_client() is not None
+
+redis_client = _RedisClientProxy()
