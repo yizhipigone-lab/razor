@@ -540,8 +540,8 @@ class DataPipelineScheduler:
         os.makedirs(state_dir, exist_ok=True)
         state_path = os.path.join(state_dir, "signal_state.json")
 
-        # Windows 端地址
-        live_url = os.environ.get("LIVE_TRADER_URL", "http://host.docker.internal:8001")
+        # Windows 端地址(默认 127.0.0.1 适用于本机部署; Docker 环境请设置 LIVE_TRADER_URL)
+        live_url = os.environ.get("LIVE_TRADER_URL", "http://127.0.0.1:8001")
 
         # Token
         from core.settings import settings
