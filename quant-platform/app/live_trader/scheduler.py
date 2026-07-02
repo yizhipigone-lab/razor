@@ -1,0 +1,220 @@
+"""实盘定时调度服务(§5.7 / §5.9 / §17.3 / §6 EOD 归档)
+
+后台 asyncio 任务,负责:
+- 离场扫描(60s 间隔,交易时段)
+- 对账(4 时点:09:35/11:30/14:55/15:05)
+- EOD 归档(15:01)
+- 资产备份(5 分钟间隔,交易时段)
+- 非交易日自动激活 kill switch(§17.3)
+- 交易日 09:20 自动解除 scheduler 激活的 kill switch
+"""
+import asyncio
+import time
+from datetime import date, datetime
+from typing import Optional
+
+from core.logger import get_logger
+
+logger = get_logger("live_trader.scheduler")
+
+
+class LiveScheduler:
+    """实盘定时调度(单 asyncio Task)"""
+
+    def __init__(self, config, store=None, qmt=None, exit_monitor=None,
+                 reconciler=None, kill_switch=None, notifier=None, audit=None):
+        self.config = config
+        self.store = store
+        self.qmt = qmt
+        self.exit_monitor = exit_monitor
+        self.reconciler = reconciler
+        self.kill_switch = kill_switch
+        self.notifier = notifier
+        self.audit = audit
+
+        self._task: Optional[asyncio.Task] = None
+        self._last_scan_time: float = 0.0
+        self._last_asset_backup_time: float = 0.0
+        self._today: str = ""
+        self._executed_today: set = set()
+
+    def start(self) -> None:
+        """启动调度任务"""
+        if self._task and not self._task.done():
+            return
+        self._task = asyncio.create_task(self._loop())
+        logger.info("调度服务启动")
+
+    def stop(self) -> None:
+        """停止调度任务"""
+        if self._task and not self._task.done():
+            self._task.cancel()
+            logger.info("调度服务停止")
+
+    async def _loop(self) -> None:
+        """主循环(30s 间隔检查)"""
+        while True:
+            try:
+                self._tick()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"调度异常: {e}")
+            await asyncio.sleep(30)
+
+    def _tick(self) -> None:
+        """单次调度检查"""
+        now = datetime.now()
+        today_key = now.date().isoformat()
+        current_time = now.strftime("%H:%M")
+
+        # 新的一天,重置已执行记录
+        if today_key != self._today:
+            self._executed_today.clear()
+            self._today = today_key
+            logger.info(f"调度:新交易日 {today_key}")
+
+        # ===== 非交易日检测(§17.3)=====
+        if now.weekday() >= 5:  # 周六=5, 周日=6
+            self._handle_non_trading_day()
+            return
+
+        # ===== 交易日 09:20 自动解除(§17.3)=====
+        if current_time >= "09:20" and "trading_day_activate" not in self._executed_today:
+            self._handle_trading_day_activate()
+            self._executed_today.add("trading_day_activate")
+
+        # ===== 交易时段(09:25 ~ 15:05)=====
+        if "09:25" <= current_time <= "15:05":
+            # 离场扫描(60s 间隔)
+            self._run_exit_scan()
+
+            # 资产备份(5 分钟间隔)
+            self._run_asset_backup()
+
+            # 对账(4 时点)
+            self._run_reconcile(current_time)
+
+            # EOD 归档(15:01)
+            if current_time >= "15:01" and "eod_archive" not in self._executed_today:
+                self._run_eod_archive()
+                self._executed_today.add("eod_archive")
+
+        # ===== 信号心跳看门狗(14:55, v1.2.2 §5.2) =====
+        if current_time >= "14:55" and "signal_heartbeat_check" not in self._executed_today:
+            self._check_signal_heartbeat()
+            self._executed_today.add("signal_heartbeat_check")
+
+    # ===== 各调度任务 =====
+
+    def _handle_non_trading_day(self) -> None:
+        """非交易日:自动激活 kill switch"""
+        if "non_trading_check" not in self._executed_today:
+            if self.kill_switch and not self.kill_switch.is_active():
+                self.kill_switch.activate(
+                    reason="非交易日自动激活(周末/节假日)",
+                    source="scheduler"
+                )
+                logger.info("调度:非交易日,kill switch 已激活")
+                if self.notifier:
+                    self.notifier.kill_switch_activated(
+                        "非交易日,实盘监控暂停", "scheduler"
+                    )
+            self._executed_today.add("non_trading_check")
+
+    def _handle_trading_day_activate(self) -> None:
+        """交易日 09:20:自动解除由 scheduler 激活的 kill switch"""
+        if not self.kill_switch or not self.kill_switch.is_active():
+            return
+        ks_status = self.kill_switch.status()
+        if ks_status.get("source") == "scheduler":
+            self.kill_switch.deactivate()
+            logger.info("调度:交易日 09:20 自动解除 kill switch")
+            if self.audit:
+                self.audit.log("scheduler_activate", reason="交易日自动解除 kill switch")
+
+    def _run_exit_scan(self) -> None:
+        """离场扫描(60s 间隔)"""
+        if time.time() - self._last_scan_time < 60:
+            return
+        if not self.exit_monitor:
+            return
+        if self.kill_switch and self.kill_switch.is_active():
+            return
+        try:
+            actions = self.exit_monitor.scan_once()
+            if actions:
+                logger.info(f"离场扫描:执行 {len(actions)} 笔卖出")
+        except Exception as e:
+            logger.error(f"离场扫描异常: {e}")
+        self._last_scan_time = time.time()
+
+    def _run_asset_backup(self) -> None:
+        """资产备份(5 分钟间隔,闸门5a 基准 + EOD 备份)"""
+        if time.time() - self._last_asset_backup_time < 300:
+            return
+        if not self.qmt or not self.qmt.connected:
+            return
+        if not self.store:
+            return
+        try:
+            asset_data = self.qmt.query_asset()
+            if asset_data:
+                self.store.backup_asset(asset_data)
+        except Exception as e:
+            logger.error(f"资产备份异常: {e}")
+        self._last_asset_backup_time = time.time()
+
+    def _run_reconcile(self, current_time: str) -> None:
+        """对账(4 时点)"""
+        for rt in self.config.reconcile_times:
+            task_key = f"reconcile_{rt}"
+            if current_time >= rt and task_key not in self._executed_today:
+                if self.reconciler:
+                    try:
+                        result = self.reconciler.reconcile()
+                        logger.info(f"对账({rt}): {result.get('summary', 'done')}")
+                    except Exception as e:
+                        logger.error(f"对账异常({rt}): {e}")
+                self._executed_today.add(task_key)
+
+    def _run_eod_archive(self) -> None:
+        """EOD 归档(15:01,§6)"""
+        if not self.store:
+            return
+        try:
+            self.store.eod_archive(qmt_wrapper=self.qmt)
+            logger.info("EOD 归档完成")
+        except Exception as e:
+            logger.error(f"EOD 归档异常: {e}")
+
+    def _check_signal_heartbeat(self) -> None:
+        """14:55 信号心跳看门狗(v1.2.2 §5.2 + §10.6)
+
+        检查当日是否有 docker_tdx 心跳记录:
+        - 无心跳 → 告警(可能是 Docker 端选股失败或网络不通)
+        - 有心跳但 scan_status=error → 告警
+        - 有心跳且 status=ok → 正常
+        """
+        if not self.store:
+            return
+        try:
+            hb = self.store.get_latest_heartbeat("docker_tdx")
+            if hb is None:
+                msg = "14:55 看门狗:当日无信号心跳(可能 Docker 端选股未执行或网络不通)"
+                logger.warning(msg)
+                if self.notifier:
+                    self.notifier.send(f"⚠ {msg}")
+                if self.audit:
+                    self.audit.log("signal_heartbeat_missing", reason=msg)
+            elif hb.get("scan_status") == "error":
+                msg = f"14:55 看门狗:信号心跳异常 scan_status=error, count={hb.get('signal_count', 0)}"
+                logger.error(msg)
+                if self.notifier:
+                    self.notifier.send(f"⚠ {msg}")
+            elif hb.get("scan_status") in ("ok", "no_signal"):
+                logger.info(f"14:55 看门狗:信号心跳正常 status={hb.get('scan_status')} count={hb.get('signal_count', 0)}")
+            else:
+                logger.info(f"14:55 看门狗:信号心跳 status={hb.get('scan_status')} count={hb.get('signal_count', 0)}")
+        except Exception as e:
+            logger.error(f"信号心跳看门狗异常: {e}")
