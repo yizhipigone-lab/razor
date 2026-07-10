@@ -80,10 +80,16 @@ start.bat
 
 | 功能 | 说明 | 入口 |
 |------|------|------|
-| dry-run / live 模式 | 模拟模式不真下单 | `LIVE_TRADER_MODE` 环境变量 |
-| 10 闸门风控 (RiskGate) | 单笔/仓位/日亏/连续拒绝/同股冷却等 10 层保护 | `app/live_trader/` |
-| Kill Switch | 三态(内存/文件/DB)紧急熔断 | 前端按钮 + API |
-| 离场扫描 | 8 条离场规则，可配置扫描间隔(10~300s) | `/live/config/scan-interval` |
+| dry-run / live 模式 | 模拟模式不真下单；**运行时可切**（live→dry-run 撤在途单等终态，超时阻断） | `/live/config/mode` |
+| 买入 / 卖出开关 | 独立运行时开关，可做"只卖不买"清仓模式 | `/live/config/switches` |
+| 10 闸门风控 (RiskGate) | 单笔/仓位/日亏/连续拒绝/同股冷却等 10 层保护 | `app/live_trader/risk_gate.py` |
+| Kill Switch | 三态(内存/文件/DB)紧急熔断 | 前端按钮 + `/live/kill-switch/*` |
+| 离场扫描 | 复用 exit_rules 引擎，HS 用当日真实 low，单次扫描≤3 防踩踏 | `/live/config/scan-interval` |
+| TP 档位持久化 | 止盈档位触发状态存 `tp_triggered`，防 60s 扫描重复触发 | `live_positions.tp_triggered` |
+| peak_price 维护 | 持仓峰值自动维护（GREATEST 防覆盖），移动止盈基础 | `store.refresh_quotes` |
+| 净值曲线 | 当日 5min 快照净值图（live_assets_backup） | `/live/equity` |
+| 成交记录 | 已成交明细表 | `/live/deals` |
+| 风控参数展示 | risk 段参数前端实时展示（实盘与模拟盘共用） | `/live/config/risk-params` |
 | 对账 | 三方比对(QMT/本地/成交)，4 时点自动+手动触发 | `/live/reconcile` |
 | 审计回放 | 按 order_id 回放完整决策链 | `/live/audit/replay/{oid}` |
 | 清仓锁 | 卖出时自动上锁防重复 | `ClearanceLock` |
@@ -133,6 +139,8 @@ start.bat
 | `app/sim_trader/main.py` | 模拟盘引擎 |
 | `app/tqsdk/bridge.py` | TDX 公式选股桥接 |
 | `app/live_trader/scheduler.py` | 实盘定时调度 |
+| `app/live_trader/runtime_state.py` | 运行时状态(mode/开关,可切) |
+| `app/live_trader/exit_monitor.py` | 离场监控(止盈止损扫描) |
 | `app/live_trader/config.py` | 实盘配置(frozen dataclass) |
 | `core/settings.py` | 统一配置读写 |
 | `config/app_setting.json` | 持久化配置文件 |
@@ -208,3 +216,4 @@ quant-platform/
 3. **今日盈亏口径**：当日买入用买入价，过夜持仓用昨收价
 4. **回测引擎不可比**：4 种引擎成本/T+1 各写各的，结果不能横向对比
 5. **Windows 部署**：本平台运行在 Windows 上，通过 QMT 连接券商，不使用 Docker
+6. **实盘止盈止损扫描**：`exit_monitor` 复用 `exit_rules` 引擎，TP 档位/peak_price/entry_date 持久化在 `live_positions`；mode/开关运行时可切但仅本地（`_is_local`），切 live 前会撤在途单等终态

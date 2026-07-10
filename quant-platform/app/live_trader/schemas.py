@@ -83,17 +83,6 @@ class LivePosition:
     strategy_name: str = ""
 
 
-@dataclass
-class ExitAction:
-    """离场动作(复用 exit_rules.ExitSignal,适配实盘)"""
-    code: str
-    trigger_type: str  # 硬止损/保本/...
-    sell_pct: float  # 0-100
-    priority: int
-    note: str = ""
-    reason: str = ""
-
-
 # ===== Pydantic API 模型(对外接口)=====
 
 class OrderRequest(BaseModel):
@@ -105,87 +94,6 @@ class OrderRequest(BaseModel):
     price_type: int = 11
     strategy_name: str = ""
     terminal: str = "WEB"
-
-
-class OrderResponse(BaseModel):
-    """下单响应"""
-    ok: bool
-    order_id: Optional[int] = None
-    client_order_id: str
-    status: str = ""
-    reason: str = ""
-
-
-class PositionView(BaseModel):
-    """持仓视图(前端)"""
-    code: str
-    name: str = ""
-    volume: int
-    can_use_volume: int
-    avg_cost: float
-    last_price: float
-    market_value: float
-    float_profit: float
-    profit_rate: float
-    managed: bool
-    today_pnl: Optional[float] = None  # 今日盈亏(当日买入按买入价,过夜按昨收)
-
-
-class AssetView(BaseModel):
-    """资产视图"""
-    cash: float
-    frozen_cash: float
-    market_value: float  # 仅 managed=true 部分
-    total_asset: float
-    live_capital: float
-    managed_position_value: float  # 策略持仓市值
-
-
-class GateStatus(BaseModel):
-    """闸门状态"""
-    gate: int
-    name: str
-    active: bool  # 是否检查
-    passed: bool
-    threshold: str = ""
-    current: str = ""
-    detail: str = ""
-
-
-class KillSwitchStatus(BaseModel):
-    """kill switch 状态"""
-    activated: bool
-    reason: str = ""
-    activated_at: Optional[datetime] = None
-    source: str = ""
-
-
-class ReconcileResult(BaseModel):
-    """对账结果"""
-    timestamp: str
-    code: str
-    local_volume: int
-    qmt_volume: int
-    diff_volume: int
-    diff_value: float
-    level: str  # INFO / WARN / CRITICAL
-    managed: bool
-
-
-# ===== 数据同步请求模型(从 qmt_proxy 迁移) =====
-
-class SyncIntraRequest(BaseModel):
-    """分时数据同步请求"""
-    freq: str = "5m"
-    days: int = 30
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-
-
-class SyncIndexDailyRequest(BaseModel):
-    """指数日线同步请求"""
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
 
 
 # ===== 信号桥接请求模型(v1.2.2 §5.2) =====
