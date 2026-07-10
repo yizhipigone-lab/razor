@@ -35,11 +35,15 @@ class LiveScheduler:
         self._task: Optional[asyncio.Task] = None
         self._last_scan_time: float = 0.0
         self._last_asset_backup_time: float = 0.0
+        self._last_quotes_refresh_time: float = 0.0
         self._today: str = ""
         self._executed_today: set = set()
 
         # 离场扫描间隔(可运行时修改,默认从 config 读取)
         self._exit_scan_interval: float = getattr(config, 'exit_scan_interval_sec', 60.0)
+
+        # 持仓行情刷新间隔(固定 3s,与 QMT 客户端推送频率一致)
+        self._quotes_refresh_interval: float = 3.0
 
     def start(self) -> None:
         """启动调度任务"""
@@ -65,7 +69,7 @@ class LiveScheduler:
         return self._exit_scan_interval
 
     async def _loop(self) -> None:
-        """主循环(30s 间隔检查)"""
+        """主循环(细粒度调度,1s 一次 tick 内部按子任务间隔节流)"""
         while True:
             try:
                 self._tick()
@@ -73,7 +77,7 @@ class LiveScheduler:
                 break
             except Exception as e:
                 logger.error(f"调度异常: {e}")
-            await asyncio.sleep(30)
+            await asyncio.sleep(1)
 
     def _tick(self) -> None:
         """单次调度检查"""
@@ -99,6 +103,9 @@ class LiveScheduler:
 
         # ===== 交易时段(09:25 ~ 15:05)=====
         if "09:25" <= current_time <= "15:05":
+            # 持仓行情刷新(3s 间隔,与 QMT 客户端推送频率一致)
+            self._run_quotes_refresh()
+
             # 离场扫描(60s 间隔)
             self._run_exit_scan()
 
@@ -177,6 +184,43 @@ class LiveScheduler:
         except Exception as e:
             logger.error(f"资产备份异常: {e}")
         self._last_asset_backup_time = time.time()
+
+    def _run_quotes_refresh(self) -> None:
+        """持仓行情刷新(3s 间隔)
+
+        把 QMT 实时行情写回 live_positions 表的 last_price/market_value/float_profit,
+        让前端展示与 QMT 客户端保持一致。
+
+        实现要点:
+        - 3s 节流(与 QMT 客户端推送频率一致)
+        - 仅交易时段(09:25-15:05)执行
+        - QMT 断开/持仓为空/无行情 → 直接跳过(不写脏)
+        - QMT 调用 3s 超时(qmt_wrapper 内置)失败由 try/except 兜底
+        - 仅写现价/市值/浮盈,不触碰 volume/avg_cost(防误改关键数据)
+        """
+        if time.time() - self._last_quotes_refresh_time < self._quotes_refresh_interval:
+            return
+        if not self.qmt or not self.qmt.connected:
+            return
+        if not self.store:
+            return
+        try:
+            positions = self.store.get_positions()
+            if not positions:
+                return
+            # 本地代码格式与 QMT 保持一致(已带 .SH/.SZ 后缀,get_realtime_quotes 内部会再 format_code 兜底)
+            codes = [p.get("code", "") for p in positions if p.get("code")]
+            if not codes:
+                return
+            quotes = self.qmt.get_realtime_quotes(codes)
+            if not quotes:
+                return
+            updated = self.store.refresh_quotes(quotes)
+            if updated > 0:
+                logger.debug(f"持仓行情刷新: {updated} 条")
+        except Exception as e:
+            logger.error(f"持仓行情刷新异常: {e}")
+        self._last_quotes_refresh_time = time.time()
 
     def _run_reconcile(self, current_time: str) -> None:
         """对账(4 时点)"""

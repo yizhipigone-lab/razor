@@ -18,7 +18,6 @@ import duckdb
 from core.logger import get_logger
 
 from .config import LiveTraderConfig
-from .schemas import LiveDeal, LiveOrder, LivePosition
 from app.utils.xtquant_compat import format_code
 
 logger = get_logger("live_trader.store")
@@ -82,9 +81,12 @@ class LiveTraderStore:
                 pending_buy_volume BIGINT, avg_cost DOUBLE, last_price DOUBLE,
                 market_value DOUBLE, float_profit DOUBLE, profit_rate DOUBLE,
                 peak_price DOUBLE, sell_count INTEGER, entry_date DATE,
-                managed BOOLEAN, strategy_name VARCHAR
+                managed BOOLEAN, strategy_name VARCHAR,
+                tp_triggered VARCHAR DEFAULT '[]'
             )
         """)
+        # 迁移(v2 A3):为旧库补 tp_triggered 列(IF NOT EXISTS 幂等,审计L1)
+        con.execute("ALTER TABLE live_positions ADD COLUMN IF NOT EXISTS tp_triggered VARCHAR DEFAULT '[]'")
         con.execute("CREATE SEQUENCE IF NOT EXISTS audit_seq START 1")
         con.execute("""
             CREATE TABLE IF NOT EXISTS live_positions_audit (
@@ -286,23 +288,128 @@ class LiveTraderStore:
             data.get("mode", "dry-run"), data.get("traded_at"),
         ])
 
+    def apply_sell_fill(self, code: str, filled_volume: int,
+                        trade_id: int = None) -> None:
+        """v2(F4/A3):卖出成交后递减持仓,清仓则重置全部状态防再买同票用旧值
+
+        trade_id 幂等(审计H1):重复回报不双扣(deal 表 ON CONFLICT 只入库一次,
+        本方法入口再校验一次,防 volume 被多扣)。
+        清仓重置含 avg_cost/entry_date(审计M2),否则再买同票用旧成本/旧日期。
+        """
+        assert self._conn is not None
+        if filled_volume <= 0:
+            return
+        # 幂等:同一 trade_id 已处理则跳过(H1)
+        if trade_id is not None:
+            exists = self._conn.execute(
+                "SELECT 1 FROM live_deals WHERE trade_id = ?", [trade_id]
+            ).fetchone()
+            if exists:
+                return
+        with self._db_lock:
+            row = self._conn.execute(
+                "SELECT volume, can_use_volume FROM live_positions WHERE code = ?",
+                [code]
+            ).fetchone()
+            if not row:
+                return
+            new_volume = max(0, int(row[0] or 0) - filled_volume)
+            new_can_use = max(0, int(row[1] or 0) - filled_volume)
+            if new_volume == 0:
+                # 清仓:重置全部状态,防再买同票用旧值(F4/M2)
+                self._conn.execute(
+                    "UPDATE live_positions SET volume = 0, can_use_volume = 0, "
+                    "frozen_volume = 0, peak_price = 0, sell_count = 0, "
+                    "avg_cost = 0, entry_date = NULL, tp_triggered = '[]' WHERE code = ?",
+                    [code]
+                )
+            else:
+                self._conn.execute(
+                    "UPDATE live_positions SET volume = ?, can_use_volume = ? WHERE code = ?",
+                    [new_volume, new_can_use, code]
+                )
+
+    def update_tp_triggered(self, code: str, tp_triggered: str) -> None:
+        """v2(A3):更新 TP 档位触发状态(JSON set 字符串,如 '["0"]')"""
+        assert self._conn is not None
+        with self._db_lock:
+            self._conn.execute(
+                "UPDATE live_positions SET tp_triggered = ? WHERE code = ?",
+                [tp_triggered, code]
+            )
+
+    def apply_buy_fill(self, code: str, filled_volume: int) -> None:
+        """v2(审计H2/H3):买入成交原子递增 volume + 释放在途预扣 + 首次建仓写 entry_date
+
+        原子 SQL(不读改写),避免 _release_pending_buy 全字段 upsert 覆盖 tp_triggered/sell_count(H3)。
+        首次建仓(entry_date 为空)写 today,修 hold_days 恒=1 问题(H2)。
+        """
+        assert self._conn is not None
+        if filled_volume <= 0:
+            return
+        from datetime import date as _date
+        today = _date.today()
+        with self._db_lock:
+            row = self._conn.execute(
+                "SELECT volume, pending_buy_volume, entry_date FROM live_positions WHERE code = ?",
+                [code]
+            ).fetchone()
+            if not row:
+                # 新建持仓(本地无行,QMT 已成交)
+                self._conn.execute(
+                    "INSERT INTO live_positions (code, volume, can_use_volume, "
+                    "pending_buy_volume, entry_date, managed, tp_triggered) "
+                    "VALUES (?, ?, 0, 0, ?, TRUE, '[]')",
+                    [code, filled_volume, today]
+                )
+                return
+            new_volume = int(row[0] or 0) + filled_volume
+            new_pending = max(0, int(row[1] or 0) - filled_volume)
+            entry_date = row[2]
+            if entry_date is None:
+                # 首次建仓写 entry_date(H2),不动 peak/sell_count/tp_triggered
+                self._conn.execute(
+                    "UPDATE live_positions SET volume = ?, pending_buy_volume = ?, "
+                    "entry_date = ? WHERE code = ?",
+                    [new_volume, new_pending, today, code]
+                )
+            else:
+                self._conn.execute(
+                    "UPDATE live_positions SET volume = ?, pending_buy_volume = ? WHERE code = ?",
+                    [new_volume, new_pending, code]
+                )
+
+    def clean_dryrun_residue(self) -> None:
+        """v2(F8/H1): 清理 dry-run 残留委托/成交/盈亏闭环(切 live 前,防 mock 污染)
+
+        cycles 表无 mode 字段,切 live 前(仍 dry-run)全清,下次 recompute 用
+        live 成交重建(build_cycles 已过滤 mode='live',见 pnl_engine)。
+        """
+        assert self._conn is not None
+        with self._db_lock:
+            self._conn.execute("DELETE FROM live_orders WHERE mode = 'dry-run'")
+            self._conn.execute("DELETE FROM live_deals WHERE mode = 'dry-run'")
+            self._conn.execute("DELETE FROM live_cycles")
+
     def _upsert_position(self, data: Dict[str, Any]) -> None:
         assert self._conn is not None
         self._conn.execute("""
             INSERT INTO live_positions
             (code, volume, can_use_volume, frozen_volume, pending_buy_volume,
              avg_cost, last_price, market_value, float_profit, profit_rate,
-             peak_price, sell_count, entry_date, managed, strategy_name)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+             peak_price, sell_count, entry_date, managed, strategy_name, tp_triggered)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(code) DO UPDATE SET
                 volume=excluded.volume, can_use_volume=excluded.can_use_volume,
                 frozen_volume=excluded.frozen_volume,
                 pending_buy_volume=excluded.pending_buy_volume,
                 avg_cost=excluded.avg_cost, last_price=excluded.last_price,
                 market_value=excluded.market_value, float_profit=excluded.float_profit,
-                profit_rate=excluded.profit_rate, peak_price=excluded.peak_price,
+                profit_rate=excluded.profit_rate,
+                peak_price=GREATEST(COALESCE(live_positions.peak_price, 0), COALESCE(excluded.peak_price, 0)),
                 sell_count=excluded.sell_count, entry_date=excluded.entry_date,
-                managed=excluded.managed, strategy_name=excluded.strategy_name
+                managed=excluded.managed, strategy_name=excluded.strategy_name,
+                tp_triggered=excluded.tp_triggered
         """, [
             data.get("code"), data.get("volume", 0), data.get("can_use_volume", 0),
             data.get("frozen_volume", 0), data.get("pending_buy_volume", 0),
@@ -311,6 +418,7 @@ class LiveTraderStore:
             data.get("profit_rate", 0.0), data.get("peak_price", 0.0),
             data.get("sell_count", 0), data.get("entry_date"),
             data.get("managed", True), data.get("strategy_name", ""),
+            data.get("tp_triggered", "[]"),
         ])
 
     # ===== 查询 =====
@@ -330,11 +438,11 @@ class LiveTraderStore:
         """将临时 order_id(seq) 更新为 QMT 真实 order_id"""
         assert self._conn is not None
         with self._db_lock:
-            result = self._conn.execute(
+            self._conn.execute(
                 "UPDATE live_orders SET order_id = ? WHERE order_id = ?",
                 [new_id, old_id]
             )
-            return result.fetchone()[0] > 0 if result.fetchone() else False
+            return True
 
     def get_order_by_client_id(self, client_order_id: str) -> Optional[Dict[str, Any]]:
         """C3 幂等检查:按 client_order_id 查"""
@@ -358,15 +466,19 @@ class LiveTraderStore:
         cols = [d[0] for d in self._conn.description]
         return dict(zip(cols, rows))
 
-    def get_inflight_orders(self) -> List[Dict[str, Any]]:
-        """获取在途订单(非终态,§17.1 启动恢复)"""
+    def get_inflight_orders(self, live_only: bool = False) -> List[Dict[str, Any]]:
+        """获取在途订单(非终态,§17.1 启动恢复)
+
+        v2审计中-7: live_only=True 只返回真实在途(过滤 dry-run mock 单,
+        模式切换撤单/轮询用,防 mock 残留卡死切换)。
+        """
         assert self._conn is not None
         from app.utils.xtquant_compat import ORDER_STATUS_TERMINAL
         placeholders = ",".join("?" * len(ORDER_STATUS_TERMINAL))
-        rows = self._conn.execute(
-            f"SELECT * FROM live_orders WHERE status NOT IN ({placeholders})",
-            list(ORDER_STATUS_TERMINAL)
-        ).fetchall()
+        sql = f"SELECT * FROM live_orders WHERE status NOT IN ({placeholders})"
+        if live_only:
+            sql += " AND mode = 'live'"
+        rows = self._conn.execute(sql, list(ORDER_STATUS_TERMINAL)).fetchall()
         if not rows:
             return []
         cols = [d[0] for d in self._conn.description]
@@ -598,6 +710,49 @@ class LiveTraderStore:
                 [volume, code]
             )
             return result.fetchone()[0] > 0
+
+    def refresh_quotes(self, quotes: Dict[str, Dict[str, float]]) -> int:
+        """批量刷新持仓行情(行情订阅回调 / scheduler 周期任务用)
+
+        仅更新现价/市值/浮盈三字段,不触碰 volume/avg_cost 等关键数据,
+        保证 QMT 报价断流时不会写脏数量和成本。
+
+        Args:
+            quotes: {code: {lastPrice, lastClose, ...}} 来自 get_realtime_quotes
+
+        Returns:
+            实际更新的持仓条数
+        """
+        assert self._conn is not None
+        if not quotes:
+            return 0
+        updated = 0
+        with self._db_lock:
+            for code, q in quotes.items():
+                last = float(q.get("lastPrice", 0) or 0)
+                if last <= 0:
+                    continue
+                # 读现有持仓,计算市值和浮盈
+                row = self._conn.execute(
+                    "SELECT volume, avg_cost FROM live_positions WHERE code = ?",
+                    [code]
+                ).fetchone()
+                if not row:
+                    continue
+                volume = int(row[0] or 0)
+                avg_cost = float(row[1] or 0)
+                market_value = last * volume
+                float_profit = (last - avg_cost) * volume
+                self._conn.execute(
+                    "UPDATE live_positions SET last_price = ?, "
+                    "market_value = ?, float_profit = ?, "
+                    "peak_price = GREATEST(COALESCE(peak_price, 0), ?) WHERE code = ?",
+                    [last, market_value, float_profit, last, code],
+                )
+                updated += 1
+        if updated:
+            logger.debug(f"持仓行情刷新: {updated} 条")
+        return updated
 
     # 历史命名,实际为 API 服务端信号
     def get_latest_heartbeat(self, source: str = "docker_tdx") -> Optional[Dict[str, Any]]:

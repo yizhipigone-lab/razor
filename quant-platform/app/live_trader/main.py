@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -78,7 +78,11 @@ async def lifespan(app: FastAPI):
     # 加载配置(fail-fast 校验)
     config = load_config()
     _state["config"] = config
-    logger.info(f"模式: {config.mode} | 资金: {config.live_capital} | 账号: {config.qmt_account_id}")
+    # v2(A6): 运行时状态(mode/开关)从 config 移出,支持运行时切换;启动单源(F6)
+    from .runtime_state import load_runtime_state
+    runtime_state = load_runtime_state(config)
+    _state["runtime_state"] = runtime_state
+    logger.info(f"模式: {runtime_state.mode} | 资金: {config.live_capital} | 账号: {config.qmt_account_id}")
 
     # 启动互斥(§16.8):检查 8081(qmt_proxy 已废弃)是否在跑(安全守卫)
     if _check_port_in_use(8081):
@@ -108,12 +112,12 @@ async def lifespan(app: FastAPI):
             notifier.kill_switch_activated("启动时检测到残留 kill switch", "startup_check")
 
     qmt = QmtWrapper(config)
-    callback = CallbackHandler(config, store, kill_switch, clearance_lock, pnl_engine, notifier)
+    callback = CallbackHandler(config, store, kill_switch, clearance_lock, pnl_engine, notifier, runtime_state)
     conn = ConnectionManager(config, qmt, callback, kill_switch, store)
     risk_gate = RiskGate(config, store, kill_switch, qmt)
     reconciler = Reconciler(config, store, qmt, kill_switch, notifier, pnl_engine)
     exit_monitor = ExitMonitor(config, store, qmt, risk_gate, clearance_lock,
-                                kill_switch, callback, audit, pnl_engine)
+                                kill_switch, callback, audit, pnl_engine, runtime_state)
 
     # 注入依赖
     callback.kill_switch = kill_switch
@@ -126,16 +130,35 @@ async def lifespan(app: FastAPI):
         conn.connect()
         # 启动恢复(§17.1)
         conn.reconcile_on_startup()
-        # 持仓接管(§3.3.1)
-        _takeover_positions(store, qmt, config, audit)
+        # 持仓接管(§3.3.1),返回 QMT 实际持仓集合供残留检查复用
+        confirmed_qmt_codes = _takeover_positions(store, qmt, config, audit)
         # 清理 dry-run 残留(§18.3 严格保护:live 启动时校验无 dry-run 残留)
-        _cleanup_dryrun_residue(store, config, audit)
+        _cleanup_dryrun_residue(store, config, audit, confirmed_qmt_codes=confirmed_qmt_codes)
         # 写入当日首条资产备份(为闸门5a日亏计算提供基准,§16.4)
         if qmt.connected:
             asset_data = qmt.query_asset()
             if asset_data:
                 store.backup_asset(asset_data)
                 logger.info(f"资产备份(闸门5a基准): total_asset={asset_data.get('total_asset', 0):.2f}")
+        # 2026-07-04 修复:启动时若 QMT 连接+持仓接管成功,自动解除残留 kill_switch
+        # 场景:周末 QMT 服务端维护期间,旧版本因 status=3 误激活 kill_switch,
+        #       维护结束后新进程启动时,残留 .kill_switch 文件导致系统一直处于停机状态。
+        #       现在连接+接管都成功说明交易通道正常,自动清理残留(只清来源=on_account_status 的残留)
+        if kill_switch.is_active() and qmt.connected and confirmed_qmt_codes is not None:
+            ks_status = kill_switch.status()
+            if ks_status.get("source") in ("on_account_status", "startup_check"):
+                logger.warning(
+                    f"启动健康检查:QMT 已连接+持仓接管成功({len(confirmed_qmt_codes)} 只),"
+                    f"自动清理残留 kill_switch(原因为 {ks_status.get('source')}:{ks_status.get('reason', '')})"
+                )
+                kill_switch.deactivate()
+                audit.log("startup_killswitch_auto_clear",
+                          reason=f"QMT连接+持仓接管成功,自动解除残留 ({ks_status.get('reason', '')})")
+            else:
+                logger.warning(
+                    f"启动时 kill_switch 已激活(source={ks_status.get('source')}),"
+                    f"非自动激活,需人工解除"
+                )
     except Exception as e:
         logger.error(f"QMT 连接失败: {e}")
         kill_switch.activate(reason=f"QMT连接失败: {e}", source="startup")
@@ -178,15 +201,20 @@ async def lifespan(app: FastAPI):
     logger.info("live_trader 已关闭")
 
 
-def _takeover_positions(store, qmt, config, audit) -> None:
-    """持仓接管(§3.3.1):分类 managed=true/false"""
+def _takeover_positions(store, qmt, config, audit) -> set:
+    """持仓接管(§3.3.1):分类 managed=true/false
+
+    Returns:
+        QMT 实际持仓代码集合(供后续残留检查复用,避免重复查询 xtquant 抖动)
+    """
     if not qmt.connected:
-        return
+        return set()
     qmt_positions = qmt.query_positions()
     if not qmt_positions:
         logger.info("持仓接管:QMT 无持仓")
-        return
+        return set()
 
+    qmt_codes = set()
     preserved = set(config.preserved_codes)
     for pos in qmt_positions:
         code = pos.get("code", "")
@@ -194,6 +222,7 @@ def _takeover_positions(store, qmt, config, audit) -> None:
             continue
         from app.utils.xtquant_compat import format_code, strip_code_suffix
         code_fmt = format_code(code) if '.' not in code else code
+        qmt_codes.add(code_fmt)
         managed = code_fmt not in preserved and strip_code_suffix(code_fmt) not in [strip_code_suffix(p) for p in preserved]
 
         existing = store.get_position(code_fmt)
@@ -218,17 +247,19 @@ def _takeover_positions(store, qmt, config, audit) -> None:
         tag = "保留(ETF)" if not managed else "策略"
         logger.info(f"持仓接管: {code_fmt} {tag} vol={pos.get('volume',0)}")
         audit.log("position_takeover", code=code_fmt, reason=f"{tag} vol={pos.get('volume',0)}")
+    return qmt_codes
 
 
-def _cleanup_dryrun_residue(store, config, audit) -> None:
+def _cleanup_dryrun_residue(store, config, audit, confirmed_qmt_codes: set = None) -> None:
     """清理 dry-run 残留(§18.3 严格保护)
 
     live 启动时(或 dry-run 切 live 前),删除本地 live_positions 中
     QMT 实际没有但本地有的 managed=true 持仓(dry-run mock 下单残留)。
 
     规则:
-    - 拉本地所有持仓 + QMT 实际持仓(QMT 查询做 3 次重试取并集,对抗
-      xtquant 缓存抖动导致的"部分结果")
+    - 优先使用 confirmed_qmt_codes(由 _takeover_positions 刚确认的 QMT 持仓集合),
+      避免重复查询 xtquant 导致缓存抖动误报(2026-07-02 事故根因)
+    - 无 confirmed_qmt_codes 时才独立查询 QMT(QMT 查询做 3 次重试取并集)
     - 本地 managed=true 但 QMT 没有的 → 候选残留
     - 保留持仓(managed=false,ETF)不动,即使 QMT 没有也不删(可能是临时查不到)
     - dry-run 模式:候选残留直接清理(mock 数据,安全)
@@ -242,24 +273,28 @@ def _cleanup_dryrun_residue(store, config, audit) -> None:
         if not local_positions:
             return
 
-        # QMT 实际持仓代码集合(3 次重试取并集,任一次查到即视为 QMT 有)
-        qmt_codes = set()
-        qmt = _state.get("qmt")
-        if qmt and qmt.connected:
-            from app.utils.xtquant_compat import format_code
-            import time as _time
-            for attempt in range(3):
-                qmt_positions = qmt.query_positions()
-                for p in (qmt_positions or []):
-                    code = p.get("code", "")
-                    if code:
-                        qmt_codes.add(format_code(code) if '.' not in code else code)
-                # 已覆盖本地全部 managed 代码即可提前结束
-                local_managed = {p.get("code", "") for p in local_positions if p.get("managed", True)}
-                if local_managed <= qmt_codes:
-                    break
-                if attempt < 2:
-                    _time.sleep(0.2)
+        # QMT 实际持仓代码集合
+        # 优先复用 _takeover_positions 刚确认的集合(防抖动误报)
+        qmt_codes = set(confirmed_qmt_codes) if confirmed_qmt_codes else set()
+
+        # 无 confirmed 集合时才独立查询 QMT(3 次重试取并集)
+        if not qmt_codes:
+            qmt = _state.get("qmt")
+            if qmt and qmt.connected:
+                from app.utils.xtquant_compat import format_code
+                import time as _time
+                for attempt in range(3):
+                    qmt_positions = qmt.query_positions()
+                    for p in (qmt_positions or []):
+                        code = p.get("code", "")
+                        if code:
+                            qmt_codes.add(format_code(code) if '.' not in code else code)
+                    # 已覆盖本地全部 managed 代码即可提前结束
+                    local_managed = {p.get("code", "") for p in local_positions if p.get("managed", True)}
+                    if local_managed <= qmt_codes:
+                        break
+                    if attempt < 2:
+                        _time.sleep(0.2)
 
         # 找候选残留:本地 managed=true 但 QMT 三次都没查到
         residue = []
@@ -352,8 +387,9 @@ async def status():
     qmt = _state.get("qmt")
     ks = _state.get("kill_switch")
     store = _state.get("store")
+    runtime_state = _state.get("runtime_state")
     return {
-        "mode": config.mode if config else "unknown",
+        "mode": runtime_state.mode if runtime_state else (config.mode if config else "unknown"),
         "qmt_connected": qmt.connected if qmt else False,
         "kill_switch": ks.status() if ks else {"activated": False},
         "live_capital": config.live_capital if config else 0,
@@ -522,6 +558,7 @@ def place_order_service(intent, source: str = "WEB", lock_wait_sec: int = 30) ->
     )
 
     config = _state.get("config")
+    runtime_state = _state.get("runtime_state")  # v2(A6): 运行时 mode
     store = _state.get("store")
     qmt = _state.get("qmt")
     risk_gate = _state.get("risk_gate")
@@ -624,7 +661,7 @@ def place_order_service(intent, source: str = "WEB", lock_wait_sec: int = 30) ->
 
     try:
         # 下单(不等 callback,只等 seq 返回 — 漏洞D修复)
-        if config.mode == "dry-run":
+        if runtime_state and runtime_state.is_dry_run():
             if not callback_handler:
                 return {"ok": False, "status": "error", "reason": "callback_handler 未初始化"}
             order_id = callback_handler.mock_order_async_response(
@@ -663,7 +700,7 @@ def place_order_service(intent, source: str = "WEB", lock_wait_sec: int = 30) ->
                 "status": 50,  # 已报
                 "status_msg": "已提交",
                 "seq": order_id or 0,
-                "mode": config.mode,
+                "mode": runtime_state.mode if runtime_state else config.mode,
                 "strategy_name": intent.strategy_name,
                 "order_remark": intent.reason,
                 "terminal": terminal,
@@ -672,21 +709,22 @@ def place_order_service(intent, source: str = "WEB", lock_wait_sec: int = 30) ->
             })
 
         if audit_logger:
-            audit_logger.order_placed(code_fmt, order_id, config.mode, {
+            audit_logger.order_placed(code_fmt, order_id,
+                                       runtime_state.mode if runtime_state else config.mode, {
                 "direction": intent.direction, "volume": intent.volume,
                 "price": actual_price, "price_type": intent.price_type,
                 "source": source,
             })
 
         logger.info(f"下单成功 {code_fmt} {intent.direction} {intent.volume}@{actual_price}"
-                    f" oid={order_id} mode={config.mode} source={source}")
+                    f" oid={order_id} mode={runtime_state.mode if runtime_state else config.mode} source={source}")
 
         return {
             "ok": True, "order_id": order_id,
             "client_order_id": intent.client_order_id,
             "code": code_fmt,
             "status": "submitted", "reason": "",
-            "mode": config.mode, "source": source,
+            "mode": runtime_state.mode if runtime_state else config.mode, "source": source,
         }
 
     except Exception as e:
@@ -802,8 +840,10 @@ async def buy_signal(req: dict, authorization: str = ""):
     if not config:
         raise HTTPException(503, "未初始化")
 
-    # 信号开关检查
-    if not config.buy_signal_enabled:
+    # 信号开关检查(v2 A9: 运行时开关,从 runtime_state 读)
+    runtime_state = _state.get("runtime_state")
+    _buy_enabled = runtime_state.buy_enabled if runtime_state else config.buy_signal_enabled
+    if not _buy_enabled:
         raise HTTPException(403, "buy_signal 未启用")
 
     # 鉴权(从 Header 读取 Authorization)
@@ -991,6 +1031,158 @@ async def set_scan_interval(body: dict):
     from core.settings import settings
     settings.set("live_trader", "exit_scan_interval_sec", seconds, save=True)
     return {"interval_sec": scheduler.get_scan_interval(), "saved": True}
+
+
+# ===== 运行时开关/模式切换(v2 §3.3/§3.4)=====
+
+def _is_local(request) -> bool:
+    """v2(A8): admin 接口仅允许本地调用(防远程误操作真钱)"""
+    if not request or not getattr(request, "client", None):
+        return False
+    return request.client.host in ("127.0.0.1", "::1", "localhost")
+
+
+@app.get("/live/config/switches")
+async def get_switches():
+    """读取买入/卖出开关状态"""
+    rs = _state.get("runtime_state")
+    if not rs:
+        raise HTTPException(503, "未初始化")
+    return rs.get_state()
+
+
+@app.put("/live/config/switches")
+async def set_switches(request: Request, body: dict):
+    """切换买入/卖出开关(仅本地)"""
+    if not _is_local(request):
+        raise HTTPException(403, "仅允许本地调用")
+    rs = _state.get("runtime_state")
+    if not rs:
+        raise HTTPException(503, "未初始化")
+    buy = body.get("buy_enabled")
+    sell = body.get("sell_enabled")
+    old = rs.set_switches(buy_enabled=buy, sell_enabled=sell)
+    audit = _state.get("audit")
+    if audit:
+        audit.log("switch_changed", snapshot={"old": old, "new": {"buy_enabled": buy, "sell_enabled": sell}})
+    logger.info(f"开关切换: {old} -> buy={buy} sell={sell}")
+    return rs.get_state()
+
+
+@app.get("/live/config/mode")
+async def get_mode():
+    """读取当前模式(dry-run/live)"""
+    rs = _state.get("runtime_state")
+    if not rs:
+        raise HTTPException(503, "未初始化")
+    return {"mode": rs.mode}
+
+
+@app.post("/live/config/mode")
+async def set_mode(request: Request, body: dict):
+    """切换模式(仅本地)。live→dry-run 撤在途单等终态;dry-run→live 清残留+QMT检查"""
+    if not _is_local(request):
+        raise HTTPException(403, "仅允许本地调用")
+    rs = _state.get("runtime_state")
+    if not rs:
+        raise HTTPException(503, "未初始化")
+    new_mode = body.get("mode")
+    if new_mode not in ("dry-run", "live"):
+        raise HTTPException(400, "mode 必须 dry-run/live")
+
+    # v2审计高-2: 防并发切换(标志带时间戳,超60s自动恢复防死锁)
+    import time as _time
+    _ms = _state.get("mode_switching")
+    if _ms and (_time.time() - _ms) < 60:
+        raise HTTPException(409, "模式切换中,请稍后(已有切换在进行)")
+    _state["mode_switching"] = _time.time()
+
+    ks = _state.get("kill_switch")
+    store = _state.get("store")
+    qmt = _state.get("qmt")
+    audit = _state.get("audit")
+
+    # kill_switch 激活时禁止切 live(§3.4)
+    if new_mode == "live" and ks and ks.is_active():
+        raise HTTPException(409, "kill_switch 激活中,禁止切 live")
+
+    # live→dry-run:撤所有在途真实委托 + 轮询等终态(超时阻断,§3.4)
+    if new_mode == "dry-run" and rs.is_live():
+        inflight = store.get_inflight_orders(live_only=True) if store else []
+        for o in inflight:
+            oid = o.get("order_id")
+            if oid and qmt:
+                try:
+                    ret = qmt.cancel_order(oid)
+                    # v2审计高-1: 检查返回值(0成功,-1断开,-3未找到)
+                    if ret == -1:
+                        raise HTTPException(409, f"撤单 {oid} 失败(QMT 断开),阻断切换")
+                    if ret not in (0, -3):
+                        logger.warning(f"撤单 {oid} 返回 {ret}")
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    logger.warning(f"撤单 {oid} 异常: {e}")
+        # 轮询等终态(每0.5s,上限30s),只看 live 在途(中-7)
+        remaining = inflight
+        for _ in range(60):
+            await asyncio.sleep(0.5)
+            remaining = store.get_inflight_orders(live_only=True) if store else []
+            if not remaining:
+                break
+        if remaining:
+            raise HTTPException(409, f"撤单未全部终态,阻断切换(剩余 {len(remaining)} 笔,需人工处理)")
+
+    # dry-run→live:清 mock 残留 + QMT 连接检查(§3.4)
+    if new_mode == "live" and rs.is_dry_run():
+        if not qmt or not qmt.connected:
+            raise HTTPException(409, "QMT 未连接,禁止切 live")
+        if store:
+            try:
+                store.clean_dryrun_residue()
+            except Exception as e:
+                logger.error(f"清 dry-run 残留失败: {e}")
+
+    old = rs.set_mode(new_mode)
+    _state["mode_switching"] = 0  # v2高-2: 清切换标志
+    if audit:
+        audit.log("mode_switched", snapshot={"old": old, "new": new_mode})
+    logger.info(f"模式切换: {old} -> {new_mode}")
+    return {"old": old, "new": new_mode}
+
+
+@app.get("/live/config/risk-params")
+async def get_risk_params():
+    """返回 risk 段止盈止损参数(前端展示用,不写死)"""
+    from core.settings import settings
+    keys = ["hard_stop_loss_pct", "take_profit_tiers", "trailing_stop_activate_pct",
+            "trailing_stop_drawdown_pct", "time_exit_days", "time_exit_min_profit_pct",
+            "time_exit_force_days", "first_day_exit_min_profit", "first_day_exit_days"]
+    return {"params": {k: settings.get("risk", k) for k in keys}}
+
+
+@app.get("/live/equity")
+async def get_equity(days: int = 1):
+    """净值曲线数据(从 live_assets_backup 5min 快照,v2 §3.5)"""
+    store = _state.get("store")
+    if not store:
+        raise HTTPException(503, "未初始化")
+    try:
+        assert store._conn is not None
+        from datetime import date as _date, timedelta
+        start = _date.today() - timedelta(days=int(days))
+        rows = store._conn.execute(
+            "SELECT backup_date, backup_time, cash, market_value, total_asset "
+            "FROM live_assets_backup WHERE backup_date >= ? "
+            "ORDER BY backup_date, backup_time",
+            [start]
+        ).fetchall()
+        pts = [{"date": str(r[0]), "time": r[1], "cash": float(r[2] or 0),
+                "market_value": float(r[3] or 0), "total": float(r[4] or 0)} for r in rows]
+        return {"points": pts}
+    except Exception as e:
+        logger.error(f"净值查询失败: {e}")
+        return {"points": [], "error": str(e)}
 
 
 # ===== 子进程生命周期管理(从 qmt_proxy_server.py 迁移) =====

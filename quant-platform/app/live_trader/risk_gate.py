@@ -15,7 +15,6 @@ from typing import Dict, List, Optional, Tuple
 from core.logger import get_logger
 
 from .config import LiveTraderConfig
-from .exceptions import KillSwitchActive, RiskGateRejection
 from .schemas import OrderIntent
 
 logger = get_logger("live_trader.risk_gate")

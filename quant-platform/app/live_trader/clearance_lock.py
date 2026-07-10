@@ -90,16 +90,6 @@ class ClearanceLock:
             self._cleanup_expired()
             return key in self._locks
 
-    def renew(self, code: str, ttl: Optional[float] = None) -> bool:
-        """续期(§19.5 M2:尾盘 TTL 缩短)"""
-        key = self._key(code)
-        ttl = ttl or self.config.clearance_lock_ttl_sec
-        with self._lock:
-            if key not in self._locks:
-                return False
-            self._locks[key]["expire_at"] = time.time() + ttl
-            return True
-
     def _cleanup_expired(self) -> None:
         """清理过期锁"""
         now = time.time()
@@ -109,18 +99,3 @@ class ClearanceLock:
             if entry.get("order_id"):
                 self._order_index.pop(entry["order_id"], None)
             logger.warning(f"清仓锁 TTL 过期释放: {k}")
-
-    def all_locks(self) -> Dict[str, Dict]:
-        """查看所有锁(调试用)"""
-        with self._lock:
-            self._cleanup_expired()
-            return dict(self._locks)
-
-
-class IClearanceLock:
-    """Redis 实现接口(预留,多进程时启用)
-
-    多进程部署时用 Redis SET NX EX 300 实现:
-        SET lock:{env}:{account}:{code} {order_id} NX EX 300
-    """
-    pass

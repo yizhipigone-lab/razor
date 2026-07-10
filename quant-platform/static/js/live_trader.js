@@ -1,6 +1,6 @@
 // ─── Live Trader 实盘交易 ─────────────────────────────────
 // live_trader 在 Windows 端 8001,前端浏览器直连(同机)
-const LIVE_API = 'http://127.0.0.1:8001';
+const LIVE_API = 'http://' + (window.location.hostname || '127.0.0.1') + ':8001';
 
 async function _liveFetch(path, opts) {
   try {
@@ -91,20 +91,7 @@ async function loadLiveOrders() {
 }
 
 function loadLiveGates() {
-  const el = document.getElementById('live-gates');
-  if (!el) return;
-  el.innerHTML =
-    '<div>闸门1 单笔金额 ≤ 20%×资金</div>' +
-    '<div>闸门2 现金保留 ≥ 10% (仅buy)</div>' +
-    '<div>闸门3 单只集中度 ≤ 30% (含在途预扣 C1)</div>' +
-    '<div>闸门4 总仓位 ≤ 90% (含在途预扣 C1)</div>' +
-    '<div>闸门5a 日亏 ≥ 3% 禁buy (QMT缺价fail-safe H1)</div>' +
-    '<div>闸门5b 单笔浮亏 ≥ 5% 禁该只</div>' +
-    '<div>闸门6 启动自检 (QMT连接+参数+DB)</div>' +
-    '<div>闸门7 连续5次risk/broker拒→kill (5分钟窗 H4)</div>' +
-    '<div>闸门8 kill switch 激活时全拒</div>' +
-    '<div>闸门9 T+1 卖出≤can_use_volume (H6)</div>' +
-    '<div style="margin-top:6px;color:var(--text-muted);font-size:11px;">闸门实时状态在下单时触发检查</div>';
+  // v2审计H3: 已由 loadLiveRiskParams 替代(展示 risk 段实际参数,非写死闸门文案)。保留空壳防旧 onclick 报错。
 }
 
 async function runReconcile() {
@@ -119,7 +106,7 @@ async function runReconcile() {
       html += d.details.map(x => {
         const lc = x.level === 'CRITICAL' ? 'red' : (x.level === 'WARN' ? 'orange' : 'var(--text-muted)');
         const tag = x.managed ? '' : ' [ETF豁免]';
-        return '<div style="color:' + lc + ';">  ' + x.code + ' local=' + x.local + ' qmt=' + x.qmt + ' diff=' + x.diff + ' ' + x.level + tag + '</div>';
+        return '<div style="color:' + lc + ';">  ' + x.code + ' local=' + x.local_volume + ' qmt=' + x.qmt_volume + ' diff=' + x.diff_volume + ' ' + x.level + tag + '</div>';
       }).join('');
     }
     el.innerHTML = html;
@@ -197,4 +184,137 @@ async function saveScanInterval() {
   } catch (e) {
     if (msgEl) { msgEl.textContent = '保存失败: ' + e.message; msgEl.style.color = '#e74c3c'; }
   }
+}
+
+// ─── v2: 净值曲线/成交/开关/模式/参数 ──────────────────
+let _liveEquityChart = null;
+async function loadLiveEquity() {
+  const el = document.getElementById('live-equity-chart');
+  if (!el) return;
+  try {
+    const d = await _liveFetch('/live/equity?days=1');
+    const pts = d.points || [];
+    if (pts.length === 0) { el.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:60px;">暂无净值数据(盘中每 5min 采样)</div>'; return; }
+    const xs = pts.map(p => (p.date || '') + ' ' + (p.time || ''));
+    const totals = pts.map(p => p.total);
+    if (!_liveEquityChart) _liveEquityChart = echarts.init(el);
+    _liveEquityChart.setOption({
+      tooltip: { trigger: 'axis' },
+      grid: { left: 55, right: 20, top: 20, bottom: 35 },
+      xAxis: { type: 'category', data: xs, axisLabel: { fontSize: 10 } },
+      yAxis: { type: 'value', scale: true, axisLabel: { fontSize: 10 } },
+      series: [{ name: '总资产', type: 'line', data: totals, smooth: true,
+                lineStyle: { width: 2 }, areaStyle: { opacity: 0.1 } }],
+    }, true);
+  } catch (e) { el.innerHTML = '<div style="color:red;padding:20px;">净值加载失败: ' + e.message + '</div>'; }
+}
+
+async function loadLiveDeals() {
+  const tbody = document.getElementById('live-deals-tbody');
+  if (!tbody) return;
+  try {
+    const data = await _liveFetch('/live/deals?limit=50');
+    if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan=6 style="text-align:center;color:var(--text-muted);">无成交</td></tr>'; return; }
+    tbody.innerHTML = data.map(d => {
+      const dirColor = d.direction === 'buy' ? 'red' : 'green';
+      const ts = d.traded_at ? String(d.traded_at).slice(11, 19) : '';
+      return '<tr><td>' + ts + '</td><td>' + d.code + '</td>' +
+        '<td style="color:' + dirColor + ';">' + (d.direction === 'buy' ? '买入' : '卖出') + '</td>' +
+        '<td>' + (d.filled_price || 0).toFixed(2) + '</td><td>' + (d.filled_volume || 0) + '</td>' +
+        '<td>' + (d.mode || '') + '</td></tr>';
+    }).join('');
+  } catch (e) { tbody.innerHTML = '<tr><td colspan=6 style="color:red;">加载失败</td></tr>'; }
+}
+
+async function loadLiveSwitches() {
+  try {
+    const d = await _liveFetch('/live/config/switches');
+    const setEl = (id, v) => { const el = document.getElementById(id); if (el) { el.textContent = v ? '开' : '关'; el.style.color = v ? 'green' : 'var(--text-muted)'; } };
+    setEl('live-buy-switch', d.buy_enabled);
+    setEl('live-sell-switch', d.sell_enabled);
+  } catch (e) { /* 静默 */ }
+}
+
+let _liveSwitching = false;
+async function toggleLiveSwitch(which) {
+  if (_liveSwitching) return;  // v2审计中-6: 防抖
+  const msgEl = document.getElementById('live-switch-msg');
+  try {
+    const cur = await _liveFetch('/live/config/switches');
+    const key = which === 'buy' ? 'buy_enabled' : 'sell_enabled';
+    const newVal = !cur[key];
+    if (!confirm('确认 ' + (which === 'buy' ? '买入' : '卖出') + ' 开关 -> ' + (newVal ? '开' : '关') + '?')) return;
+    _liveSwitching = true;
+    await _liveFetch('/live/config/switches', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [key]: newVal }),
+    });
+    await loadLiveSwitches();
+    if (msgEl) { msgEl.textContent = '✓ ' + (which === 'buy' ? '买入' : '卖出') + '已' + (newVal ? '开启' : '关闭'); msgEl.style.color = 'green'; }
+  } catch (e) {
+    if (msgEl) { msgEl.textContent = '切换失败: ' + e.message; msgEl.style.color = 'red'; }
+  } finally {
+    _liveSwitching = false;
+  }
+}
+
+async function loadLiveModeDisplay() {
+  try {
+    const d = await _liveFetch('/live/config/mode');
+    const el = document.getElementById('live-mode-display');
+    if (el) { el.textContent = d.mode; el.style.color = d.mode === 'live' ? 'red' : 'orange'; }
+  } catch (e) { /* 静默 */ }
+}
+
+async function switchLiveMode() {
+  if (_liveSwitching) return;  // v2审计高-2: 防抖(重复点击反向误切)
+  const msgEl = document.getElementById('live-switch-msg');
+  try {
+    const cur = await _liveFetch('/live/config/mode');
+    const target = cur.mode === 'live' ? 'dry-run' : 'live';
+    const warn = target === 'live' ? '⚠ 将开始真钱交易!' : '将撤所有在途单后切模拟(等终态,超时阻断)';
+    if (!confirm('确认切换模式 ' + cur.mode + ' -> ' + target + '?\n' + warn)) return;
+    _liveSwitching = true;
+    if (msgEl) { msgEl.textContent = '切换中(最长30s,撤单等终态)...'; msgEl.style.color = 'orange'; }
+    const d = await _liveFetch('/live/config/mode', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: target }),
+    });
+    if (msgEl) { msgEl.textContent = '✓ 已切换 ' + d.old + ' -> ' + d.new; msgEl.style.color = 'green'; }
+    loadLiveModeDisplay(); loadLiveStatus();
+  } catch (e) {
+    if (msgEl) { msgEl.textContent = '切换失败: ' + e.message; msgEl.style.color = 'red'; }
+  } finally {
+    _liveSwitching = false;
+  }
+}
+
+async function loadLiveRiskParams() {
+  const el = document.getElementById('live-gates');
+  if (!el) return;
+  try {
+    const d = await _liveFetch('/live/config/risk-params');
+    const p = d.params || {};
+    const tiers = (p.take_profit_tiers || []).map((t, i) =>
+      'TP' + (i + 1) + ' +' + ((t.profit_pct || 0) * 100).toFixed(1) + '% 卖' + ((t.sell_ratio || 0) * 100).toFixed(0) + '%').join(' | ');
+    // v2审计中-8: 空值显示"未配置",不误导为 0%
+    const pct = (v) => (v === null || v === undefined ? '未配置' : (Number(v)) + '%');
+    const fdProfit = pct(p.first_day_exit_min_profit);
+    el.innerHTML =
+      '<div style="color:var(--text2);font-size:11px;margin-bottom:4px;">参数来自 risk 段,实盘与模拟盘共用(改此参数影响实盘真钱)</div>' +
+      '<div>HS 硬止损 ' + pct(p.hard_stop_loss_pct) + '</div>' +
+      '<div>' + (tiers || 'TP 未配置') + '</div>' +
+      '<div>TR 移动止盈 激活 ' + pct(p.trailing_stop_activate_pct) + ' 回撤 ' + pct(p.trailing_stop_drawdown_pct) + '</div>' +
+      '<div>TC 时间退出 ' + (p.time_exit_days ?? '—') + '天 盈利>' + pct(p.time_exit_min_profit_pct) + '</div>' +
+      '<div>TF 强制退出 ' + (p.time_exit_force_days ?? '—') + '天</div>' +
+      '<div>FD 首日离场 盈利>' + fdProfit + ' ' + (p.first_day_exit_days ?? '—') + '天</div>' +
+      '<div style="margin-top:6px;color:var(--text-muted);font-size:11px;">闸门1~9 在下单时触发检查(详见 risk_gate.py)</div>';
+  } catch (e) { el.innerHTML = '<div style="color:red;">参数加载失败</div>'; }
+}
+
+// v2: 实盘 tab 激活时加载全部(含新增展示)
+async function loadLiveAll() {
+  loadLiveStatus(); loadLiveAsset(); loadLivePositions(); loadLiveOrders();
+  loadLiveEquity(); loadLiveDeals(); loadLiveSwitches(); loadLiveModeDisplay();
+  loadLiveRiskParams(); loadScanInterval();
 }
