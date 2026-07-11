@@ -512,3 +512,13 @@ tr:hover td { background: var(--bg3); }
 @media (max-width: 1200px) {
   .lt-kpi-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* 折叠区 body 工具类（清理内联 style） */
+.lt-lh-2 { line-height: 2.2; }
+.lt-lh-1-8 { line-height: 1.8; }
+.lt-lh-1-6 { line-height: 1.6; }
+.mt-1 { margin-top: 4px; }
+.mt-6 { margin-top: 6px; }
+.mt-2 { margin-top: 8px; }
+.flex-gap-c { display: flex; gap: 8px; align-items: center; }
+.lt-pre { max-height: 200px; overflow: auto; background: var(--bg); padding: 8px; border-radius: 4px; }

@@ -1568,14 +1568,14 @@
               <span class="lt-accordion__summary">买入 <b id="lt-sum-buy">—</b> · 卖出 <b id="lt-sum-sell">—</b> · <b id="lt-sum-mode">—</b></span>
             </div>
             <div class="lt-accordion__body">
-              <div class="fs-13" style="line-height:2.2;">
+              <div class="fs-13 lt-lh-2">
                 <div>买入开关: <b id="live-buy-switch">—</b>
                   <button class="btn btn-sm btn-ghost" onclick="toggleLiveSwitch('buy')">切换</button></div>
                 <div>卖出开关: <b id="live-sell-switch">—</b>
                   <button class="btn btn-sm btn-ghost" onclick="toggleLiveSwitch('sell')">切换</button></div>
-                <div style="margin-top:6px;">当前模式: <b id="live-mode-display">—</b>
+                <div class="mt-6">当前模式: <b id="live-mode-display">—</b>
                   <button class="btn btn-sm btn-ghost" onclick="switchLiveMode()">切换模式</button></div>
-                <div id="live-switch-msg" class="muted fs-xs" style="margin-top:4px;">切 live 开始真钱交易(live→dry-run 会先撤在途单等终态)</div>
+                <div id="live-switch-msg" class="muted fs-xs mt-1">切 live 开始真钱交易(live→dry-run 会先撤在途单等终态)</div>
               </div>
             </div>
           </div>
@@ -1586,7 +1586,7 @@
               <span class="lt-accordion__summary muted">(risk 段,实盘与模拟盘共用)</span>
             </div>
             <div class="lt-accordion__body">
-              <div id="live-gates" class="fs-xs" style="line-height:1.8;">点"刷新"加载</div>
+              <div id="live-gates" class="fs-xs lt-lh-1-8">点"刷新"加载</div>
             </div>
           </div>
 
@@ -1597,7 +1597,7 @@
             </div>
             <div class="lt-accordion__body">
               <button class="btn btn-sm btn-ghost mb-2" onclick="runReconcile()">手动对账</button>
-              <div id="live-reconcile" class="fs-xs" style="line-height:1.6;">点"手动对账"触发</div>
+              <div id="live-reconcile" class="fs-xs lt-lh-1-6">点"手动对账"触发</div>
             </div>
           </div>
 
@@ -1611,14 +1611,14 @@
                 <button class="btn btn-sm" onclick="runExitScan()">触发离场扫描</button>
                 <button class="btn btn-sm btn-danger" onclick="deactivateKillSwitch()">解除 Kill Switch</button>
               </div>
-              <div class="flex-gap" style="align-items:center;font-size:13px;">
+              <div class="flex-gap-c fs-13">
                 <span>离场扫描间隔:</span>
                 <input type="number" id="live-scan-interval" min="10" max="300" step="5" style="width:70px;">
                 <span>秒</span>
                 <button class="btn btn-sm" onclick="saveScanInterval()">保存</button>
                 <span id="live-scan-interval-msg" class="muted fs-xs"></span>
               </div>
-              <div class="muted fs-xs" style="margin-top:8px;">dry-run 模式下手动下单禁用(防误下单);扫描间隔范围 10~300 秒</div>
+              <div class="muted fs-xs mt-2">dry-run 模式下手动下单禁用(防误下单);扫描间隔范围 10~300 秒</div>
             </div>
           </div>
 
@@ -1632,7 +1632,7 @@
                 <input id="live-replay-oid" placeholder="输入 order_id" style="width:160px;">
                 <button class="btn btn-sm" onclick="replayOrder()">回放</button>
               </div>
-              <pre id="live-replay-out" class="fs-xs" style="max-height:200px; overflow:auto; background:var(--bg); padding:8px; border-radius:4px;">回放结果将显示在这里</pre>
+              <pre id="live-replay-out" class="fs-xs lt-pre">回放结果将显示在这里</pre>
             </div>
           </div>
         </div>
