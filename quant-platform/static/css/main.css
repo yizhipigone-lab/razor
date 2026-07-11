@@ -463,3 +463,52 @@ tr:hover td { background: var(--bg3); }
   .pad-2-8 { padding: 2px 8px; }
   /* — 复合 — */
   .nav-divider { border-left: 1px solid var(--border); margin-left: 5px; }
+
+/* ═══ 实盘交易界面 (.lt-*) ═══ */
+/* 状态徽章 pill */
+.lt-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 99px; font-size: 11px; font-weight: 500; background: var(--bg3); color: var(--text2); border: 1px solid var(--border); }
+.lt-badge--ok { color: var(--accent); border-color: var(--accent); }
+.lt-badge--warn { color: var(--orange); }
+.lt-badge--danger { color: var(--red); border-color: var(--red); }
+.lt-badge--success { color: var(--green); }
+.lt-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+
+/* 顶栏 */
+.lt-topbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.lt-topbar-badges { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.lt-topbar-meta { color: var(--text2); font-size: 11px; padding-left: 6px; }
+.lt-topbar-meta b { color: var(--text); font-weight: 600; }
+
+/* KPI 四连 */
+.lt-kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 12px; }
+.lt-kpi { background: var(--surface-1); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
+.lt-kpi__label { color: var(--text2); font-size: 11px; margin-bottom: 4px; }
+.lt-kpi__value { font-size: 22px; font-weight: 700; font-family: var(--font-num); letter-spacing: -0.5px; }
+.lt-kpi__value--accent { color: var(--accent); }
+.lt-kpi__sub { font-size: 10px; margin-top: 2px; }
+
+/* 净值工具栏 */
+.lt-chart-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.lt-chart-title { display: flex; align-items: center; gap: 8px; }
+.lt-chart-range { display: flex; gap: 2px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 2px; }
+.lt-chart-range .chip { padding: 3px 10px; min-width: auto; font-size: 11px; border: none; box-shadow: none; }
+.lt-chart-range .chip:hover { transform: none; box-shadow: none; }
+
+/* 手风琴 */
+.lt-accordion { background: var(--surface-1); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; margin-bottom: var(--gap); }
+.lt-accordion__title { background: var(--bg); padding: 10px 14px; border-bottom: 1px solid var(--line); color: var(--text2); font-size: 11px; }
+.lt-accordion__item { border-bottom: 1px solid var(--border); }
+.lt-accordion__item:last-child { border-bottom: none; }
+.lt-accordion__header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; cursor: pointer; font-size: 13px; color: var(--text); transition: background .15s; }
+.lt-accordion__header:hover { background: var(--surface-hi); }
+.lt-accordion__head-left { display: flex; align-items: center; gap: 6px; }
+.lt-accordion__arrow { color: var(--text2); transition: transform .2s; display: inline-block; }
+.lt-accordion__item.open .lt-accordion__arrow { transform: rotate(90deg); }
+.lt-accordion__body { display: none; padding: 12px 14px; }
+.lt-accordion__item.open .lt-accordion__body { display: block; }
+.lt-accordion__summary { font-size: 11px; color: var(--text2); }
+
+/* 响应式 */
+@media (max-width: 1200px) {
+  .lt-kpi-grid { grid-template-columns: repeat(2, 1fr); }
+}
