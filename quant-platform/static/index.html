@@ -1490,18 +1490,18 @@
         <div class="lt-kpi-grid">
           <div class="lt-kpi">
             <div class="lt-kpi__label">总资产</div>
-            <div class="lt-kpi__value lt-kpi__value--accent" id="lt-kpi-total">—</div>
+            <div class="lt-kpi__value lt-kpi__value--accent" id="lt-kpi-total" data-old-id="live-total">—</div>
             <div class="lt-kpi__sub" id="lt-kpi-total-sub">—</div>
           </div>
           <div class="lt-kpi">
             <div class="lt-kpi__label">持仓市值</div>
-            <div class="lt-kpi__value" id="lt-kpi-mv">—</div>
+            <div class="lt-kpi__value" id="lt-kpi-mv" data-old-id="live-mv">—</div>
             <div class="lt-kpi__sub" id="lt-kpi-mv-sub">—</div>
           </div>
           <div class="lt-kpi">
             <div class="lt-kpi__label">可用现金</div>
-            <div class="lt-kpi__value" id="lt-kpi-cash">—</div>
-            <div class="lt-kpi__sub" id="lt-kpi-cash-sub">—</div>
+            <div class="lt-kpi__value" id="lt-kpi-cash" data-old-id="live-cash">—</div>
+            <div class="lt-kpi__sub" id="lt-kpi-cash-sub" data-old-id="live-frozen">—</div>
           </div>
           <div class="lt-kpi">
             <div class="lt-kpi__label" id="lt-kpi-pnl-label">总浮盈</div>
@@ -1522,7 +1522,7 @@
               <span class="chip active" data-days="1" onclick="loadLiveEquity(1)">1日</span>
               <span class="chip" data-days="5" onclick="loadLiveEquity(5)">5日</span>
               <span class="chip" data-days="30" onclick="loadLiveEquity(30)">30日</span>
-              <span class="chip" data-days="365" onclick="loadLiveEquity(365)">全部</span>
+              <span class="chip" data-days="365" onclick="loadLiveEquity(365)">1年</span>
             </div>
           </div>
           <div id="live-equity-chart" style="height:170px;"></div>
