@@ -226,31 +226,27 @@ class DataPipelineScheduler:
 
     async def redis_harvest_to_duckdb(self):
         """
-        Phase 6.4: 盘后 Redis→DuckDB 持久化收割机
-        将 IntradayMonitor 盘中写入 Redis 的持仓最高价和止盈激活状态,
+        Phase 6.4: 盘后缓存→DuckDB 持久化收割机
+        将 IntradayMonitor 盘中写入 Redis/内存缓存的持仓最高价和止盈激活状态,
         统一持久化回 DuckDB, 防止重启后数据丢失.
+        支持 Redis 不可用时从内存缓存收割。
         """
-        log.info("CronScheduler | [Redis收割] 开始将盘中最高价缓存同步回 DuckDB...")
+        log.info("CronScheduler | [缓存收割] 开始将盘中最高价缓存同步回 DuckDB...")
         try:
             from core.redis_manager import redis_manager
             from database.duckdb_manager import db
 
-            client = redis_manager.get_client()
-            if not client:
-                log.warning("CronScheduler | [Redis收割] Redis 未连接，跳过收割。")
-                return
-
-            # 扫描所有 pos:highest:* 键
-            keys = client.keys("pos:highest:*")
+            # 扫描所有 pos:highest:* 键（Redis 优先，fallback 内存缓存）
+            keys = redis_manager.cache_keys("pos:highest:*")
             if not keys:
-                log.info("CronScheduler | [Redis收割] 无缓存数据，跳过。")
+                log.info("CronScheduler | [缓存收割] 无缓存数据，跳过。")
                 return
 
             success_count = 0
             fail_count = 0
             for key in keys:
                 try:
-                    data = client.hgetall(key)
+                    data = redis_manager.hget_all(key)
                     if not data:
                         continue
                     pos_id = int(key.split(":")[-1])
@@ -259,20 +255,20 @@ class DataPipelineScheduler:
 
                     if highest_price > 0:
                         db.update_position_highest(pos_id, highest_price, activated)
-                        # 收割成功后删除 Redis 缓存键，防止次日重复加载过期价格
-                        client.delete(key)
+                        # 收割成功后删除缓存键，防止次日重复加载过期价格
+                        redis_manager.cache_delete(key)
                         success_count += 1
                 except Exception as e:
                     fail_count += 1
-                    log.error(f"CronScheduler | [Redis收割] 处理 {key} 失败: {e}")
+                    log.error(f"CronScheduler | [缓存收割] 处理 {key} 失败: {e}")
 
             log.info(
-                f"CronScheduler | [Redis收割] 完成！"
+                f"CronScheduler | [缓存收割] 完成！"
                 f"成功同步 {success_count} 条持仓最高价，"
                 f"失败 {fail_count} 条。"
             )
         except Exception as e:
-            log.error(f"CronScheduler | [Redis收割] 严重异常: {e}", exc_info=True)
+            log.error(f"CronScheduler | [缓存收割] 严重异常: {e}", exc_info=True)
 
     async def run_daily_pipeline(self, force: bool = False):
         """后台自动化清洗全部管线的主串行流。
@@ -416,19 +412,21 @@ class DataPipelineScheduler:
             bars = load_all_bars()
             bars, snapshot = augment_bars_with_realtime(bars, today)
 
-            # ── 选股：通过 TDX 桥接获取 QUANTQQ 信号 ──
+            # ── 选股：通过 TDX 桥接获取当前配置的公式信号 ──
             signals = []
             if engine.auto_scan:
                 try:
-                    from app.tqsdk.bridge import TdxBridge
+                    from app.tqsdk.bridge import TdxBridge, _get_formula_name
+                    formula_name = _get_formula_name()
                     bridge = TdxBridge()
                     sig_result = bridge.execute_screen(
                         end_time=today.strftime('%Y%m%d'),
                         lookback_days=500,
+                        formula_name=formula_name,
                     )
                     if sig_result.get('status') == 'ok':
                         matched = sig_result.get('matched', [])
-                        log.info(f'CronScheduler | [模拟盘] QUANTQQ选股: {len(matched)}只')
+                        log.info(f'CronScheduler | [模拟盘] {formula_name}选股: {len(matched)}只')
                         for code in matched:
                             code_num = code.split('.')[0] if '.' in code else code
                             px = snapshot.get(code_num, {}).get('close', 0)
@@ -485,6 +483,20 @@ class DataPipelineScheduler:
                     'buy_count': len(signals),
                 })
 
+            # ── 实盘信号转发(v1.2.2 §5.3) ──
+            if signals:
+                try:
+                    from app.sim_trader.config import LIVE_SIGNAL_MODE
+                    if LIVE_SIGNAL_MODE == "sim_and_live":
+                        # 暂停检查(§2:暂停期间不转发)
+                        paused = engine.pause_until is not None and today <= engine.pause_until
+                        if not paused:
+                            self._forward_signals_to_live_trader(signals, today)
+                        else:
+                            log.info(f"CronScheduler | [信号转发] 模拟盘暂停中,跳过转发")
+                except Exception as e:
+                    log.error(f"CronScheduler | [信号转发] 异常: {e}", exc_info=True)
+
             # ── 净值快照：始终执行，保证曲线不断档 ──
             engine.record(today, snapshot)
             eq = engine.total_equity(snapshot)
@@ -503,8 +515,252 @@ class DataPipelineScheduler:
             log.info(f"CronScheduler | [模拟盘] 完成: 卖出{sell_count}笔 买入{buy_count}笔 "
                      f"净值{eq:,.0f} 持仓{engine.position_count}")
 
+            # 15:00 后清理过期信号状态(§5.4 TTL)
+            self._cleanup_signal_state()
+
         except Exception as e:
             log.error(f"CronScheduler | [模拟盘] 执行失败: {e}", exc_info=True)
+
+    # ===== 信号转发(v1.2.2 §5.3 + §5.4 + §10.4 + §10.7) =====
+
+    _state_lock = __import__("threading").Lock()
+
+    def _forward_signals_to_live_trader(self, signals: list, today) -> None:
+        """转发买入信号到 Windows 实盘
+
+        流程:探活(1s) → 构造请求 → POST /live/buy-signal → 解析响应 → 更新状态机
+        总超时 ≤8s(探活1s + 请求7s),超过放弃+告警。
+        """
+        import requests
+        import json
+        import os
+        from datetime import datetime as dt
+        from app.utils.xtquant_compat import format_code
+
+        # 状态机文件路径(§10.4 合并)
+        state_dir = "data/live_trader"
+        os.makedirs(state_dir, exist_ok=True)
+        state_path = os.path.join(state_dir, "signal_state.json")
+
+        # Windows 端地址(默认 127.0.0.1 适用于本机部署; Docker 环境请设置 LIVE_TRADER_URL)
+        live_url = os.environ.get("LIVE_TRADER_URL", "http://127.0.0.1:8001")
+
+        # Token
+        from core.settings import settings
+        signal_token = settings.get("live_trader", "buy_signal_token", default="")
+
+        # 转发前时点检查(§10.8 + §4.7 对齐):≥14:59 才存 pending 不发
+        # (14:55-14:59 仍转发,让 Windows 端三档价格策略生效)
+        now_str = dt.now().strftime("%H:%M")
+        if now_str >= "14:59":
+            reason = f"今日信号已过期({now_str} ≥ 14:59),存入 pending 不转发"
+            log.warning(f"CronScheduler | [信号转发] {reason}")
+            self._update_signal_state(state_path, today, signals, "skipped", reason)
+            return
+
+        # 探活(1s 超时)
+        try:
+            resp = requests.get(f"{live_url}/live/health", timeout=1)
+            if resp.status_code != 200:
+                raise Exception(f"health 返回 {resp.status_code}")
+        except Exception as e:
+            reason = f"探活失败: {e}"
+            log.error(f"CronScheduler | [信号转发] {reason}")
+            self._update_signal_state(state_path, today, signals, "failed", reason)
+            return
+
+        # 构造请求(策略名从 settings 动态读取,Plan B)
+        from app.tqsdk.bridge import _get_formula_name
+        formula_name = _get_formula_name()
+        signal_items = []
+        for code, price in signals:
+            code_fmt = format_code(code) if '.' not in code else code
+            signal_items.append({
+                "code": code_fmt,
+                "price": float(price),
+                "ts": dt.now().strftime("%H:%M:%S"),
+            })
+
+        payload = {
+            "signals": signal_items,
+            "strategy": formula_name,
+            "source": "TDX",
+        }
+        headers = {
+            "Content-Type": "application/json",
+        }
+        if signal_token:
+            headers["Authorization"] = f"Bearer {signal_token}"
+
+        # 发送(7s 超时,含1次重试)
+        try:
+            resp = requests.post(
+                f"{live_url}/live/buy-signal",
+                json=payload,
+                headers=headers,
+                timeout=7,
+            )
+        except requests.exceptions.RequestException as e:
+            # 重试1次
+            log.warning(f"CronScheduler | [信号转发] 首次失败,重试: {e}")
+            try:
+                resp = requests.post(
+                    f"{live_url}/live/buy-signal",
+                    json=payload,
+                    headers=headers,
+                    timeout=3,
+                )
+            except requests.exceptions.RequestException as e2:
+                reason = f"重试也失败: {e2}"
+                log.error(f"CronScheduler | [信号转发] {reason}")
+                self._update_signal_state(state_path, today, signals, "failed", reason)
+                return
+
+        # 解析响应(漏洞C修复)
+        if resp.status_code == 401:
+            reason = "鉴权失败:token 不匹配"
+            log.error(f"CronScheduler | [信号转发] {reason}")
+            self._update_signal_state(state_path, today, signals, "failed", reason)
+            return
+
+        # 非 200 状态码(403/503/500 等)直接归类为服务端错误
+        if resp.status_code != 200:
+            try:
+                body = resp.text[:500]
+            except Exception:
+                body = ""
+            reason = f"live_trader 返回 HTTP {resp.status_code}: {body}"
+            log.error(f"CronScheduler | [信号转发] {reason}")
+            self._update_signal_state(state_path, today, signals, "failed", reason)
+            return
+
+        try:
+            result = resp.json()
+        except Exception:
+            reason = f"响应解析失败: status={resp.status_code}"
+            log.error(f"CronScheduler | [信号转发] {reason}")
+            self._update_signal_state(state_path, today, signals, "failed", reason)
+            return
+
+        # 更新状态机:根据 accepted/rejected 标记每个信号状态
+        accepted = result.get("accepted", [])
+        rejected = result.get("rejected", [])
+        details = result.get("details", [])
+
+        for sig_item, code_fmt in zip(signal_items, [s["code"] for s in signal_items]):
+            if code_fmt in accepted:
+                sig_item["_status"] = "acked"
+            elif code_fmt in rejected:
+                sig_item["_status"] = "rejected"
+                # 找到拒绝原因
+                for d in details:
+                    if d.get("code") == code_fmt:
+                        sig_item["_reject_reason"] = d.get("reason", "")
+                        break
+            else:
+                sig_item["_status"] = "unknown"
+
+        scan_status = "ok" if accepted else "all_rejected"
+        self._update_signal_state(state_path, today, signals, scan_status,
+                                  extra={"accepted": accepted, "rejected": rejected,
+                                         "details": details})
+
+        log.info(f"CronScheduler | [信号转发] 完成: accepted={accepted} rejected={rejected}")
+
+    def _update_signal_state(self, path: str, today, signals: list,
+                              scan_status: str, reason: str = "",
+                              extra: dict = None) -> None:
+        """更新信号状态机(原子写,§10.4 + §10.7)"""
+        import json
+        import os
+        from datetime import datetime as dt
+        from app.utils.xtquant_compat import format_code
+
+        today_key = str(today)
+        now_str = dt.now().strftime("%H:%M:%S")
+
+        # 读取现有状态
+        state = {}
+        try:
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    state = json.load(f)
+        except (json.JSONDecodeError, Exception):
+            state = {}
+
+        # 构建当日状态
+        signal_entries = []
+        for item in signals:
+            if isinstance(item, tuple):
+                code, price = item
+                code_fmt = format_code(code) if '.' not in code else code
+                signal_entries.append({
+                    "code": code_fmt,
+                    "price": float(price),
+                    "ts": now_str,
+                    "status": scan_status,
+                    "result": {"reject_reason": reason} if reason else {},
+                })
+            elif isinstance(item, dict):
+                entry = {
+                    "code": item.get("code", ""),
+                    "price": item.get("price", 0),
+                    "ts": item.get("ts", now_str),
+                    "status": item.get("_status", scan_status),
+                    "result": {},
+                }
+                if item.get("_reject_reason"):
+                    entry["result"]["reject_reason"] = item["_reject_reason"]
+                signal_entries.append(entry)
+
+        day_state = {
+            "signals": signal_entries,
+            "last_heartbeat_at": now_str,
+            "scan_status": scan_status,
+        }
+        if reason:
+            day_state["last_error"] = reason
+        if extra:
+            day_state.update(extra)
+
+        state[today_key] = day_state
+
+        # 原子写(tmp + os.replace)
+        with self._state_lock:
+            tmp_path = path + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(state, f, ensure_ascii=False, default=str, indent=2)
+            os.replace(tmp_path, path)
+
+    def _cleanup_signal_state(self) -> None:
+        """15:00 清理过期信号状态(§5.4 TTL:当日 15:00 后补发无意义)
+
+        保留当日数据(审计可查),删除 3 天前的记录。
+        """
+        import json, os
+        from datetime import date as date_type, timedelta
+
+        state_path = os.path.join("data", "live_trader", "signal_state.json")
+        if not os.path.exists(state_path):
+            return
+
+        try:
+            with open(state_path, "r", encoding="utf-8") as f:
+                state = json.load(f)
+
+            cutoff = str(date_type.today() - timedelta(days=3))
+            old_keys = [k for k in state if k < cutoff]
+            if old_keys:
+                for k in old_keys:
+                    del state[k]
+                with self._state_lock:
+                    tmp_path = state_path + ".tmp"
+                    with open(tmp_path, "w", encoding="utf-8") as f:
+                        json.dump(state, f, ensure_ascii=False, default=str, indent=2)
+                    os.replace(tmp_path, state_path)
+                log.info(f"CronScheduler | [信号状态] 清理 {len(old_keys)} 天过期记录")
+        except (json.JSONDecodeError, Exception) as e:
+            log.warning(f"CronScheduler | [信号状态] 清理失败: {e}")
 
 
 # 全局单例
@@ -515,7 +771,7 @@ if __name__ == "__main__":
     """
     Task Worker 独立启动入口
     用法: python -m app.scheduler.cron_jobs
-    在 Docker 多服务架构中由 task-worker 容器调用
+    在多服务架构中由后台任务调用
     """
     import signal
 

@@ -2,6 +2,7 @@
 模拟盘交易 — 配置中心
 """
 from datetime import date
+from core.settings import settings
 
 # ═══════════ 资金 ═══════════
 INITIAL_CAPITAL = 1_000_000
@@ -14,9 +15,10 @@ LOSS_STREAK_PAUSE = 5        # 连亏N笔 → 暂停买入
 PAUSE_DAYS        = 3        # 暂停天数（自然日）
 
 # ═══════════ 退出 ═══════════
-HARD_STOP      = -0.06        # 硬止损 -6.0%
-TRAIL_ACTIVATE = 0.05         # 移动止盈激活阈值（5轮回测最优）
-TRAIL_DD       = 0.02         # 移动止盈回撤距离（5轮回测最优）
+# 从配置文件加载，消除硬编码（解决风控参数漂移问题）
+HARD_STOP      = settings.get("backtest", "hard_stop", default=-0.06)        # 硬止损
+TRAIL_ACTIVATE = settings.get("backtest", "trail_activate", default=0.05)    # 移动止盈激活阈值（5轮回测最优）
+TRAIL_DD       = settings.get("backtest", "trail_dd", default=0.02)          # 移动止盈回撤距离（5轮回测最优）
 TIME_EXIT_DAYS = 7            # 时间条件退出天数（盘整突破优化: 3→5→7）
 
 # ATR 动态移动止盈: 启用后 TRAIL_DD = max(TRAIL_DD, ATR_TRAIL_MUL * ATR(14) / entry_price)
@@ -59,6 +61,10 @@ LOAD_START = date(2015, 1, 1)
 AUTO_SELL = True    # 是否执行卖出（止盈止损）
 AUTO_SCAN = True    # 是否执行选股（生成买入信号）
 AUTO_BUY  = True    # 是否执行买入
+
+# ═══════════ 实盘信号转发(v1.2.2 §3) ═══════════
+# off=不转发 / sim_only=仅模拟盘(等同off) / sim_and_live=模拟盘+实盘真买
+LIVE_SIGNAL_MODE = settings.get("sim_trader", "live_signal_mode", default="off")
 
 # ═══════════ 盘中监控 ═══════════
 MONITOR_ENABLED = True      # 启动时是否自动开启盘中监控

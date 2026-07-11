@@ -45,7 +45,7 @@ def sync_qmt_intraday(freq="5m", days=30, batch_size=60, start_date=None, end_da
     try:
         from xtquant import xtdata
     except ImportError:
-        log_to_ui("当前处于 Docker 环境，缺少 xtquant 交易库，必须通过宿主机代理进行同步", "error")
+        log_to_ui("当前处于非 Windows 环境，缺少 xtquant 交易库，必须通过代理进行同步", "error")
         return False
 
     period_label = "daily" if freq == "daily" else ("min5" if freq == "5m" else "min1")

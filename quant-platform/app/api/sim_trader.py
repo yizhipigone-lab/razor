@@ -139,6 +139,8 @@ async def save_sim_switches(body: dict):
             sc.MONITOR_MODE = str(body['monitor_mode'])
         if 'strategy_name' in body:
             sc.STRATEGY_NAME = str(body['strategy_name'])
+        if 'live_signal_mode' in body:
+            sc.LIVE_SIGNAL_MODE = str(body['live_signal_mode'])
         # 同步更新已创建的引擎和监控器实例
         if _engine is not None:
             from app.sim_trader.engine import SimTraderEngine
@@ -155,10 +157,11 @@ async def save_sim_switches(body: dict):
         sim['monitor_enabled'] = sc.MONITOR_ENABLED
         sim['monitor_mode'] = sc.MONITOR_MODE
         sim['strategy_name'] = sc.STRATEGY_NAME
+        sim['live_signal_mode'] = sc.LIVE_SIGNAL_MODE
         settings._data['sim_trader'] = sim
         settings.save()
 
-        log.info(f"执行开关已更新并持久化: SELL={sc.AUTO_SELL} SCAN={sc.AUTO_SCAN} BUY={sc.AUTO_BUY} MON={sc.MONITOR_ENABLED}/{sc.MONITOR_MODE} STRAT={sc.STRATEGY_NAME}")
+        log.info(f"执行开关已更新并持久化: SELL={sc.AUTO_SELL} SCAN={sc.AUTO_SCAN} BUY={sc.AUTO_BUY} MON={sc.MONITOR_ENABLED}/{sc.MONITOR_MODE} STRAT={sc.STRATEGY_NAME} LIVE_SIGNAL={sc.LIVE_SIGNAL_MODE}")
         return {"status": "ok", "message": "已保存"}
     except Exception as e:
         log.error(f"保存执行开关失败: {e}")
@@ -190,6 +193,7 @@ async def sim_trader_status():
     # 优先 QMT 实时行情，失败回退 Parquet
     active_codes = [p.code for p in engine.active_positions()]
     snapshot = {}
+    prev_close_map = {}   # 昨收价, 供今日盈亏/涨跌幅计算
     missing = set(active_codes)
 
     if active_codes:
@@ -202,11 +206,14 @@ async def sim_trader_status():
                     price = float(row.get('price', 0))
                     if price > 0:
                         snapshot[code] = {'close': price}
+                        lc = float(row.get('last_close', 0) or 0)
+                        if lc > 0:
+                            prev_close_map[code] = lc
                         missing.discard(code)
         except Exception as e:
             log.warning(f"QMT实时行情失败: {e}")
 
-    # 回退：从 Parquet 读取今日收盘价
+    # 回退：从 Parquet 读取今日收盘价 + 昨收价
     if missing:
         try:
             daily_dir = ROOT_DIR / "data" / "parquet" / "daily"
@@ -215,15 +222,33 @@ async def sim_trader_status():
                 if f.exists():
                     df = pd.read_parquet(str(f), columns=['date', 'close'])
                     df['date'] = pd.to_datetime(df['date']).dt.date
-                    row = df[df['date'] == today]
-                    if not row.empty:
-                        snapshot[code] = {'close': float(row.iloc[0]['close'])}
+                    df = df.sort_values('date').reset_index(drop=True)
+                    idx = df.index[df['date'] == today]
+                    cur_idx = idx[0] if len(idx) else (len(df) - 1 if len(df) else None)
+                    if cur_idx is not None:
+                        snapshot[code] = {'close': float(df.iloc[cur_idx]['close'])}
+                        if cur_idx >= 1:
+                            prev_close_map[code] = float(df.iloc[cur_idx - 1]['close'])
         except Exception as e:
             log.warning(f"Parquet回退失败: {e}")
 
     positions = []
     for p in engine.active_positions():
         cur_price = snapshot.get(p.code, {}).get('close', p.entry_price)
+        # 今日盈亏口径: 当日买入用买入价基准, 过夜持仓用昨收价基准
+        prev_close = prev_close_map.get(p.code, 0)
+        bought_today = (p.entry_date == today)
+        base_px = p.entry_price if bought_today else prev_close
+        rem = p.remaining_shares if getattr(p, 'remaining_shares', 0) else p.shares
+        if base_px and base_px > 0:
+            today_pnl = round(rem * (cur_price - base_px), 0)
+        else:
+            today_pnl = None
+        # 当日涨跌幅：始终以昨收价为基准（市场概念，与个人买入价无关）
+        if prev_close and prev_close > 0:
+            day_chg_pct = round((cur_price / prev_close - 1) * 100, 2)
+        else:
+            day_chg_pct = None
         positions.append({
             'code': p.code,
             'name': names.get(p.code, ''),
@@ -236,6 +261,10 @@ async def sim_trader_status():
             'profit_pct': round((cur_price / p.entry_price - 1) * 100, 2),
             'market_value': round(p.remaining_shares * cur_price, 2),
             'strategy_name': p.strategy_name,
+            'prev_close': prev_close,           # 昨收价
+            'today_base': base_px or 0,         # 今日盈亏基准价(当日买入=买入价, 过夜=昨收)
+            'today_pnl': today_pnl,             # 今日浮盈亏
+            'day_chg_pct': day_chg_pct,         # 当日涨跌幅
         })
 
     total_unrealized_pnl = sum(
@@ -259,7 +288,15 @@ async def sim_trader_status():
         'auto_sell': engine.auto_sell,
         'auto_scan': engine.auto_scan,
         'auto_buy': engine.auto_buy,
+        'live_signal_mode': _get_live_signal_mode(),
     }
+
+def _get_live_signal_mode() -> str:
+    try:
+        from app.sim_trader.config import LIVE_SIGNAL_MODE
+        return LIVE_SIGNAL_MODE
+    except Exception:
+        return 'off'
 
 
 @router.post("/api/sim-trader/execute")
@@ -305,20 +342,22 @@ async def sim_trader_execute():
                 engine.sell_phase(today, snapshot, trading_dates)
                 sell_count = len([t for t in engine._today_trades if t.exit_date == today])
 
-            # 买入：通过 TDX 桥接获取 QUANTQQ 信号
+            # 买入：通过 TDX 桥接获取当前配置的公式信号
             buy_count = 0
             log.info(f"买入检查: auto_buy={engine.auto_buy} auto_scan={engine.auto_scan}")
             if engine.auto_buy and engine.auto_scan:
                 try:
-                    from app.tqsdk.bridge import TdxBridge
+                    from app.tqsdk.bridge import TdxBridge, _get_formula_name
+                    formula_name = _get_formula_name()
                     bridge = TdxBridge()
                     sig_result = bridge.execute_screen(
                         end_time=signal_date.strftime('%Y%m%d'),
                         lookback_days=500,
+                        formula_name=formula_name,
                     )
                     if sig_result.get('status') == 'ok':
                         matched = sig_result.get('matched', [])
-                        log.info(f'QUANTQQ选股: {len(matched)}只')
+                        log.info(f'{formula_name}选股: {len(matched)}只')
                         from app.sim_trader.config import SAME_STOCK_COOLDOWN
                         paused = engine.pause_until is not None and today <= engine.pause_until
                         if not paused and matched:
@@ -332,8 +371,25 @@ async def sim_trader_execute():
                                     continue
                                 if engine.execute_buy(today, code_num, px, strategy_name=f'手动-{STRATEGY_NAME}'):
                                     buy_count += 1
+
+                        # 手动触发也转发信号(一致性,§5.3)
+                        if matched:
+                            try:
+                                from app.sim_trader.config import LIVE_SIGNAL_MODE
+                                if LIVE_SIGNAL_MODE == "sim_and_live":
+                                    sig_list = []
+                                    for code in matched:
+                                        cn = code.split('.')[0] if '.' in code else code
+                                        px2 = snapshot.get(cn, {}).get('close', 0)
+                                        if px2 > 0:
+                                            sig_list.append((cn, px2))
+                                    if sig_list:
+                                        from app.scheduler.cron_jobs import pipeline_scheduler
+                                        pipeline_scheduler._forward_signals_to_live_trader(sig_list, today)
+                            except Exception as e:
+                                log.warning(f'手动触发信号转发失败: {e}')
                 except Exception as e:
-                    log.warning(f'QUANTQQ选股失败: {e}')
+                    log.warning(f'{formula_name}选股失败: {e}')
 
             engine.record(today, snapshot)
             sync_broadcast({'type': 'sim_trader_update', 'today': str(today), 'buy_count': buy_count, 'sell_count': sell_count,
@@ -379,19 +435,38 @@ async def sim_trader_trades(page: int = 1, limit: int = 50):
         )
         for p in holding_positions:
             cur_px = p.entry_price
+            prev_close = 0.0  # 昨收价(用于今日盈亏/当日涨跌幅)
             f = daily_dir / f"{p.code}.parquet"
             if f.exists():
                 df_snap = pd.read_parquet(str(f), columns=['date', 'close'])
                 df_snap['date'] = pd.to_datetime(df_snap['date']).dt.date
-                df_snap = df_snap.sort_values('date')
-                row = df_snap[df_snap['date'] == today]
-                if row.empty:
+                df_snap = df_snap.sort_values('date').reset_index(drop=True)
+                # 定位当前价所在行(今日; 无今日则取最近一个交易日)
+                idx = df_snap.index[df_snap['date'] == today]
+                if len(idx) == 0:
                     past = df_snap[df_snap['date'] < today]
-                    if not past.empty:
-                        row = past.iloc[[-1]]
-                if not row.empty:
-                    cur_px = float(row.iloc[0]['close'])
+                    cur_idx = past.index[-1] if not past.empty else None
+                else:
+                    cur_idx = idx[0]
+                if cur_idx is not None:
+                    cur_px = float(df_snap.iloc[cur_idx]['close'])
+                    # 昨收 = 当前价行的前一交易日收盘
+                    if cur_idx >= 1:
+                        prev_close = float(df_snap.iloc[cur_idx - 1]['close'])
             ret = (cur_px / p.entry_price - 1) * 100
+            # 今日盈亏口径: 当日买入的用买入价基准(现价-买入价), 过夜持仓用昨收价基准(现价-昨收)
+            rem_shares = p.remaining_shares if getattr(p, 'remaining_shares', 0) else p.shares
+            bought_today = (p.entry_date == today)
+            base_px = p.entry_price if bought_today else prev_close
+            if base_px and base_px > 0:
+                today_pnl = round(rem_shares * (cur_px - base_px), 0)
+            else:
+                today_pnl = None
+            # 当日涨跌幅：始终以昨收价为基准（市场概念，与个人买入价无关）
+            if prev_close and prev_close > 0:
+                day_chg_pct = round((cur_px / prev_close - 1) * 100, 2)
+            else:
+                day_chg_pct = None
             holding.append({
                 'code': p.code, 'name': names.get(p.code, ''),
                 'entry': str(p.entry_date), 'entry_time': getattr(p, 'entry_time', '15:00'),
@@ -402,6 +477,10 @@ async def sim_trader_trades(page: int = 1, limit: int = 50):
                 'reason': '', 'hold_days': (today - p.entry_date).days,
                 'entry_reason': p.strategy_name, 'exit_timing': '',
                 'status': '持仓中',
+                'prev_close': prev_close,          # 昨收价
+                'today_base': base_px or 0,        # 今日盈亏基准价(当日买入=买入价, 过夜=昨收), 供前端实时算
+                'today_pnl': today_pnl,            # 今日浮盈亏
+                'day_chg_pct': day_chg_pct,        # 当日涨跌幅
             })
     except Exception:
         pass
@@ -417,6 +496,7 @@ async def sim_trader_trades(page: int = 1, limit: int = 50):
             'profit': round(t.profit_amount, 0), 'reason': t.exit_reason,
             'hold_days': t.hold_days, 'entry_reason': t.entry_reason,
             'exit_timing': t.exit_timing, 'status': '已平仓',
+            'prev_close': 0.0, 'today_base': 0, 'today_pnl': None, 'day_chg_pct': None,  # 已平仓无当日概念
         }
         for t in closed_sorted
     ]
@@ -465,8 +545,15 @@ async def sim_trader_equity():
             import urllib.request, json as _json
             from datetime import timedelta
             codes = ','.join(idx_code_map.values())
-            url = f'http://localhost:8081/api/quotes?codes={codes}'
-            resp = _json.loads(urllib.request.urlopen(url, timeout=5).read())
+            # 行情源：live_trader(8001)
+            resp = None
+            try:
+                url = f'http://localhost:8001/live/quotes?codes={codes}'
+                resp = _json.loads(urllib.request.urlopen(url, timeout=5).read())
+            except Exception:
+                pass
+            if not resp:
+                resp = {}
             for name, qmt_code in idx_code_map.items():
                 tick = resp.get(qmt_code, {})
                 px = float(tick.get('lastPrice', 0))

@@ -15,7 +15,7 @@ router = APIRouter()
 
 @router.get("/health")
 async def health_check():
-    """提供给 Docker HEALTHCHECK 的端点"""
+    """提供给健康检查的端点"""
     return {"status": "ok", "time": datetime.now().isoformat()}
 
 @router.get("/api/settings")

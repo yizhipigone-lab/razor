@@ -19,7 +19,7 @@ class QmtIndexSyncer:
     def _check_proxy_available(self) -> bool:
         """轻量预检 QMT Proxy 是否可达"""
         try:
-            resp = requests.get(f"{qmt_gateway.proxy_url}/balance", timeout=3)
+            resp = requests.get(f"{qmt_gateway.proxy_url}/health", timeout=3)
             return resp.status_code == 200
         except Exception:
             return False
@@ -92,8 +92,8 @@ def sync_index_daily_qmt(progress_cb=None) -> bool:
     返回 True 表示 dispatch 成功（非实际同步结果）。
     """
     import os as _os
-    proxy_host = _os.environ.get("QMT_PROXY_HOST", "host.docker.internal")
-    target_url = f"http://{proxy_host}:8081/api/sync/index_daily"
+    proxy_host = _os.environ.get("LIVE_TRADER_HOST", _os.environ.get("QMT_PROXY_HOST", "127.0.0.1"))
+    target_url = f"http://{proxy_host}:8001/live/sync/index_daily"
     payload = {}
     if progress_cb:
         progress_cb(0, 14, "🔄 正在向 QMT Proxy 发送指数日线同步指令...")

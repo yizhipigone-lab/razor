@@ -350,13 +350,57 @@ class SimTraderEngine:
     def position_count(self) -> int:
         return len(self.active_positions())
 
+    def build_live_snapshot(self) -> dict:
+        """用 QMT 实时行情为当前持仓构建 snapshot(全局规则: 行情优先用QMT)。
+        返回 {code: {'close': 现价, 'preClose': 昨收, ...}}。
+        供盘中监控器 record 用, 替代"昨日快照", 避免净值失真。
+        QMT 不可用时返回空 dict, 调用方(record/total_equity)会用 current_price 兜底。"""
+        codes = [p.code for p in self.active_positions()]
+        if not codes:
+            return {}
+        try:
+            from app.trader.gateways.qmt import qmt_gateway
+            quotes = qmt_gateway.get_realtime_quotes(codes) or {}
+        except Exception as e:
+            log.debug(f"[实时快照] QMT 获取失败: {e}")
+            return {}
+        snap = {}
+        for code in codes:
+            q = quotes.get(code) or quotes.get(code.split('.')[0]) or {}
+            if not isinstance(q, dict):
+                continue
+            price = float(q.get('lastPrice', 0) or q.get('price', 0) or 0)
+            if price <= 0:
+                continue
+            pre = float(q.get('lastClose', 0) or q.get('preClose', 0) or 0)
+            snap[code] = {
+                'open': float(q.get('open', price) or price),
+                'high': float(q.get('high', price) or price),
+                'low': float(q.get('low', price) or price),
+                'close': price,
+                'preClose': pre,
+            }
+        return snap
+
     def total_equity(self, snapshot: dict) -> float:
-        """snapshot: {code: {'close': float, ...}}"""
-        pv = sum(
-            p.remaining_shares * snapshot.get(p.code, {}).get('close', p.entry_price)
-            for p in self.active_positions()
-        )
+        """snapshot: {code: {'close': float, ...}}
+        净值虚高修复: 估值优先级 snapshot当前价 > pos.current_price(上次已知市价) > entry_price(兜底)。
+        避免 snapshot 缺某持仓股价格时直接 fallback 买入价, 导致净值失真(2026-05盘前手动触发record虚高根因)。"""
+        pv = 0.0
+        for p in self.active_positions():
+            px = snapshot.get(p.code, {}).get('close', 0) or 0
+            if px <= 0:
+                px = p.current_price if p.current_price and p.current_price > 0 else p.entry_price
+            pv += p.remaining_shares * px
         return self.cash + pv
+
+    def equity_price_coverage(self, snapshot: dict) -> tuple:
+        """返回 (有效报价持仓数, 活跃持仓总数)。用于判断净值可信度。
+        有效报价 = snapshot 里有该股 close>0。覆盖不全说明行情缺失, 净值可能失真。"""
+        active = self.active_positions()
+        covered = sum(1 for p in active
+                      if (snapshot.get(p.code, {}).get('close', 0) or 0) > 0)
+        return covered, len(active)
 
     # ── 买入 ──────────────────────────────────
 
@@ -610,12 +654,35 @@ class SimTraderEngine:
             self._today_trades = []
 
         eq = self.total_equity(snapshot)
+
+        # 净值可信度修复: 检测行情覆盖率 + 单日跳变
+        covered, active_n = self.equity_price_coverage(snapshot)
+        eq_source = 'record'
+        if active_n > 0 and covered < active_n:
+            # 有持仓但部分/全部缺实时报价 -> 净值可能失真(盘前手动触发/行情通道全挂)
+            eq_source = 'partial'
+            log.warning(
+                f"[净值可信度] {today} 行情覆盖 {covered}/{active_n} 只持仓, "
+                f"缺价股按上次市价/买入价估值, 净值={eq:,.0f} 可能不准 -> 标记 source=partial")
+        # 运行期跳变告警: 与上一净值点比, 突变>15% 且非因当日大额交易, 提示排查
+        try:
+            prev_pts = self.equity_curve
+            if prev_pts:
+                prev_eq = float(prev_pts[-1].get('equity', 0) or 0)
+                if prev_eq > 0 and abs(eq - prev_eq) / prev_eq > 0.15:
+                    log.warning(
+                        f"[净值跳变] {today} 净值 {prev_eq:,.0f} -> {eq:,.0f} "
+                        f"({(eq-prev_eq)/prev_eq:+.1%}, >15%), 请核对行情/交易是否异常")
+        except Exception:
+            pass
+
         log.info(f"[快照] 日期={today} 权益={eq:,.0f} 现金={self.cash:,.0f} 持仓={self.position_count}")
         _safe_broadcast({"type":"sim_trader_log","action":"snapshot","date":str(today),"time":datetime.now().strftime('%H:%M:%S'),"equity":round(eq,0),"cash":round(self.cash,0),"positions":self.position_count})
         # P1-2: 统一经 save_equity_point 单路径落盘(键名 'pos', 同日去重),
         # 消除原"内存append('positions'键) + save_equity_point('pos'键)"对同一list双写产生的重复记录。
         if self._store:
-            self._store.save_equity_point(today, eq, self.cash, self.position_count)
+            self._store.save_equity_point(today, eq, self.cash, self.position_count,
+                                          source=eq_source)
             self._store.save_state(
                 self.cash, self.consecutive_losses,
                 self.pause_until, self._trade_count)

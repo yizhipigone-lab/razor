@@ -33,13 +33,13 @@ sys.path.insert(0, ROOT_DIR)
 
 def log_to_ui(msg, level="info", msg_type="log"):
     """
-    进程间通信：回送给 Docker Backend 的实时通道。
-    注意：Docker 在宿主机映射的端口通常是 8888。
+    进程间通信：回送给 API 服务端的实时通道。
+    注意：API 服务端口通常是 8888。
     """
     timestamp_msg = f"[Worker] {msg}"
     print(timestamp_msg, flush=True)
     try:
-        # 使用 127.0.0.1:8888 (宿主机访问 Docker 映射端口)
+        # 使用 127.0.0.1:8888 (本地访问 API 服务端口)
         requests.post("http://127.0.0.1:8888/api/data/sync_log",
                       json={"msg": timestamp_msg, "level": level, "type": msg_type},
                       timeout=0.5)

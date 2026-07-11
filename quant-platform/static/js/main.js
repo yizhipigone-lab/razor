@@ -4,12 +4,68 @@ const wsDot = document.getElementById('ws-dot');
 
 function connectWS() {
   ws = new WebSocket('ws://' + location.host + '/ws');
-  ws.onopen = () => { wsReady = true; wsDot.classList.add('connected'); addLog('info', 'WebSocket 已连接'); };
-  ws.onclose = () => { wsReady = false; wsDot.classList.remove('connected'); setTimeout(connectWS, 3000); };
+  ws.onopen = () => {
+    wsReady = true;
+    wsDot.classList.add('connected');
+    addLog('info', 'WebSocket 已连接');
+    // 启动心跳：每15秒发 ping，防止长连接被中断（与后端AutoSync/选股重任务间的安全间隔）
+    if (window._wsPingTimer) clearInterval(window._wsPingTimer);
+    window._wsPingTimer = setInterval(function() {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        try { ws.send(JSON.stringify({type: 'ping', data: {}})); } catch(e) {}
+      }
+    }, 15000);
+    // WebSocket 连上后，停止 HTTP 轮询
+    if (window._quotePollTimer) {
+      clearInterval(window._quotePollTimer);
+      window._quotePollTimer = null;
+      console.log('[优化] WebSocket 已连接，停止 HTTP 行情轮询');
+    }
+    // 发送行情订阅（broadcaster 需要收到 subscribe 才推送 market_quotes）
+    _sendQuoteSubscribe();
+  };
+  ws.onclose = () => {
+    wsReady = false;
+    wsDot.classList.remove('connected');
+    if (window._wsPingTimer) { clearInterval(window._wsPingTimer); window._wsPingTimer = null; }
+    setTimeout(connectWS, 3000);
+    // WebSocket 断开后，启动 HTTP 轮询兜底
+    if (!window._quotePollTimer) {
+      console.log('[兜底] WebSocket 断开，启动 HTTP 行情轮询');
+      startQuotePolling();
+    }
+  };
   ws.onerror = () => addLog('error', 'WebSocket 断开，重连中...');
   ws.onmessage = (e) => handleWS(JSON.parse(e.data));
 }
 connectWS();
+
+// ── 行情订阅：收集页面上的 codes 并通过 WS 发送 subscribe ──
+// 注：data-code 现已统一为裸码（如 "300120"），后端行情源内部会
+//     用 format_code 自动补后缀，所以发裸码给 broadcaster 是安全的。
+//     返回的 data key 为带后缀格式（如 "300120.SZ"），
+//     前端通过 findQuote 容错匹配。
+function _sendQuoteSubscribe() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  var codes = [];
+  // 指数
+  ['000001.SH','399001.SZ','399006.SZ','000905.SH','000510.SH'].forEach(function(c) { codes.push(c); });
+  // 自选股
+  document.querySelectorAll('#watchlist-tbody tr.wl-row').forEach(function(tr) {
+    var c = tr.getAttribute('data-code');
+    if (c) codes.push(c);
+  });
+  // 持仓
+  document.querySelectorAll('#sim-pos-tbody tr.pos-row').forEach(function(tr) {
+    var c = tr.getAttribute('data-code');
+    if (c) codes.push(c);
+  });
+  codes = [...new Set(codes)];
+  if (codes.length > 0) {
+    ws.send(JSON.stringify({type: 'subscribe', data: {codes: codes}}));
+    console.log('[订阅] 已发送 ' + codes.length + ' 只股票行情订阅');
+  }
+}
 
 // 指数 HTTP 兜底加载（WebSocket 无数据时）
 function setIndex(id, data) {
@@ -47,7 +103,7 @@ async function refreshMarketBar() {
       if (idx['000905.SH']) setIndex('zz500', idx['000905.SH']);
       if (idx['000510.SH']) setIndex('a500', idx['000510.SH']);
     }
-  } catch(e) {}
+  } catch(e) { console.error("refreshMarketBar error", e); }
 }
 setTimeout(refreshMarketBar, 1000);
 
@@ -62,6 +118,18 @@ function fmtPrice(v) {
   if (v == null || v === '') return '--';
   var n = Number(v);
   return isNaN(n) ? String(v) : n.toFixed(2);
+}
+function fmtDt(v) {
+  if (v == null || v === '') return '--';
+  var s = String(v);
+  // ISO 8601: "2026-07-02T23:28:07" → "07-02 23:28";  "2026-07-02" → "07-02"
+  var m = s.match(/(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
+  if (m) return m[2] + '-' + m[3] + (m[4] ? ' ' + m[4] + ':' + m[5] : '');
+  return s;
+}
+function showAiReport(code, name) {
+  switchTab('reports');
+  setTimeout(function() { generateAIReport(code, name, null); }, 300);
 }
 async function safeFetch(url, opts) {
   try { return await fetch(url, opts); }
@@ -108,14 +176,23 @@ async function loadSimTraderStatus() {
       const positions = r.positions || [];
       if (tbody) {
         tbody.innerHTML = positions.length > 0
-          ? positions.sort(function(a, b) { return (b.entry_date || '').localeCompare(a.entry_date || ''); }).map(p =>
-            '<tr class="pos-row" data-code="' + p.code + '" data-entry="' + (p.entry_price || 0) + '" data-shares="' + (p.remaining || p.shares || 0) + '"><td>' + p.code + '</td><td>' + (p.name || '') + '</td><td>' + (p.entry_date || '--') + '</td><td>' + (p.entry_price || 0).toFixed(2) + '</td><td class="pos-price">' + (p.current_price || 0).toFixed(2) + '</td><td class="pos-pct" style="color:' + ((p.profit_pct || 0) >= 0 ? 'var(--red)' : 'var(--green)') + '">' + ((p.profit_pct || 0) >= 0 ? '+' : '') + (p.profit_pct || 0).toFixed(2) + '%</td><td>' + (p.remaining || p.shares || 0) + '</td><td class="pos-mv">' + Number(p.market_value || 0).toLocaleString() + '</td></tr>'
-          ).join('')
-          : '<tr><td colspan="8" style="text-align:center;color:var(--text2)">暂无持仓</td></tr>';
+          ? positions.sort(function(a, b) { return (b.entry_date || '').localeCompare(a.entry_date || ''); }).map(function(p) {
+            var tp = p.today_pnl, dc = p.day_chg_pct;
+            var tpColor = (tp || 0) >= 0 ? 'var(--red)' : 'var(--green)';
+            var tpCell = (tp != null)
+              ? '<td class="today-pnl" style="color:' + tpColor + '">' + (tp >= 0 ? '+' : '') + Math.round(tp).toLocaleString() + '</td>'
+              : '<td class="today-pnl" style="color:var(--text2)">--</td>';
+            var dcCell = (dc != null)
+              ? '<td class="day-chg" style="color:' + tpColor + '">' + (dc >= 0 ? '+' : '') + dc.toFixed(2) + '%</td>'
+              : '<td class="day-chg" style="color:var(--text2)">--</td>';
+            return '<tr class="pos-row" data-code="' + p.code + '" data-entry="' + (p.entry_price || 0) + '" data-shares="' + (p.remaining || p.shares || 0) + '" data-basepx="' + (p.today_base || 0) + '"><td>' + p.code + '</td><td>' + (p.name || '') + '</td><td>' + (p.entry_date || '--') + '</td><td>' + (p.entry_price || 0).toFixed(2) + '</td><td class="pos-price">' + (p.current_price || 0).toFixed(2) + '</td><td class="pos-pct" style="color:' + ((p.profit_pct || 0) >= 0 ? 'var(--red)' : 'var(--green)') + '">' + ((p.profit_pct || 0) >= 0 ? '+' : '') + (p.profit_pct || 0).toFixed(2) + '%</td>' + tpCell + dcCell + '<td>' + (p.remaining || p.shares || 0) + '</td><td class="pos-mv">' + Number(p.market_value || 0).toLocaleString() + '</td></tr>';
+          }).join('')
+          : '<tr><td colspan="10" style="text-align:center;color:var(--text2)">暂无持仓</td></tr>';
       }
     }
     // 订阅持仓股票的实时行情
     if (window.marketUpdater) window.marketUpdater.resubscribe();
+    _sendQuoteSubscribe();
   } catch(e) { console.error('loadSimTraderStatus:', e); }
 }
 function renderStages(tiers) { /* stub */ }
@@ -126,7 +203,7 @@ async function initLogDates() {
     if (sel && r.dates) {
       sel.innerHTML = '<option value="">最新</option>' + r.dates.map(d => '<option value="' + d + '">' + d + '</option>').join('');
     }
-  } catch(e) {}
+  } catch(e) { console.error("initLogDates error", e); }
 }
 async function loadSimLogs() {
   const logDate = document.getElementById('sim-log-date')?.value || '';
@@ -139,9 +216,9 @@ async function loadSimLogs() {
         const a = e.action || '';
         const ts = (e.time ? (e.date||'').substring(5)+' '+e.time : (e.date||'').substring(5)) || '';
         if (a === 'buy') {
-          return '<div style="padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:11px"><span style="color:var(--text2)">' + ts + '</span> <b style="color:var(--green)">买入</b> ' + (e.code||'') + ' ' + (e.name||'') + ' ' + (e.price||'') + '元 x' + (e.shares||0) + '股 金额' + Math.round(e.cost||0).toLocaleString() + ' 现金' + Math.round(e.cash||0).toLocaleString() + ' <span style="color:var(--text2)">' + (e.strategy||'') + '</span></div>';
+          return '<div style="padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:11px"><span style="color:var(--text2)">' + ts + '</span> <b class="tc-green">买入</b> ' + (e.code||'') + ' ' + (e.name||'') + ' ' + (e.price||'') + '元 x' + (e.shares||0) + '股 金额' + Math.round(e.cost||0).toLocaleString() + ' 现金' + Math.round(e.cash||0).toLocaleString() + ' <span style="color:var(--text2)">' + (e.strategy||'') + '</span></div>';
         } else if (a === 'sell') {
-          return '<div style="padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:11px"><span style="color:var(--text2)">' + ts + '</span> <b style="color:var(--red)">卖出</b> ' + (e.code||'') + ' ' + (e.name||'') + ' ' + (e.price||'') + '元 x' + (e.shares||0) + '股 盈亏' + (e.ret_pct!=null?(e.ret_pct>=0?'+':'')+e.ret_pct+'%':'') + ' ' + Math.round(e.profit||0).toLocaleString() + '元 现金' + Math.round(e.cash||0).toLocaleString() + ' <span style="color:var(--text2)">' + (e.reason||'') + '</span></div>';
+          return '<div style="padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:11px"><span style="color:var(--text2)">' + ts + '</span> <b class="tc-red">卖出</b> ' + (e.code||'') + ' ' + (e.name||'') + ' ' + (e.price||'') + '元 x' + (e.shares||0) + '股 盈亏' + (e.ret_pct!=null?(e.ret_pct>=0?'+':'')+e.ret_pct+'%':'') + ' ' + Math.round(e.profit||0).toLocaleString() + '元 现金' + Math.round(e.cash||0).toLocaleString() + ' <span style="color:var(--text2)">' + (e.reason||'') + '</span></div>';
         } else if (a === 'snapshot') {
           return '<div style="padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:11px"><span style="color:var(--text2)">' + ts + '</span> <b style="color:var(--accent)">快照</b> 净值' + Math.round(e.equity||0).toLocaleString() + ' 现金' + Math.round(e.cash||0).toLocaleString() + ' 持仓' + (e.positions||0) + '只</div>';
         }
@@ -180,7 +257,7 @@ async function loadSimRiskParams() {
     if (el) el.innerHTML = tags.map(t =>
       '<span style=\"white-space:nowrap\"><span class=\"reason-tag\" style=\"color:' + t.color + ';font-weight:600\">' + t.label + '</span> ' + t.text + '</span>'
     ).join(' &nbsp;|&nbsp; ');
-  } catch(e) {}
+  } catch(e) { console.error("loadSimRiskParams error", e); }
 }
 
 function switchSimStrategy(val) { /* deprecated - use edit/save */ }
@@ -213,7 +290,7 @@ async function loadSimTrades(page) {
             const mktVal = Math.round(shares * t.exit_px);  // 市值 = 数量 × 当前价/卖出价
             const statusColor = isHolding ? 'var(--accent)' : 'var(--text2)';
             const rowClass = isHolding ? ' class="pos-row"' : '';
-            const rowData = isHolding ? ' data-code="' + t.code + '" data-entry="' + (t.entry_px || 0) + '" data-shares="' + shares + '" data-type="trade"' : '';
+            const rowData = isHolding ? ' data-code="' + t.code + '" data-entry="' + (t.entry_px || 0) + '" data-shares="' + shares + '" data-basepx="' + (t.today_base || 0) + '" data-type="trade"' : '';
             const pctColor = t.ret_pct >= 0 ? 'var(--up)' : 'var(--down)';
             // 买入列：日期+时间 / 价格
             var buyCell = '<span style="font-size:11px">' + (t.entry || '') + '</span><br><span style="color:var(--text2);font-size:10px">' + (t.entry_time||'') + ' @</span> <b>' + entryPx + '</b>';
@@ -226,6 +303,22 @@ async function loadSimTrades(page) {
             }
             // 盈亏列
             var pnlCell = '<span class="' + (isHolding ? 'pos-pct' : '') + '" style="color:' + pctColor + ';font-size:12px">' + (t.ret_pct >= 0 ? '+' : '') + Number(t.ret_pct).toFixed(2) + '%</span><br><span class="' + (isHolding ? 'pos-mv' : '') + '" style="color:' + pctColor + ';font-size:10px">' + (t.profit >= 0 ? '+' : '') + Math.round(t.profit).toLocaleString() + '</span>';
+            // 今日盈亏列（持仓时实时更新, class=today-pnl）
+            var todayPnlCell;
+            if (isHolding && t.today_pnl != null) {
+              var tpColor = t.today_pnl >= 0 ? 'var(--up)' : 'var(--down)';
+              todayPnlCell = '<span class="today-pnl" style="color:' + tpColor + ';font-size:12px">' + (t.today_pnl >= 0 ? '+' : '') + Math.round(t.today_pnl).toLocaleString() + '</span>';
+            } else {
+              todayPnlCell = '<span class="today-pnl" style="color:var(--text2);font-size:11px">--</span>';
+            }
+            // 实时涨跌列（持仓时实时更新, class=day-chg）
+            var dayChgCell;
+            if (isHolding && t.day_chg_pct != null) {
+              var dcColor = t.day_chg_pct >= 0 ? 'var(--up)' : 'var(--down)';
+              dayChgCell = '<span class="day-chg" style="color:' + dcColor + ';font-size:12px">' + (t.day_chg_pct >= 0 ? '+' : '') + Number(t.day_chg_pct).toFixed(2) + '%</span>';
+            } else {
+              dayChgCell = '<span class="day-chg" style="color:var(--text2);font-size:11px">--</span>';
+            }
             // 市值列（持仓时实时更新）
             var mvCell = '<span class="' + (isHolding ? 'pos-mv2' : '') + '" style="font-size:11px">' + mktVal.toLocaleString() + '</span>';
             return '<tr' + rowClass + rowData + '>' +
@@ -235,6 +328,8 @@ async function loadSimTrades(page) {
               '<td>' + sellCell + '</td>' +
               '<td>' + shares + '</td>' +
               '<td>' + pnlCell + '</td>' +
+              '<td>' + todayPnlCell + '</td>' +
+              '<td>' + dayChgCell + '</td>' +
               '<td>' + mvCell + '</td>' +
               '<td>' + (t.hold_days || 0) + '</td>' +
               '<td style="font-size:10px">' + (t.entry_reason || '') + '</td>' +
@@ -242,7 +337,7 @@ async function loadSimTrades(page) {
               '<td style="color:' + statusColor + ';font-size:11px">' + (t.status || '') + '</td>' +
               '</tr>';
           }).join('')
-        : '<tr><td colspan="11" style="text-align:center;color:var(--text2)">暂无记录</td></tr>';
+        : '<tr><td colspan="13" style="text-align:center;color:var(--text2)">暂无记录</td></tr>';
     }
   } catch(e) { console.error('loadSimTrades failed:', e); }
 }
@@ -326,7 +421,7 @@ async function renderSimEquityChart() {
     });
 
     window.addEventListener('resize', function() { if (_simEquityChart) _simEquityChart.resize(); });
-  } catch(e) {}
+  } catch(e) { console.error("renderSimEquityChart error", e); }
 }
 
 var _simCalData = {};
@@ -370,7 +465,7 @@ async function renderSimCalendar() {
     _simCalYear = parseInt(dates[dates.length-1].substring(0,4));
     _simCalMonth = parseInt(dates[dates.length-1].substring(5,7));
     drawSimCalendar();
-  } catch(e) {}
+  } catch(e) { console.error("renderSimCalendar error", e); }
 }
 
 function drawSimCalendar() {
@@ -397,7 +492,7 @@ function drawSimCalendar() {
   }
   var monthPct = monthStartEq && monthStartEq > 0 ? (monthPnl / monthStartEq * 100) : 0;
   var summaryHtml = '<div style=\"text-align:center; margin-bottom:6px; font-size:13px\">' +
-    '月盈亏: <b style=\"color:' + (monthPnl>=0?'#ef4444':'#22c55e') + '\">' + (monthPnl>=0?'+':'') + Math.round(monthPnl).toLocaleString() + ' 元 (' + (monthPct>=0?'+':'') + monthPct.toFixed(1) + '%)</b>' +
+    '月盈亏: <b style=\"color:' + (monthPnl>=0?'var(--up)':'var(--down)') + '\">' + (monthPnl>=0?'+':'') + Math.round(monthPnl).toLocaleString() + ' 元 (' + (monthPct>=0?'+':'') + monthPct.toFixed(1) + '%)</b>' +
     ' | 月初资产: ' + (monthStartEq ? Math.round(monthStartEq).toLocaleString() : '--') + ' 元 → 月末: ' + (monthEndEq ? Math.round(monthEndEq).toLocaleString() : '--') + ' 元' +
     '</div>';
 
@@ -533,7 +628,7 @@ async function renderSimStockAnalysis() {
     });
 
     window.addEventListener('resize', function() { if (_simTreeChart) _simTreeChart.resize(); });
-  } catch(e) {}
+  } catch(e) { console.error("renderSimStockAnalysis error", e); }
 }
 
 async function loadSimStrategy() {
@@ -547,7 +642,7 @@ async function loadSimStrategy() {
         sel.innerHTML = pyOpts + '<optgroup label=\"TDX 策略\"><option value=\"QUANTQQ\" data-type=\"tdx\">QUANTQQ</option></optgroup>';
       }
     }
-  } catch(e) {}
+  } catch(e) { console.error("loadSimStrategy error", e); }
 }
 
 function editSimStrategy() {
@@ -582,7 +677,7 @@ async function loadSimMonitor() {
       document.getElementById('sim-mon-val').textContent = r.monitor_enabled ? '开启' : '关闭';
       document.getElementById('sim-mon-mode-val').textContent = r.monitor_mode === 'intraday' ? '盘中执行' : '仅告警';
     }
-  } catch(e) {}
+  } catch(e) { console.error("loadSimMonitor error", e); }
 }
 
 function editSimMonitor() {
@@ -620,8 +715,14 @@ async function loadSimSwitches() {
       document.getElementById('sim-sell-val').textContent = r.auto_sell ? '开' : '关';
       document.getElementById('sim-scan-val').textContent = r.auto_scan ? '开' : '关';
       document.getElementById('sim-buy-val').textContent = r.auto_buy ? '开' : '关';
+      const lsVal = document.getElementById('sim-live-signal-val');
+      if (lsVal) {
+        const mode = r.live_signal_mode || 'off';
+        lsVal.textContent = mode === 'sim_and_live' ? '模拟+实盘' : '关';
+        lsVal.style.color = mode === 'sim_and_live' ? 'var(--red)' : 'var(--text1)';
+      }
     }
-  } catch(e) {}
+  } catch(e) { console.error("loadSimSwitches error", e); }
 }
 
 function editSimSwitches() {
@@ -635,6 +736,11 @@ function editSimSwitches() {
   document.getElementById('sim-edit-sell').value = document.getElementById('sim-sell-val').textContent === '开' ? 'true' : 'false';
   document.getElementById('sim-edit-scan').value = document.getElementById('sim-scan-val').textContent === '开' ? 'true' : 'false';
   document.getElementById('sim-edit-buy').value = document.getElementById('sim-buy-val').textContent === '开' ? 'true' : 'false';
+  const lsEdit = document.getElementById('sim-edit-live-signal');
+  if (lsEdit) {
+    const lsVal = document.getElementById('sim-live-signal-val');
+    lsEdit.value = (lsVal && lsVal.textContent !== '关') ? 'sim_and_live' : 'off';
+  }
 }
 
 async function saveSimSwitches() {
@@ -642,6 +748,7 @@ async function saveSimSwitches() {
     auto_sell: document.getElementById('sim-edit-sell').value === 'true',
     auto_scan: document.getElementById('sim-edit-scan').value === 'true',
     auto_buy: document.getElementById('sim-edit-buy').value === 'true',
+    live_signal_mode: (document.getElementById('sim-edit-live-signal') || {}).value || 'off',
   };
   try {
     const r = await fetch('/api/settings/sim-switches', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) }).then(r => r.json());
@@ -651,6 +758,11 @@ async function saveSimSwitches() {
     document.getElementById('sim-sell-val').textContent = body.auto_sell ? '开' : '关';
     document.getElementById('sim-scan-val').textContent = body.auto_scan ? '开' : '关';
     document.getElementById('sim-buy-val').textContent = body.auto_buy ? '开' : '关';
+    const lsVal = document.getElementById('sim-live-signal-val');
+    if (lsVal) {
+      lsVal.textContent = body.live_signal_mode === 'sim_and_live' ? '模拟+实盘' : '关';
+      lsVal.style.color = body.live_signal_mode === 'sim_and_live' ? 'var(--red)' : 'var(--text1)';
+    }
     // hide edit
     document.getElementById('sim-switches-display').style.display = 'flex';
     document.getElementById('sim-switches-edit').style.display = 'none';
@@ -872,7 +984,7 @@ async function loadDataSettings() {
     document.querySelectorAll('.cron-check').forEach(function(cb) {
       cb.checked = times.indexOf(cb.value) >= 0;
     });
-  } catch(e) {}
+  } catch(e) { console.error("loadDataSettings error", e); }
 }
 async function saveSettings() {
   // 「保存全局设置」= 依次保存系统设置 tab 的 4 张配置卡(搜索空间/风控/数据/网关)。
@@ -1022,10 +1134,313 @@ function saveGatewaySettings() {
     if (msg) { msg.textContent = '保存失败'; msg.style.color = 'var(--red)'; }
   });
 }
-function loadReportsPage() { /* stub */ }
-function loadReportsList() { /* stub */ }
-function downloadModalMD() { /* stub */ }
-function downloadViewerMD() { /* stub */ }
+// ─── 报告仓库 ──────────────────────────────────────────────
+let currentReportPage = 1;
+const REPORT_PAGE_SIZE = 15;
+
+async function loadReportsList() {
+  var searchInput = document.getElementById('report-search');
+  var search = searchInput ? searchInput.value.trim() : '';
+  var offset = (currentReportPage - 1) * REPORT_PAGE_SIZE;
+  var listEl = document.getElementById('report-list');
+  if (!listEl) return;
+
+  listEl.innerHTML = '<p style="color:var(--text2);text-align:center;padding:20px">加载中...</p>';
+
+  try {
+    var r = await fetch(
+      '/api/reports/list?limit=' + REPORT_PAGE_SIZE + '&offset=' + offset + '&search=' + encodeURIComponent(search)
+    ).then(function(resp) { return resp.json(); });
+
+    if (r.status === 'ok' && r.data) {
+      var total = r.data.total || 0;
+      var data = r.data.data || [];
+
+      if (data.length === 0) {
+        listEl.innerHTML = '<p style="color:var(--text2);text-align:center;padding:20px">暂无历史报告</p>';
+      } else {
+        listEl.innerHTML = data.map(function(rep) {
+          var score = rep.score;
+          var scoreBadge = '';
+          if (score !== null && score !== undefined && score !== '') {
+            var sc = Number(score);
+            var scColor = sc >= 70 ? 'var(--red)' : (sc >= 50 ? 'var(--yellow)' : 'var(--green)');
+            scoreBadge = '<span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;color:#fff;background:' + scColor + ';margin-left:4px">' + sc + '</span>';
+          }
+          var summaryLine = rep.summary ? '<div style="font-size:11px;color:var(--text2);margin-top:3px;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + rep.summary + '</div>' : '';
+          // 紧凑分项得分条
+          var subscoreLine = _renderSubscoreBar(rep.subscores);
+          return '<div class="strategy-item" onclick="viewReport(' + rep.id + ')" style="cursor:pointer">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center">' +
+              '<span style="font-weight:600;font-size:13px">' + rep.code + ' ' + (rep.name || '') + scoreBadge + '</span>' +
+              '<button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:10px" onclick="event.stopPropagation();deleteReport(' + rep.id + ',\'' + rep.code + '\')">🗑️</button>' +
+            '</div>' +
+            summaryLine +
+            subscoreLine +
+            '<div style="font-size:11px;color:var(--text2);margin-top:2px">' + (rep.created_at || '') + '</div>' +
+          '</div>';
+        }).join('');
+      }
+
+      var totalPages = Math.max(1, Math.ceil(total / REPORT_PAGE_SIZE));
+      var pageInfo = document.getElementById('rep-page-info');
+      if (pageInfo) pageInfo.textContent = currentReportPage + ' / ' + totalPages;
+    }
+  } catch (e) {
+    listEl.innerHTML = '<p style="color:var(--red);text-align:center;padding:20px">加载失败</p>';
+  }
+}
+
+function loadReportsPage(delta) {
+  currentReportPage = Math.max(1, currentReportPage + delta);
+  loadReportsList();
+}
+
+// 分项得分维度配置（顺序固定，与提示词评分维度一致）
+var SUBSCORE_DIMS = [
+  { key: '基本面', short: '基', max: 30 },
+  { key: '技术面', short: '技', max: 25 },
+  { key: '估值',   short: '估', max: 20 },
+  { key: '风险',   short: '风', max: 15 },
+  { key: '行业景气', short: '行', max: 10 }
+];
+
+function _subscoreColor(ratio) {
+  // ratio = 得分/满分，>=0.8红(强) / >=0.5黄 / <0.5绿(弱)
+  if (ratio >= 0.8) return 'var(--red)';
+  if (ratio >= 0.5) return 'var(--yellow)';
+  return 'var(--green)';
+}
+
+function _renderSubscoreBar(subscores) {
+  if (!subscores || typeof subscores !== 'object') return '';
+  var parts = SUBSCORE_DIMS.map(function(dim) {
+    var val = subscores[dim.key];
+    if (val === null || val === undefined) return '';
+    var sc = Number(val);
+    var ratio = sc / dim.max;
+    var color = _subscoreColor(ratio);
+    return '<span style="display:inline-flex;align-items:center;gap:1px" title="' + dim.key + ':' + sc + '/' + dim.max + '">' +
+      '<span style="color:var(--text2);font-size:10px">' + dim.short + '</span>' +
+      '<span style="color:' + color + ';font-size:11px;font-weight:700">' + sc + '</span>' +
+    '</span>';
+  }).filter(Boolean);
+  if (parts.length === 0) return '';
+  return '<div style="display:flex;gap:6px;margin-top:3px;flex-wrap:wrap">' + parts.join('') + '</div>';
+}
+
+var _radarChartInstance = null;
+
+function _renderRadarChart(containerEl, subscores, score) {
+  if (!subscores || typeof subscores !== 'object') return;
+  if (typeof echarts === 'undefined') return;  // ECharts 未加载则跳过
+
+  // 准备数据：按固定维度顺序，缺失维度填 0
+  var indicators = SUBSCORE_DIMS.map(function(dim) {
+    return { name: dim.key, max: dim.max };
+  });
+  var values = SUBSCORE_DIMS.map(function(dim) {
+    var v = subscores[dim.key];
+    return (v !== null && v !== undefined) ? Number(v) : 0;
+  });
+
+  // 注入雷达图容器
+  var radarBox = document.createElement('div');
+  radarBox.style.cssText = 'display:flex;gap:16px;align-items:center;background:var(--bg1);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:16px';
+  var radarDiv = document.createElement('div');
+  radarDiv.style.cssText = 'width:200px;height:200px;flex-shrink:0';
+  radarBox.appendChild(radarDiv);
+
+  // 右侧总分大字 + 分项明细
+  var detailDiv = document.createElement('div');
+  detailDiv.style.cssText = 'flex:1;font-size:12px';
+  var scoreColor = score !== null && score !== undefined ?
+    (Number(score) >= 70 ? 'var(--red)' : (Number(score) >= 50 ? 'var(--yellow)' : 'var(--green)')) : 'var(--text1)';
+  var detailHtml = '<div style="margin-bottom:8px"><span style="font-size:11px;color:var(--text2)">综合总分</span><br>' +
+    '<span style="font-size:28px;font-weight:700;color:' + scoreColor + '">' + (score ?? '--') + '</span>' +
+    '<span style="font-size:12px;color:var(--text2)">/100</span></div>';
+  detailHtml += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px">';
+  SUBSCORE_DIMS.forEach(function(dim) {
+    var v = subscores[dim.key];
+    var sc = (v !== null && v !== undefined) ? Number(v) : 0;
+    var ratio = sc / dim.max;
+    var color = _subscoreColor(ratio);
+    detailHtml += '<div><span style="color:var(--text2)">' + dim.key + '</span> ' +
+      '<span style="color:' + color + ';font-weight:700">' + sc + '</span>' +
+      '<span style="color:var(--text2);font-size:10px">/' + dim.max + '</span></div>';
+  });
+  detailHtml += '</div>';
+  detailDiv.innerHTML = detailHtml;
+  radarBox.appendChild(detailDiv);
+
+  containerEl.insertBefore(radarBox, containerEl.firstChild);
+
+  // 销毁旧实例，绘制新雷达图
+  if (_radarChartInstance) {
+    try { _radarChartInstance.dispose(); } catch(e) {}
+  }
+  _radarChartInstance = echarts.init(radarDiv);
+  _radarChartInstance.setOption({
+    radar: {
+      indicator: indicators,
+      radius: 70,
+      axisName: { color: 'var(--text2)', fontSize: 11 },
+      splitArea: { areaStyle: { color: ['rgba(255,255,255,0.02)', 'rgba(255,255,255,0.05)'] } },
+      splitLine: { lineStyle: { color: 'var(--border)' } },
+      axisLine: { lineStyle: { color: 'var(--border)' } }
+    },
+    series: [{
+      type: 'radar',
+      data: [{
+        value: values,
+        areaStyle: { color: 'rgba(255,159,67,0.25)' },
+        lineStyle: { color: 'var(--accent)', width: 2 },
+        itemStyle: { color: 'var(--accent)' }
+      }]
+    }]
+  });
+}
+
+async function viewReport(id) {
+  try {
+    var r = await fetch('/api/reports/content/' + id).then(function(resp) { return resp.json(); });
+    if (r.status === 'ok' && r.data) {
+      document.getElementById('report-empty-state').style.display = 'none';
+      document.getElementById('report-viewer-container').style.display = 'flex';
+      document.getElementById('viewer-report-title').textContent =
+        r.data.code + ' ' + (r.data.name || '') + ' — AI 深度报告';
+      var contentEl = document.getElementById('viewer-report-content');
+      contentEl.innerHTML = marked.parse(r.data.content || '');
+      // 渲染分项雷达图（插在正文最上方）
+      _renderRadarChart(contentEl, r.data.subscores, r.data.score);
+    }
+  } catch (e) {
+    console.error('viewReport failed:', e);
+  }
+}
+
+async function deleteReport(id, code) {
+  if (!confirm('确认删除 ' + code + ' 的报告？')) return;
+  try {
+    var r = await fetch('/api/reports/' + id, { method: 'DELETE' })
+      .then(function(resp) { return resp.json(); });
+    if (r.status === 'ok') {
+      loadReportsList();
+      var viewerTitle = document.getElementById('viewer-report-title')?.textContent || '';
+      if (viewerTitle.includes(code)) { closeAiReport(); }
+    } else {
+      alert('删除失败: ' + (r.message || '未知错误'));
+    }
+  } catch (e) {
+    alert('删除失败: ' + e.message);
+  }
+}
+
+function _downloadMD(title, content) {
+  var blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = title.replace(/[^\w一-鿿]/g, '_') + '.md';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+}
+
+function downloadModalMD() {
+  var title = document.getElementById('ai-title')?.textContent || 'ai_report';
+  var content = document.getElementById('ai-llm-report')?.textContent || '';
+  _downloadMD(title, content);
+}
+
+function downloadViewerMD() {
+  var title = document.getElementById('viewer-report-title')?.textContent || 'report';
+  var content = document.getElementById('viewer-report-content')?.innerText || '';
+  _downloadMD(title, content);
+}
+
+// ─── P3-3: 批量听诊 ───────────────────────────────────────
+function closeModal() {
+  var modal = document.getElementById('generic-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function openBatchReportModal() {
+  var html = '<div style="padding:20px">' +
+    '<p style="color:var(--text2);font-size:12px;margin-bottom:10px">输入股票代码，用逗号或换行分隔。单次最多20只，每只约30-60秒。</p>' +
+    '<textarea id="batch-report-input" placeholder="600519,000858,000333\n或每行一个代码" style="width:100%;height:140px;background:var(--bg1);border:1px solid var(--border);border-radius:6px;padding:10px;font-size:13px;color:var(--text1);font-family:inherit;resize:vertical"></textarea>' +
+    '<div id="batch-report-msg" style="font-size:12px;margin-top:8px;min-height:18px"></div>' +
+    '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">' +
+      '<button class="btn btn-ghost btn-sm" onclick="closeModal()">取消</button>' +
+      '<button class="btn btn-primary btn-sm" onclick="submitBatchReport()">开始批量生成</button>' +
+    '</div>' +
+  '</div>';
+  showModal('📦 批量听诊', html);
+}
+
+async function submitBatchReport() {
+  var raw = document.getElementById('batch-report-input')?.value || '';
+  var msgEl = document.getElementById('batch-report-msg');
+
+  // 解析代码：支持逗号、空格、换行、中文逗号分隔
+  var codes = raw.split(/[\s,，;；]+/)
+    .map(function(c) { return c.trim().split('.')[0]; })
+    .filter(function(c) { return /^\d{6}$/.test(c); });
+  // 去重
+  codes = Array.from(new Set(codes));
+
+  if (codes.length === 0) {
+    if (msgEl) { msgEl.textContent = '❌ 未识别到有效代码（需6位数字）'; msgEl.style.color = 'var(--red)'; }
+    return;
+  }
+  if (codes.length > 20) {
+    if (msgEl) { msgEl.textContent = '❌ 最多20只，当前 ' + codes.length + ' 只'; msgEl.style.color = 'var(--red)'; }
+    return;
+  }
+
+  if (msgEl) { msgEl.textContent = '⏳ 提交中...'; msgEl.style.color = 'var(--yellow)'; }
+
+  try {
+    var r = await fetch('/api/agents/analyze/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ codes: codes })
+    }).then(function(resp) { return resp.json(); });
+
+    if (r.status === 'started') {
+      var acc = r.accepted.length;
+      var rej = r.rejected.length;
+      if (msgEl) {
+        msgEl.innerHTML = '✅ 已提交 ' + acc + ' 只' + (rej > 0 ? '，拒绝 ' + rej + ' 只' : '') + '<br>' +
+          '<span style="color:var(--text2);font-size:11px">生成中，请稍后在历史快照查看结果（每1.5秒自动刷新可点🔄刷新）</span>';
+        msgEl.style.color = 'var(--green)';
+      }
+      // 启动列表轮询刷新
+      _startBatchListRefresh();
+      setTimeout(closeModal, 2500);
+    } else {
+      if (msgEl) { msgEl.textContent = '❌ ' + (r.message || '提交失败'); msgEl.style.color = 'var(--red)'; }
+    }
+  } catch (e) {
+    if (msgEl) { msgEl.textContent = '❌ 网络错误: ' + e.message; msgEl.style.color = 'var(--red)'; }
+  }
+}
+
+var _batchRefreshTimer = null;
+var _batchRefreshCount = 0;
+function _startBatchListRefresh() {
+  if (_batchRefreshTimer) clearInterval(_batchRefreshTimer);
+  _batchRefreshCount = 0;
+  _batchRefreshTimer = setInterval(function() {
+    _batchRefreshCount++;
+    loadReportsList();
+    // 最多刷新 40 次（约 1 分钟），覆盖单批生成周期
+    if (_batchRefreshCount >= 40) {
+      clearInterval(_batchRefreshTimer);
+      _batchRefreshTimer = null;
+    }
+  }, 1500);
+}
 async function searchStockForReport() {
   var q = document.getElementById('new-report-search')?.value?.trim();
   if (!q) return;
@@ -1045,26 +1460,91 @@ async function searchStockForReport() {
     } else {
       resultsDiv.innerHTML = '<p style="color:var(--text2)">未找到匹配标的</p>';
     }
-  } catch(e) { resultsDiv.innerHTML = '<p style="color:var(--red)">检索失败</p>'; }
+  } catch(e) { resultsDiv.innerHTML = '<p class="tc-red">检索失败</p>'; }
 }
 
+var _reportPollTimer = null;
+
 async function generateAIReport(code, name, el) {
-  if (el) { el.innerHTML = '<span style="color:var(--yellow)">⏳ 生成中...</span>'; el.onclick = null; }
+  if (el) { el.innerHTML = '<span style="color:var(--yellow)">⏳ 提交中...</span>'; el.onclick = null; }
   try {
-    var r = await fetch('/api/agents/analyze/' + encodeURIComponent(code) + '?name=' + encodeURIComponent(name)).then(function(resp) { return resp.json(); });
-    if (r.status === 'ok') {
-      // Show report in viewer
-      document.getElementById('report-empty-state').style.display = 'none';
-      var container = document.getElementById('report-viewer-container');
-      container.style.display = 'flex';
-      document.getElementById('viewer-report-title').textContent = code + ' ' + name + ' AI 深度报告';
-      document.getElementById('viewer-report-content').innerHTML = '<pre style="white-space:pre-wrap;font-size:13px;line-height:1.8">' + (r.report||'') + '</pre>';
-    } else {
-      if (el) { el.innerHTML = '<span style="color:var(--red)">失败</span>'; el.onclick = function() { generateAIReport(code, name, el); }; }
+    var startResp = await fetch('/api/agents/analyze/' + encodeURIComponent(code) + '?name=' + encodeURIComponent(name), {
+      method: 'POST'
+    }).then(function(resp) { return resp.json(); });
+
+    if (startResp.status === 'error') {
+      if (el) { el.innerHTML = '<span class="tc-red">失败</span>'; el.onclick = function() { generateAIReport(code, name, el); }; }
+      if (startResp.message) { alert(startResp.message); }
+      return;
     }
+
+    // 异步任务模式：轮询进度
+    var taskId = startResp.task_id;
+    if (!taskId) {
+      // 兼容旧版同步返回
+      _showReportInViewer(code, name, { content: startResp.report || '', score: null, subscores: null });
+      if (el) { el.innerHTML = '<span class="tc-green">✅ 已生成</span>'; }
+      loadReportsList();
+      return;
+    }
+
+    if (el) { el.innerHTML = '<span style="color:var(--yellow)">⏳ 生成中 0%...</span>'; }
+
+    var pollCount = 0;
+    var maxPolls = 120;
+    if (_reportPollTimer) clearInterval(_reportPollTimer);
+
+    _reportPollTimer = setInterval(async function() {
+      pollCount++;
+      try {
+        var r = await fetch('/api/agents/task/' + taskId).then(function(resp) { return resp.json(); });
+        var pct = r.progress || 0;
+
+        if (el) { el.innerHTML = '<span style="color:var(--yellow)">⏳ 生成中 ' + pct + '%...</span>'; }
+
+        if (r.status === 'done') {
+          clearInterval(_reportPollTimer);
+          _reportPollTimer = null;
+          var reportResp = await fetch('/api/reports/content/' + r.report_id).then(function(resp) { return resp.json(); });
+          if (reportResp.status === 'ok' && reportResp.data) {
+            _showReportInViewer(code, name, reportResp.data);
+            loadReportsList();
+          }
+          if (el) { el.innerHTML = '<span class="tc-green">✅ 已生成</span>'; }
+        } else if (r.status === 'error') {
+          clearInterval(_reportPollTimer);
+          _reportPollTimer = null;
+          if (el) { el.innerHTML = '<span class="tc-red">失败</span>'; el.onclick = function() { generateAIReport(code, name, el); }; }
+          alert('报告生成失败: ' + (r.error || '未知错误'));
+        } else if (pollCount >= maxPolls) {
+          clearInterval(_reportPollTimer);
+          _reportPollTimer = null;
+          if (el) { el.innerHTML = '<span class="tc-red">超时</span>'; }
+          alert('报告生成超时，请稍后在历史快照中查看');
+        }
+      } catch (e) {
+        clearInterval(_reportPollTimer);
+        _reportPollTimer = null;
+        if (el) { el.innerHTML = '<span class="tc-red">网络错误</span>'; el.onclick = function() { generateAIReport(code, name, el); }; }
+      }
+    }, 1500);
+
   } catch(e) {
-    if (el) { el.innerHTML = '<span style="color:var(--red)">网络错误</span>'; el.onclick = function() { generateAIReport(code, name, el); }; }
+    if (el) { el.innerHTML = '<span class="tc-red">网络错误</span>'; el.onclick = function() { generateAIReport(code, name, el); }; }
   }
+}
+
+function _showReportInViewer(code, name, data) {
+  var content = (typeof data === 'string') ? data : (data.content || '');
+  var score = (typeof data === 'object' && data) ? data.score : null;
+  var subscores = (typeof data === 'object' && data) ? data.subscores : null;
+  document.getElementById('report-empty-state').style.display = 'none';
+  document.getElementById('report-viewer-container').style.display = 'flex';
+  document.getElementById('viewer-report-title').textContent = code + ' ' + name + ' — AI 深度报告';
+  var contentEl = document.getElementById('viewer-report-content');
+  contentEl.innerHTML = marked.parse(content);
+  // 渲染分项雷达图（插在正文最上方）
+  _renderRadarChart(contentEl, subscores, score);
 }
 
 function openNewReportSearch() {
@@ -1110,13 +1590,14 @@ async function loadWatchlist() {
     }
     // 重新订阅行情，确保新增自选股被纳入
     if (window.marketUpdater) window.marketUpdater.resubscribe();
-  } catch(e) {}
+    _sendQuoteSubscribe();
+  } catch(e) { console.error("loadWatchlist error", e); }
 }
 async function removeWatchlist(code) {
   try {
     await fetch('/api/watchlist/' + encodeURIComponent(code), { method: 'DELETE' });
     loadWatchlist();
-  } catch(e) {}
+  } catch(e) { console.error("removeWatchlist error", e); }
 }
 // ─── 热点板块个股搜索 ──────────────────────────────
 var _hotSearchIdx = -1;
@@ -1141,7 +1622,7 @@ async function onHotStockSearch(val) {
       dd.appendChild(div);
     });
     dd.style.display = 'block';
-  } catch(e) {}
+  } catch(e) { console.error("onHotStockSearch error", e); }
 }
 function onHotStockKeydown(e) {
   var dd = document.getElementById('hot-stock-dropdown');
@@ -1177,7 +1658,7 @@ async function loadHotSectorData() {
     var sectors = Array.isArray(sRes) ? sRes : (sRes.data || []);
     if (sTbody && sectors.length > 0) {
       sTbody.innerHTML = sectors.map(function(s, i) {
-        return '<tr><td>' + (i+1) + '</td><td>' + (s.name||'') + '</td><td style="color:var(--accent)">' + (s.hotness||0).toFixed(1) + '%</td><td style="color:var(--red)">' + (s.advance_count||0) + '</td><td style="color:var(--green)">' + (s.decline_count||0) + '</td><td>' + (s.count||0) + '</td></tr>';
+        return '<tr><td>' + (i+1) + '</td><td>' + (s.name||'') + '</td><td style="color:var(--accent)">' + (s.hotness||0).toFixed(1) + '%</td><td class="tc-red">' + (s.advance_count||0) + '</td><td class="tc-green">' + (s.decline_count||0) + '</td><td>' + (s.count||0) + '</td></tr>';
       }).join('');
     }
 
@@ -1186,7 +1667,7 @@ async function loadHotSectorData() {
     var concepts = Array.isArray(cRes) ? cRes : (cRes.data || []);
     if (cTbody && concepts.length > 0) {
       cTbody.innerHTML = concepts.map(function(c, i) {
-        return '<tr><td>' + (i+1) + '</td><td>' + (c.name||'') + '</td><td style="color:var(--accent)">' + (c.hotness||0).toFixed(1) + '%</td><td style="color:var(--red)">' + (c.advance_count||0) + '</td><td style="color:var(--green)">' + (c.decline_count||0) + '</td><td>' + (c.count||0) + '</td></tr>';
+        return '<tr><td>' + (i+1) + '</td><td>' + (c.name||'') + '</td><td style="color:var(--accent)">' + (c.hotness||0).toFixed(1) + '%</td><td class="tc-red">' + (c.advance_count||0) + '</td><td class="tc-green">' + (c.decline_count||0) + '</td><td>' + (c.count||0) + '</td></tr>';
       }).join('');
     }
 
@@ -1210,8 +1691,46 @@ async function queryHotStockScore() {
     }
   } catch(e) { addLog('error', '查询失败'); }
 }
-function doTdxTranslate() { /* stub */ }
-function closeTdxModal() { /* stub */ }
+function openTdxModal() {
+  var modal = document.getElementById('tdx-modal');
+  if (modal) modal.style.display = 'flex';
+}
+function closeTdxModal() {
+  var modal = document.getElementById('tdx-modal');
+  if (modal) modal.style.display = 'none';
+}
+async function doTdxTranslate() {
+  var input = document.getElementById('tdx-formula-input');
+  if (!input || !input.value || !input.value.trim()) {
+    addLog('warn', '请先粘贴通达信公式');
+    return;
+  }
+  var name = prompt('请输入策略名称(字母/数字/下划线/中文):', 'TdxStrategy');
+  if (!name || !name.trim()) return;
+  name = name.trim();
+
+  try {
+    var res = await fetch('/api/factory/translate_tdx', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ formula: input.value, name: name })
+    }).then(function(r) { return r.json(); });
+
+    if (res.status === 'ok' && res.code) {
+      addLog('ok', '通达信公式转译成功');
+      if (window.monacoEditor) {
+        window.monacoEditor.setValue(res.code);
+      } else {
+        addLog('warn', '编辑器未就绪，转译代码未回填');
+      }
+      closeTdxModal();
+    } else {
+      addLog('error', '转译失败: ' + (res.message || res.detail || '未知错误'));
+    }
+  } catch (e) {
+    addLog('error', '转译请求异常: ' + e.message);
+  }
+}
 function closeConstituentModal() { /* stub */ }
 // ─── Reports 页面搜索函数 ──────────────────────────────────────
 let _reportSearchIdx = -1;
@@ -1226,7 +1745,7 @@ async function onReportSearchInput(val) {
     _reportSearchIdx = -1;
     dd.innerHTML = items.map(s => '<div style=\"padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:12px\" onmousedown=\"selectReportCode(\'' + s.code + '\',\'' + (s.name || '') + '\')\">' + s.code + ' <span style=\"color:var(--text2)\">' + (s.name || '') + '</span></div>').join('');
     dd.style.display = 'block';
-  } catch(e) {}
+  } catch(e) { console.error("onReportSearchInput error", e); }
 }
 function onReportSearchKeydown(e) {
   const dd = document.getElementById('report-search-dropdown');
@@ -1258,7 +1777,7 @@ async function onWlSearchInput(val) {
     if (items.length === 0) { dd.style.display = 'none'; return; }
     dd.innerHTML = items.map(s => '<div style=\"padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:12px\" onmousedown=\"selectWlCode(\'' + s.code + '\',\'' + (s.name || '') + '\')\">' + s.code + ' <span style=\"color:var(--text2)\">' + (s.name || '') + '</span></div>').join('');
     dd.style.display = 'block';
-  } catch(e) {}
+  } catch(e) { console.error("onWlSearchInput error", e); }
 }
 function onWlSearchKeydown(e) {
   if (e.key === 'Enter') { e.preventDefault(); addWatchlist(); }
@@ -1284,11 +1803,12 @@ function switchTab(name) {
   document.querySelectorAll('.tab-panels > div').forEach(panel => {
     panel.classList.toggle('active', panel.id === `tab-${name}`);
   });
+  try {
   if (name === 'data') loadFundamentalsPreview();
   if (name === 'factory') initMonaco();
   if (name === 'reports') loadReportsList();
   if (name === 'settings') loadSettings();
-  if (name === 'watchlist') { try { if (typeof loadWatchlist === 'function') loadWatchlist(); } catch(e) {} }
+  } catch(e) { console.error("switchTab error", e); }
   if (name === 'trades') loadTrades();
   if (name === 'positions') loadPositions();
   if (name === 'backtest' || name === 'scan') loadSectorHierarchy();
@@ -1296,6 +1816,7 @@ function switchTab(name) {
   if (name === 'ai-backtest') { loadBacktestCapitalDefaults(); initAIBacktest(); }
   if (name === 'radar') loadHotSectorData();
   if (name === 'sim-trader') { loadSimTraderStatus(); initLogDates(); loadSimLogs(); loadSimRiskParams(); loadSimSwitches(); loadSimMonitor(); loadSimStrategy(); loadSimTrades(); renderSimEquityChart(); renderSimCalendar(); renderSimStockAnalysis(); }
+  if (name === 'live-trader') { loadLiveAll(); }
   if (name === 'tqsdk') { initTqsdkTab(); }
 }
 
@@ -1445,11 +1966,12 @@ async function pollLiveQuotes() {
     if (d['399001.SZ']) setIndex('sz', d['399001.SZ']);
     if (d['399006.SZ']) setIndex('cy', d['399006.SZ']);
 
-    // 更新自选股和持仓行
+    // 更新自选股和持仓行（用 findQuote 容错匹配裸码/带后缀）
     document.querySelectorAll('#watchlist-tbody tr.wl-row, #sim-pos-tbody tr.pos-row').forEach(function(tr) {
       var c = tr.getAttribute('data-code');
-      if (!c || !d[c]) return;
-      var q = d[c];
+      if (!c) return;
+      var q = findQuote(d, c);
+      if (!q) return;
       var pEl = tr.querySelector('.live-price') || tr.querySelector('.pos-price');
       var pctEl = tr.querySelector('.live-pct') || tr.querySelector('.pos-pct');
       if (pEl && q.price > 0) {
@@ -1503,11 +2025,11 @@ async function pollLiveQuotes() {
         document.getElementById('sim-counts').textContent = (sr.position_count || 0) + ' / ' + ((sr.trade_count || 0) + (sr.position_count || 0));
         document.getElementById('sim-paused').textContent = sr.paused ? '暂停中' : '正常';
       }
-    } catch(e) {}
-  } catch(e) {}
+    } catch(e) { console.error("loadSimTraderStatus inner error", e); }
+  } catch(e) { console.error("loadSimTraderStatus error", e); }
 }
-// 页面加载后自动启动
-startQuotePolling();
+// 页面加载后不再自动启动轮询（v5.4 优化：只在 WebSocket 断开时才启动）
+// startQuotePolling();  // 已移到 ws.onclose 中
 
 async function _pollAIStatus() {
   try {
@@ -1586,7 +2108,7 @@ function _renderAIResults(top10) {
   const medals = ['🥇','🥈','🥉'];
   tbody.innerHTML = top10.map((r, i) => {
     const pnl    = r.avg_pnl != null ? (r.avg_pnl > 0 ? `+${r.avg_pnl.toFixed(2)}%` : `${r.avg_pnl.toFixed(2)}%`) : '--';
-    const pnlCls = r.avg_pnl > 0 ? 'style="color:var(--red)"' : (r.avg_pnl < 0 ? 'style="color:var(--green)"' : '');
+    const pnlCls = r.avg_pnl > 0 ? 'class="tc-red"' : (r.avg_pnl < 0 ? 'class="tc-green"' : '');
     const wfe    = r.wfe != null ? r.wfe : 'N/A';
     const wfeSt  = r.wfe_status || '';
     const oos    = r.oos_pnl != null ? `${r.oos_pnl > 0 ? '+':'' }${r.oos_pnl.toFixed(2)}%` : '--';
@@ -1594,7 +2116,7 @@ function _renderAIResults(top10) {
       <td>${medals[i] || `#${r.rank}`}</td>
       <td ${pnlCls}><b>${pnl}</b></td>
       <td>${r.win_rate != null ? r.win_rate.toFixed(1)+'%' : '--'}</td>
-      <td style="color:var(--red)">${r.max_dd != null ? '-'+r.max_dd.toFixed(2)+'%' : '--'}</td>
+      <td class="tc-red">${r.max_dd != null ? '-'+r.max_dd.toFixed(2)+'%' : '--'}</td>
       <td title="${wfeSt}">${wfe} ${wfeSt ? (wfe >= 0.6 ? '✅' : wfe >= 0.4 ? '⚠️' : '❌') : ''}</td>
       <td>${oos}</td>
       <td>${r.n_trades || '--'}</td>
@@ -1664,28 +2186,6 @@ document.addEventListener('DOMContentLoaded', () => {
   loadStrategies();
 });
 
-
-async function startScan() {
-  const strategy = document.getElementById('scan-strategy').value;
-  const payload = {
-    strategy,
-    exchanges: Array.from(scanExchanges),
-    sectors: Array.from(scanSelectedSectors),
-    is_hot: document.getElementById('scan-hot') ? document.getElementById('scan-hot').checked : false,
-    advanced_factors: {
-      min_mcap: document.getElementById('fac-mcap').value,
-      max_pe: document.getElementById('fac-pe').value
-    }
-  };
-  addLog('info', '正在启动全量市场扫描...');
-  fetch('/api/screener/start', {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(payload)
-  }).then(r => r.json()).then(res => {
-     if(res.status==='ok') toggleTaskButtons('scan', true);
-     else addLog('error', res.message);
-  }).catch(e => addLog('error', '发送扫描请求失败: ' + e));
-}
 
 // ─── UI 辅助 ──────────────────────────────────────────────────
 function toggleCollapse(id) {
@@ -1964,7 +2464,7 @@ async function viewAIBacktestHistory(id) {
         <div style="font-size:13px"><b>策略：</b>${d.strategy_name} &nbsp; <b>期间：</b>${d.start_date} ~ ${d.end_date}</div>
         <div style="font-size:12px;color:var(--text2);margin-top:4px">
           <b>股票池：</b>${idx} | <b>市值：</b>${d.min_mv||'不限'}~${d.max_mv||'不限'}亿 |
-          <b>最优平盈率：</b><span style="color:var(--green)">${parseFloat(d.best_avg_pnl||0).toFixed(2)}%</span> |
+          <b>最优平盈率：</b><span class="tc-green">${parseFloat(d.best_avg_pnl||0).toFixed(2)}%</span> |
           <b>最优胜率：</b>${parseFloat(d.best_win_rate||0).toFixed(1)}%
         </div>
       </div>
@@ -2122,7 +2622,7 @@ function handleWS(msg) {
       addLog('info', `[退出原因] ${reasons}`);
     }
     hideProgress('simple-bt');
-  } else if (msg.type === 'backtest_progress' && msg.context === 'simple_bt') {
+    document.getElementById('btn-simple-bt-run').disabled = false;
     showProgress('simple-bt', msg.msg);
     updateProgressFill('simple-bt', msg.step, msg.total);
     // 同时输出到系统日志（带级别 + 阶段百分比）
@@ -2181,9 +2681,9 @@ function handleWS(msg) {
       var ts = msg.time ? (msg.date||'').substring(5)+' '+msg.time : (msg.date||'').substring(5) || '';
       var line = '';
       if (a === 'buy') {
-        line = '<div style="padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:11px"><span style="color:var(--text2)">' + ts + '</span> <b style="color:var(--green)">买入</b> ' + (msg.code||'') + ' ' + (msg.name||'') + ' ' + (msg.price||'') + '元 x' + (msg.shares||0) + '股 金额' + Math.round(msg.cost||0).toLocaleString() + ' 现金' + Math.round(msg.cash||0).toLocaleString() + ' <span style="color:var(--text2)">' + (msg.strategy||'') + '</span></div>';
+        line = '<div style="padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:11px"><span style="color:var(--text2)">' + ts + '</span> <b class="tc-green">买入</b> ' + (msg.code||'') + ' ' + (msg.name||'') + ' ' + (msg.price||'') + '元 x' + (msg.shares||0) + '股 金额' + Math.round(msg.cost||0).toLocaleString() + ' 现金' + Math.round(msg.cash||0).toLocaleString() + ' <span style="color:var(--text2)">' + (msg.strategy||'') + '</span></div>';
       } else if (a === 'sell') {
-        line = '<div style="padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:11px"><span style="color:var(--text2)">' + ts + '</span> <b style="color:var(--red)">卖出</b> ' + (msg.code||'') + ' ' + (msg.name||'') + ' ' + (msg.price||'') + '元 x' + (msg.shares||0) + '股 盈亏' + (msg.ret_pct!=null?(msg.ret_pct>=0?'+':'')+msg.ret_pct+'%':'') + ' ' + Math.round(msg.profit||0).toLocaleString() + '元 现金' + Math.round(msg.cash||0).toLocaleString() + ' <span style="color:var(--text2)">' + (msg.reason||'') + '</span></div>';
+        line = '<div style="padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:11px"><span style="color:var(--text2)">' + ts + '</span> <b class="tc-red">卖出</b> ' + (msg.code||'') + ' ' + (msg.name||'') + ' ' + (msg.price||'') + '元 x' + (msg.shares||0) + '股 盈亏' + (msg.ret_pct!=null?(msg.ret_pct>=0?'+':'')+msg.ret_pct+'%':'') + ' ' + Math.round(msg.profit||0).toLocaleString() + '元 现金' + Math.round(msg.cash||0).toLocaleString() + ' <span style="color:var(--text2)">' + (msg.reason||'') + '</span></div>';
       } else if (a === 'snapshot') {
         line = '<div style="padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:11px"><span style="color:var(--text2)">' + ts + '</span> <b style="color:var(--accent)">快照</b> 净值' + Math.round(msg.equity||0).toLocaleString() + ' 现金' + Math.round(msg.cash||0).toLocaleString() + ' 持仓' + (msg.positions||0) + '只</div>';
       }
@@ -2313,12 +2813,15 @@ function findQuote(data, code) {
     if (data[bare]) return data[bare];
     code = bare;
   }
-  // 按前缀判断交易所：6开头→上海，0/3开头→深圳
+  // 按前缀判断交易所：6开头→上海，0/3开头→深圳，8/4开头→北交所
   if (code.startsWith('6')) {
     return data[code + '.SH'] || null;
   }
   if (code.startsWith('0') || code.startsWith('3')) {
     return data[code + '.SZ'] || null;
+  }
+  if (code.startsWith('8') || code.startsWith('4')) {
+    return data[code + '.BJ'] || data[code + '.SZ'] || null;
   }
   return null;
 }
@@ -2370,6 +2873,27 @@ function updatePositionRow(tr, info, entryPrice, shares) {
     const mv2El = tr.querySelector('.pos-mv2');
     if (mv2El) {
         mv2El.textContent = Math.round(price * shares).toLocaleString();
+    }
+    // 今日盈亏（基于今日基准价 data-basepx: 当日买入=买入价, 过夜=昨收）
+    const basePx = parseFloat(tr.getAttribute('data-basepx') || 0)
+                   || parseFloat(info.lastClose || info.preClose || info.last_close || 0);
+    // 实时涨跌：始终以昨收价为基准（市场概念，与个人买入价无关）
+    const prevClose = parseFloat(info.lastClose || info.preClose || info.last_close || 0);
+    const tpEl = tr.querySelector('.today-pnl');
+    const dcEl = tr.querySelector('.day-chg');
+    if (basePx > 0) {
+        const todayPnl = (price - basePx) * shares;
+        const tpColor = todayPnl >= 0 ? '#ef232a' : '#14b143';
+        if (tpEl) {
+            tpEl.textContent = (todayPnl >= 0 ? '+' : '') + Math.round(todayPnl).toLocaleString();
+            tpEl.style.color = tpColor;
+        }
+    }
+    if (dcEl && prevClose > 0) {
+        const dayChg = (price - prevClose) / prevClose * 100;
+        const dcColor = dayChg >= 0 ? '#ef232a' : '#14b143';
+        dcEl.textContent = (dayChg >= 0 ? '+' : '') + dayChg.toFixed(2) + '%';
+        dcEl.style.color = dcColor;
     }
 }
 
@@ -2899,7 +3423,7 @@ function renderScanResults(results) {
       const tsHtml = ts !== '' ? `<span style="color:${ts>=0?'var(--red)':'var(--green)'};font-weight:bold">${ts>0?'+':''}${ts}</span>` : '--';
 
       return `<tr>
-        <td><a href="${thsUrl}" target="_blank" style="color:#3b82f6;text-decoration:none">${code}</a></td>
+        <td><a href="${thsUrl}" target="_blank" style="color:var(--accent);text-decoration:none">${code}</a></td>
         <td>${r.name||''}</td>
         <td style="font-weight:bold">${fmtPrice(r.entry_price || r.price || r.close)}</td>
         <td>${dateStr}</td>
@@ -2915,7 +3439,7 @@ function renderScanResults(results) {
     }).join('');
   } catch(e) {
     console.error('Map results error:', e);
-    tbody.innerHTML = `<tr><td colspan="9" style="color:var(--red)">渲染数据出错: ${e.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="tc-red">渲染数据出错: ${e.message}</td></tr>`;
   }
 }
 
@@ -2961,7 +3485,7 @@ async function loadPositions() {
     const code = p.code || '';
     const thsUrl = `https://stockpage.10jqka.com.cn/${code.split('.')[0]}/`;
     return `<tr>
-      <td><a href="${thsUrl}" target="_blank" style="color:#3b82f6;text-decoration:none">${code}</a></td>
+      <td><a href="${thsUrl}" target="_blank" style="color:var(--accent);text-decoration:none">${code}</a></td>
       <td>${p.name||code}</td>
       <td>${fmtPrice(openP)}</td>
       <td>--</td>
@@ -3032,7 +3556,7 @@ async function loadTrades() {
     const isBuy = t.direction === 'BUY';
     return `<tr>
       <td>${fmtDt(t.trade_time)}</td>
-      <td><a href="${thsUrl}" target="_blank" style="color:#3b82f6;text-decoration:none">${code}</a></td>
+      <td><a href="${thsUrl}" target="_blank" style="color:var(--accent);text-decoration:none">${code}</a></td>
       <td>${t.name||''}</td>
       <td><span class="tag ${isBuy?'tag-buy':'tag-sell'}">${isBuy?'买入':'卖出'}</span></td>
       <td>${fmtPrice(t.price)}</td>
@@ -3541,7 +4065,7 @@ async function checkIndexData() {
       </tr>`;
     }).join('');
   } catch(e) {
-    tbody.innerHTML = `<tr><td colspan="5" style="color:var(--red)">查询失败: ${e.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" class="tc-red">查询失败: ${e.message}</td></tr>`;
   }
 }
 
@@ -3616,12 +4140,12 @@ async function queryQMTStatus() {
       }).then(r => r.json());
       
       if (res.error) {
-          panel.innerHTML = `<span style="color:var(--red)">❌ ${res.error}</span>`;
+          panel.innerHTML = `<span class="tc-red">❌ ${res.error}</span>`;
           return;
       }
       
       let html = `<div style="display:flex; justify-content:space-between; margin-bottom:8px;">
-                    <span><b>最新同步：</b><span style="color:var(--green)">${res.latest_time}</span></span>
+                    <span><b>最新同步：</b><span class="tc-green">${res.latest_time}</span></span>
                     <span><b>已同步资产：</b>${res.total_files} 只</span>
                   </div>`;
       
@@ -3679,7 +4203,7 @@ async function queryQMTStatus() {
       if (e.name === 'AbortError') {
           console.log('用户中止了本地状态查询。');
       } else {
-          panel.innerHTML = `<span style="color:var(--red)">查询异常: ${e}</span>`;
+          panel.innerHTML = `<span class="tc-red">查询异常: ${e}</span>`;
       }
   } finally {
       if (qmtStatusAbortController) {
@@ -3977,7 +4501,7 @@ async function loadBtSimpleConfig() {
         if (stratData.current_strategy) sel.value = stratData.current_strategy;
       }
     }
-  } catch(e) {}
+  } catch(e) { console.error("loadBtSimpleConfig error", e); }
 
   // 自动加载：只读取已保存的回测配置（独立持久化），绝不调用 reset。
   // 历史 bug：此处曾先 POST /simple-config/reset，把用户保存的 TP 档位/档数
@@ -3996,15 +4520,23 @@ async function loadBtSimpleConfig() {
 // 「系统配置」按钮：一键从系统设置页保存的最新风控参数拉取，覆盖当前面板。
 // 仅填充面板，不落盘；用户确认后点「保存配置」才持久化。
 async function loadBtConfigFromSystem() {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000); // 8s 超时，避免服务端卡死时 UI 一直转圈
   try {
-    const resp = await fetch('/api/backtest/simple-config');
+    const resp = await fetch('/api/backtest/simple-config', { signal: ctrl.signal });
+    clearTimeout(timer);
     const data = await resp.json();
     if (data.status !== 'ok') { addLog('error', '读取系统配置失败'); return; }
     const sys = data.system_config || data.config;
     _populateBtConfigUI(sys);
     addLog('ok', '已从系统设置拉取参数（点「保存配置」可持久化）');
   } catch (e) {
-    addLog('error', '读取系统配置失败: ' + e.message);
+    clearTimeout(timer);
+    if (e.name === 'AbortError') {
+      addLog('error', '读取系统配置超时（8s），服务端可能繁忙，请稍后重试');
+    } else {
+      addLog('error', '读取系统配置失败: ' + e.message);
+    }
   }
 }
 
@@ -4025,7 +4557,9 @@ function _populateBtConfigUI(cfg) {
     if (cfg[key] !== undefined) {
       const el = document.getElementById(elId);
       if (el) {
-        if (typeof cfg[key] === 'number' && cfg[key] < 1 && cfg[key] > -1) {
+        // 百分比字段（小数存储 → 乘100显示）—— 与 _collectBtConfig 的除100列表保持一致
+        const pctKeys = ['hard_stop', 'trail_activate', 'trail_dd', 'time_exit_profit', 'first_day_exit_min_profit'];
+        if (pctKeys.includes(key) && typeof cfg[key] === 'number') {
           el.value = (cfg[key] * 100).toFixed(1);
         } else {
           el.value = cfg[key];
@@ -4638,7 +5172,7 @@ function renderBtPnlDist(trades) {
     tooltip: { trigger: 'axis' },
     grid: { left: 50, right: 16, top: 16, bottom: 50 },
     xAxis: { type: 'category', data: bins, axisLabel: { fontSize: 9, color: '#888', rotate: 30 }, axisLine: { lineStyle: { color: '#333' } }, axisTick: { show: false } },
-    yAxis: { type: 'value', interval: 50, axisLabel: { fontSize: 10, color: '#888' }, splitLine: { show: false }, axisLine: { show: false }, axisTick: { show: false } },
+    yAxis: { type: 'value', splitNumber: 4, minInterval: 1, axisLabel: { fontSize: 10, color: '#888' }, splitLine: { show: false }, axisLine: { show: false }, axisTick: { show: false } },
     series: [{ type: 'bar', data: counts.map(function(c, i) { return { value: c, itemStyle: { color: i < 3 ? '#3fb950' : '#f85149' } }; }), barWidth: '60%' }]
   });
   window.addEventListener('resize', function() { if (window._btChartPD) window._btChartPD.resize(); });
@@ -4670,8 +5204,8 @@ function renderBtExitReason(trades) {
     tooltip: { trigger: 'item', formatter: '{b}: {c}笔 ({d}%)' },
     legend: { bottom: 0, textStyle: { fontSize: 10, color: '#aaa' }, data: data.map(function(d) { return d.name; }) },
     series: [{
-      type: 'pie', radius: ['45%', '72%'], center: ['50%', '45%'], avoidLabelOverlap: false,
-      label: { show: true, formatter: '{d}%', fontSize: 9, color: '#ccc' },
+      type: 'pie', radius: ['45%', '72%'], center: ['50%', '42%'], avoidLabelOverlap: true,
+      label: { show: true, position: 'inside', formatter: '{d}%', fontSize: 9, color: '#fff', fontWeight: 'bold', textShadowColor: 'rgba(0,0,0,0.6)', textShadowBlur: 2 },
       itemStyle: { borderColor: '#1a1a2e', borderWidth: 2 },
       data: data.map(function(d) { return { name: d.name, value: d.value, itemStyle: { color: colors[d.name] || '#888' } }; })
     }]
@@ -4702,8 +5236,8 @@ function renderBtHoldDays(trades) {
     tooltip: { trigger: 'axis' },
     grid: { left: 50, right: 16, top: 16, bottom: 50 },
     xAxis: { type: 'category', data: bins, axisLabel: { fontSize: 10, color: '#888', rotate: 30 }, axisLine: { lineStyle: { color: '#333' } }, axisTick: { show: false } },
-    yAxis: { type: 'value', interval: 30, axisLabel: { fontSize: 10, color: '#888' }, splitLine: { show: false }, axisLine: { show: false }, axisTick: { show: false } },
-    series: [{ type: 'bar', data: counts, itemStyle: { color: '#3b82f6' }, barWidth: '55%' }]
+    yAxis: { type: 'value', splitNumber: 4, minInterval: 1, axisLabel: { fontSize: 10, color: '#888' }, splitLine: { show: false }, axisLine: { show: false }, axisTick: { show: false } },
+    series: [{ type: 'bar', data: counts, itemStyle: { color: '#f0b429' }, barWidth: '55%' }]
   });
   window.addEventListener('resize', function() { if (window._btChartHD) window._btChartHD.resize(); });
 }
@@ -5047,18 +5581,23 @@ function oneClickBacktestHistory(id) {
 function _oneClickBacktestWithCodes(codes) {
   if (!codes || codes.length === 0) { alert('股票列表为空'); return; }
 
-  // 切换到回测 tab，自动选中 QUANTQQ
+  // 切换到回测 tab，自动选中当前选股公式
   switchTab('backtest');
 
   setTimeout(function() {
     var stratSel = document.getElementById('sbt-strategy');
-    if (stratSel) stratSel.value = 'QUANTQQ';
+    var formulaEl = document.getElementById('tqsdk-formula');
+    var formulaName = (formulaEl && formulaEl.value) ? formulaEl.value.trim() : '';
+    if (stratSel) {
+      // 优先用当前选股公式名，回退 QUANTQQ
+      stratSel.value = formulaName || 'QUANTQQ';
+    }
 
     var startEl = document.getElementById('tqsdk-start');
     var endEl = document.getElementById('tqsdk-end');
     if (startEl) document.getElementById('sbt-start').value = startEl.value || '2023-01-01';
     if (endEl) document.getElementById('sbt-end').value = endEl.value || '';
 
-    addLog('ok', '已切换到回测 tab，策略=QUANTQQ (' + codes.length + '只候选)');
+    addLog('ok', '已切换到回测 tab，策略=' + (formulaName || 'QUANTQQ') + ' (' + codes.length + '只候选)');
   }, 300);
 }

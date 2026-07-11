@@ -1,0 +1,128 @@
+"""实盘交易模块数据模型(v5.4 §6)
+
+Pydantic 模型用于 API 接口;内部用 dataclass 高性能。
+字段对应 live_trader.duckdb 表结构。
+"""
+from dataclasses import dataclass, field
+from datetime import date, datetime
+from typing import List, Optional
+
+from pydantic import BaseModel, Field
+
+
+# ===== 内部 dataclass(高性能,模块间传递)=====
+
+@dataclass
+class OrderIntent:
+    """下单意图(闸门前)"""
+    code: str
+    direction: str  # "buy" / "sell"
+    volume: int
+    price: float = 0.0
+    price_type: int = 11  # FIX_PRICE
+    strategy_name: str = ""
+    terminal: str = "SYS"  # WEB / TDX / SYS
+    client_order_id: str = ""  # C3 幂等键
+    reason: str = ""  # 策略原因(写入 order_remark)
+
+
+@dataclass
+class LiveOrder:
+    """委托记录(对应 live_orders 表)"""
+    order_id: int
+    client_order_id: str
+    code: str
+    direction: str  # buy/sell
+    volume: int
+    price: float
+    price_type: int
+    status: int  # 48-57+255
+    status_msg: str = ""
+    seq: int = 0
+    mode: str = "dry-run"  # dry-run / live(v5.3)
+    strategy_name: str = ""
+    order_remark: str = ""
+    terminal: str = "SYS"
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+
+
+@dataclass
+class LiveDeal:
+    """成交流水(对应 live_deals 表)"""
+    trade_id: int
+    order_id: int
+    code: str
+    direction: str
+    filled_volume: int
+    filled_price: float
+    filled_amount: float
+    commission: float = 0.0
+    mode: str = "dry-run"
+    traded_at: Optional[datetime] = None
+
+
+@dataclass
+class LivePosition:
+    """持仓(对应 live_positions 表)"""
+    code: str
+    volume: int = 0
+    can_use_volume: int = 0
+    frozen_volume: int = 0
+    pending_buy_volume: int = 0  # C1 在途买入预扣
+    avg_cost: float = 0.0
+    last_price: float = 0.0
+    market_value: float = 0.0
+    float_profit: float = 0.0
+    profit_rate: float = 0.0
+    peak_price: float = 0.0
+    sell_count: int = 0
+    entry_date: Optional[date] = None
+    managed: bool = True  # §3.3.1 false=保留持仓(ETF),true=策略持仓
+    strategy_name: str = ""
+
+
+# ===== Pydantic API 模型(对外接口)=====
+
+class OrderRequest(BaseModel):
+    """下单请求(API)"""
+    code: str
+    direction: str = Field(..., pattern="^(buy|sell)$")
+    volume: int = Field(..., gt=0)
+    price: float = Field(0.0, ge=0)
+    price_type: int = 11
+    strategy_name: str = ""
+    terminal: str = "WEB"
+
+
+# ===== 信号桥接请求模型(v1.2.2 §5.2) =====
+
+class SignalItem(BaseModel):
+    """单个买入信号"""
+    code: str               # 股票代码(支持 600000 或 600000.SH)
+    price: float = 0.0      # 信号源快照价格(会被 QMT 实时价覆盖)
+    ts: str = ""            # 信号时间戳
+
+
+class BuySignalRequest(BaseModel):
+    """买入信号批量请求(信号源 → 实盘服务)"""
+    signals: List[SignalItem]
+    strategy: str = "QUANTQQ"
+    source: str = "TDX"     # 信号来源
+
+
+class SignalResult(BaseModel):
+    """单个信号处理结果"""
+    code: str
+    ok: bool
+    status: str = ""        # submitted / risk_rejected / locked / duplicate / error
+    reason: str = ""
+    order_id: Optional[int] = None
+
+
+class BuySignalResult(BaseModel):
+    """买入信号批量响应"""
+    accepted: List[str] = []        # 接受的 code 列表
+    rejected: List[str] = []        # 拒绝的 code 列表
+    details: List[SignalResult] = []  # 每只信号详情
