@@ -16,6 +16,9 @@ from datetime import date
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+# P0-2 护栏: 运行态账本路径(禁止灌数脚本覆盖)
+LIVE_STATE_PATH = (ROOT / "output" / "sim_trader" / "state.json").resolve()
+
 
 def parse_args():
     p = argparse.ArgumentParser(description="灌入 TDX 公式回测结果到模拟盘")
@@ -28,7 +31,9 @@ def parse_args():
     p.add_argument("--end-date", default=None,
                    help="结束日期 YYYY-MM-DD（默认: 今天）")
     p.add_argument("--output", default=None,
-                   help="输出 JSON 路径（默认: output/sim_trader/{strategy}_state.json）")
+                   help="输出 JSON 路径（默认: output/sim_trader/imports/{strategy}_state.json）")
+    p.add_argument("--force-overwrite-live", action="store_true",
+                   help="⚠️危险: 显式允许覆盖运行态 state.json（默认禁止）")
     return p.parse_args()
 
 
@@ -48,9 +53,9 @@ def main():
     START_DATE = date.fromisoformat(args.start_date)
     END_DATE = date.fromisoformat(args.end_date) if args.end_date else date.today()
 
-    # 默认输出路径：output/sim_trader/{strategy}_state.json
+    # 默认输出路径：output/sim_trader/imports/{strategy}_state.json (P0-2: 与运行态隔离)
     OUTPUT_PATH = Path(args.output) if args.output else \
-                  ROOT / "output" / "sim_trader" / f"{STRATEGY}_state.json"
+                  ROOT / "output" / "sim_trader" / "imports" / f"{STRATEGY}_state.json"
 
     params = {
         "strategy_name": STRATEGY,
@@ -107,7 +112,8 @@ def main():
 
     # ── 写入 JSON Store ───────────────────────
     print("\n[2/4] 转换格式并写入 state.json ...")
-    write_to_json_store(result, params['initial_capital'], OUTPUT_PATH)
+    write_to_json_store(result, params['initial_capital'], OUTPUT_PATH,
+                        force_overwrite_live=args.force_overwrite_live)
 
     # ── 打印详细摘要 ─────────────────────────
     print("\n[3/4] 详细统计:")
@@ -127,9 +133,23 @@ def main():
     print(f"  → 刷新前端交易控制 TAB 即可查看")
 
 
-def write_to_json_store(result: dict, initial_capital: float, output_path: Path):
+def write_to_json_store(result: dict, initial_capital: float, output_path: Path,
+                        force_overwrite_live: bool = False):
     """将 run_tdx_backtest 结果写入 JsonSimStore 格式"""
     from app.sim_trader.store import JsonSimStore
+
+    # P0-2 护栏: 禁止覆盖运行态账本(除非显式 --force-overwrite-live)
+    output_abs = Path(output_path).resolve()
+    if output_abs == LIVE_STATE_PATH and not force_overwrite_live:
+        raise RuntimeError(
+            "❌ 禁止覆盖运行态账本\n"
+            f"   路径: {LIVE_STATE_PATH}\n"
+            "   原因: TDX 回测数据会污染真实模拟盘(2026-06 数据污染事件根因)\n"
+            "   请用 --output 指定独立路径(如 output/sim_trader/imports/)，\n"
+            "   或确实要覆盖时显式传 --force-overwrite-live")
+
+    # 自动创建输出目录(如 imports/)
+    output_abs.parent.mkdir(parents=True, exist_ok=True)
 
     store = JsonSimStore(path=str(output_path))
     store._data = {}
