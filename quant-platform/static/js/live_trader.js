@@ -17,23 +17,27 @@ async function _liveFetch(path, opts) {
 }
 
 async function loadLiveStatus() {
+  const setBadge = (id, text, cls) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = '<span class="lt-badge__dot"></span> ' + text;
+    el.className = 'lt-badge ' + cls;
+  };
   try {
     const d = await _liveFetch('/live/status');
-    const conn = document.getElementById('live-conn');
-    if (conn) conn.textContent = d.qmt_connected ? '🟢 QMT已连接' : '🔴 未连接';
-    if (conn) conn.style.color = d.qmt_connected ? 'green' : 'red';
-    const mode = document.getElementById('live-mode');
-    if (mode) { mode.textContent = d.mode; mode.style.color = d.mode === 'live' ? 'red' : 'orange'; }
+    setBadge('live-conn', d.qmt_connected ? 'QMT 已连接' : 'QMT 未连接',
+             d.qmt_connected ? 'lt-badge--ok' : 'lt-badge--danger');
+    setBadge('live-mode', d.mode || '—',
+             d.mode === 'live' ? 'lt-badge--danger' : 'lt-badge--warn');
     const acc = document.getElementById('live-account');
-    if (acc) acc.textContent = d.account_id;
+    if (acc) acc.textContent = d.account_id || '—';
     const cap = document.getElementById('live-capital');
     if (cap) cap.textContent = '¥' + (d.live_capital || 0).toLocaleString();
     const ks = d.kill_switch || {};
-    const ksEl = document.getElementById('live-ks');
-    if (ksEl) { ksEl.textContent = ks.activated ? '🔴 已激活' : '🟢 未激活'; ksEl.style.color = ks.activated ? 'red' : 'green'; }
+    setBadge('live-ks', ks.activated ? 'KS 已激活' : 'KS 未激活',
+             ks.activated ? 'lt-badge--danger' : 'lt-badge--success');
   } catch (e) {
-    const conn = document.getElementById('live-conn');
-    if (conn) { conn.textContent = '⚠ 服务未启动(8001)'; conn.style.color = 'red'; }
+    setBadge('live-conn', '服务未启动(8001)', 'lt-badge--danger');
   }
 }
 
