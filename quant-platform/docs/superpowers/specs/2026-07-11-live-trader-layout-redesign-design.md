@@ -148,11 +148,14 @@
 
 ## 9. 实现注意点与依赖
 
-### 9.1 今日盈亏（KPI 第 4 项）
+### 9.1 今日盈亏（KPI 第 4 项）✅ 已升级（2026-07-11）
 - 口径（[CLAUDE.md](CLAUDE.md)）：当日买入 = (现价−买入价)×股数；过夜 = (现价−昨收)×股数
-- 依赖：`/live/positions` 需返回 `last_close`（昨收）+ `entry_date`（已有）
-- QMT 行情已有 `lastClose` 字段，后端 positions 补充即可（新增字段，不破坏现有）
-- **降级方案**：若后端暂不改，第一阶段 KPI 第 4 项改显示「总浮盈」（持仓 `float_profit` 汇总），标注「总浮盈」；后端补 `last_close` 后切「今日盈亏」
+- **已实现**：
+  - 后端 `/live/positions` 补 `last_close`（refresh_quotes 从 QMT lastClose 存）+ `today_buy_volume`（从 live_deals 算今日买入量）
+  - 前端 `loadLivePositions` 按 `today_buy_volume` 拆分：今日买入部分按 avg_cost、过夜部分按 last_close
+  - 混合持仓（昨日买+今日加仓）正确拆分（审计 C1 修复）
+  - 缺昨收的过夜部分不计入 + title 悬停提示哪只
+- ~~降级方案（总浮盈）已废弃~~，现为完整今日盈亏
 
 ### 9.2 净值多日切换
 - 前端切换器调 `/live/equity?days={1|5|30|365}`
@@ -182,7 +185,7 @@
 - [ ] 首屏从上到下：顶栏 → KPI 四连 → 净值曲线 → 持仓表 → 委托+成交，无横向滚动
 - [ ] 5 项低频模块收纳进手风琴折叠区，默认收起，点击展开
 - [ ] 净值曲线支持 1日/5日/30日/全部 切换，切换后数据正确
-- [ ] KPI 四连大数字清晰，今日盈亏按口径正确（或降级显示总浮盈并标注）
+- [x] KPI 四连大数字清晰，今日盈亏按口径正确（含混合持仓 today_buy_volume 拆分）
 - [ ] 一键 Kill Switch 按钮固定顶栏右侧，红色醒目
 - [ ] `#tab-live-trader` 内无 `style="..."` 内联样式（除动态值外）
 - [ ] 标题无 emoji（改 SVG 图标或纯文字）
