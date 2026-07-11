@@ -87,6 +87,7 @@ class LiveTraderStore:
         """)
         # 迁移(v2 A3):为旧库补 tp_triggered 列(IF NOT EXISTS 幂等,审计L1)
         con.execute("ALTER TABLE live_positions ADD COLUMN IF NOT EXISTS tp_triggered VARCHAR DEFAULT '[]'")
+        con.execute("ALTER TABLE live_positions ADD COLUMN IF NOT EXISTS last_close DOUBLE")
         con.execute("CREATE SEQUENCE IF NOT EXISTS audit_seq START 1")
         con.execute("""
             CREATE TABLE IF NOT EXISTS live_positions_audit (
@@ -743,11 +744,14 @@ class LiveTraderStore:
                 avg_cost = float(row[1] or 0)
                 market_value = last * volume
                 float_profit = (last - avg_cost) * volume
+                last_close = float(q.get("lastClose", 0) or 0)
+                close_clause = ", last_close = ?" if last_close > 0 else ""
+                close_params = [last_close] if last_close > 0 else []
                 self._conn.execute(
                     "UPDATE live_positions SET last_price = ?, "
-                    "market_value = ?, float_profit = ?, "
+                    "market_value = ?, float_profit = ?" + close_clause + ", "
                     "peak_price = GREATEST(COALESCE(peak_price, 0), ?) WHERE code = ?",
-                    [last, market_value, float_profit, last, code],
+                    [last, market_value, float_profit] + close_params + [last, code],
                 )
                 updated += 1
         if updated:
