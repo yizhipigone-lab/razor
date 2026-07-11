@@ -87,7 +87,8 @@ async function loadLivePositions() {
       if (pnlSub) pnlSub.textContent = '过夜按昨收·当日买入按买入价';
       return;
     }
-    const today = new Date().toISOString().slice(0, 10);
+    const _now = new Date();
+    const today = _now.getFullYear() + '-' + String(_now.getMonth()+1).padStart(2,'0') + '-' + String(_now.getDate()).padStart(2,'0');
     let totalFloat = 0;
     let totalTodayPnl = 0;
     let hasMissingClose = false;
