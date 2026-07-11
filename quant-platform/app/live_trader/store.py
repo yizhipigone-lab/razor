@@ -87,6 +87,7 @@ class LiveTraderStore:
         """)
         # 迁移(v2 A3):为旧库补 tp_triggered 列(IF NOT EXISTS 幂等,审计L1)
         con.execute("ALTER TABLE live_positions ADD COLUMN IF NOT EXISTS tp_triggered VARCHAR DEFAULT '[]'")
+        con.execute("ALTER TABLE live_positions ADD COLUMN IF NOT EXISTS last_close DOUBLE")
         con.execute("CREATE SEQUENCE IF NOT EXISTS audit_seq START 1")
         con.execute("""
             CREATE TABLE IF NOT EXISTS live_positions_audit (
@@ -397,8 +398,9 @@ class LiveTraderStore:
             INSERT INTO live_positions
             (code, volume, can_use_volume, frozen_volume, pending_buy_volume,
              avg_cost, last_price, market_value, float_profit, profit_rate,
-             peak_price, sell_count, entry_date, managed, strategy_name, tp_triggered)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+             peak_price, sell_count, entry_date, managed, strategy_name,
+             tp_triggered, last_close)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(code) DO UPDATE SET
                 volume=excluded.volume, can_use_volume=excluded.can_use_volume,
                 frozen_volume=excluded.frozen_volume,
@@ -409,7 +411,8 @@ class LiveTraderStore:
                 peak_price=GREATEST(COALESCE(live_positions.peak_price, 0), COALESCE(excluded.peak_price, 0)),
                 sell_count=excluded.sell_count, entry_date=excluded.entry_date,
                 managed=excluded.managed, strategy_name=excluded.strategy_name,
-                tp_triggered=excluded.tp_triggered
+                tp_triggered=excluded.tp_triggered,
+                last_close=COALESCE(excluded.last_close, live_positions.last_close)
         """, [
             data.get("code"), data.get("volume", 0), data.get("can_use_volume", 0),
             data.get("frozen_volume", 0), data.get("pending_buy_volume", 0),
@@ -419,6 +422,7 @@ class LiveTraderStore:
             data.get("sell_count", 0), data.get("entry_date"),
             data.get("managed", True), data.get("strategy_name", ""),
             data.get("tp_triggered", "[]"),
+            data.get("last_close"),
         ])
 
     # ===== 查询 =====
@@ -743,11 +747,13 @@ class LiveTraderStore:
                 avg_cost = float(row[1] or 0)
                 market_value = last * volume
                 float_profit = (last - avg_cost) * volume
+                last_close = float(q.get("lastClose", 0) or 0)
                 self._conn.execute(
                     "UPDATE live_positions SET last_price = ?, "
                     "market_value = ?, float_profit = ?, "
+                    "last_close = CASE WHEN ? > 0 THEN ? ELSE last_close END, "
                     "peak_price = GREATEST(COALESCE(peak_price, 0), ?) WHERE code = ?",
-                    [last, market_value, float_profit, last, code],
+                    [last, market_value, float_profit, last_close, last_close, last, code],
                 )
                 updated += 1
         if updated:

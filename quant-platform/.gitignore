@@ -34,6 +34,7 @@ output/**
 scratch/
 *.tmp
 *.parquet.tmp
+.superpowers/
 
 # 杂项
 .DS_Store

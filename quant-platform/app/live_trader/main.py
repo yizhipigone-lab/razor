@@ -159,6 +159,26 @@ async def lifespan(app: FastAPI):
                     f"启动时 kill_switch 已激活(source={ks_status.get('source')}),"
                     f"非自动激活,需人工解除"
                 )
+        # 冷启动 last_close 补全:QMT 连接后主动刷新一次行情
+        # 确保持仓有 last_close(昨收),供今日盈亏计算(过夜持仓=现价-昨收)
+        if qmt.connected:
+            try:
+                _positions = store.get_positions()
+                if _positions:
+                    _codes = [p.get("code", "") for p in _positions if p.get("code")]
+                    if _codes:
+                        _quotes = qmt.get_realtime_quotes(_codes)
+                        if _quotes:
+                            _updated = store.refresh_quotes(_quotes)
+                            logger.info(f"冷启动行情刷新: {_updated} 条持仓补 last_close")
+                        else:
+                            logger.warning("冷启动 refresh 跳过:QMT 未返回行情,等首次行情回调")
+                else:
+                    logger.info("冷启动 refresh 跳过:无持仓")
+            except Exception as e:
+                logger.warning(f"冷启动行情刷新失败: {e},等首次行情回调")
+        else:
+            logger.warning("冷启动 refresh 跳过:QMT 未连接,等首次行情回调")
     except Exception as e:
         logger.error(f"QMT 连接失败: {e}")
         kill_switch.activate(reason=f"QMT连接失败: {e}", source="startup")
@@ -408,11 +428,25 @@ async def asset():
 
 @app.get("/live/positions")
 async def positions():
-    """持仓查询(含 managed 标记)"""
+    """持仓查询(含 managed 标记 + today_buy_volume)"""
     store = _state.get("store")
     if not store:
         raise HTTPException(503, "Store 未初始化")
-    return store.get_positions(managed_only=False)
+    positions = store.get_positions(managed_only=False)
+    # 补 today_buy_volume(今日买入量,从 live_deals 算)
+    # 前端按"今日买入部分按买入价、过夜部分按昨收"拆分今日盈亏
+    if positions and store._conn:
+        from datetime import date as _date
+        today = _date.today().isoformat()
+        rows = store._conn.execute(
+            "SELECT code, SUM(filled_volume) FROM live_deals "
+            "WHERE direction = 'buy' AND traded_at >= ? "
+            "GROUP BY code", [today]
+        ).fetchall()
+        buy_map = {r[0]: int(r[1] or 0) for r in rows}
+        for p in positions:
+            p['today_buy_volume'] = buy_map.get(p.get('code'), 0)
+    return positions
 
 
 @app.get("/live/orders")
