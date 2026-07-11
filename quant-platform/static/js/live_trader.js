@@ -16,58 +16,55 @@ async function _liveFetch(path, opts) {
   }
 }
 
+let _liveCapital = 0;
+const fmtCapital = v => '¥' + (Number(v) || 0).toLocaleString(void 0, { maximumFractionDigits: 0 });
+
 async function loadLiveStatus() {
-  const setBadge = (id, text, cls) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.innerHTML = '<span class="lt-badge__dot"></span> ' + text;
-    el.className = 'lt-badge ' + cls;
-  };
+  const setBadge = (id, text, cls) => { const el = document.getElementById(id); if (!el) return; el.innerHTML = '<span class="lt-badge__dot"></span> ' + text; el.className = 'lt-badge ' + cls; };
+  const resetBadge = (id, cls) => setBadge(id, '—', cls);
   try {
     const d = await _liveFetch('/live/status');
-    setBadge('live-conn', d.qmt_connected ? 'QMT 已连接' : 'QMT 未连接',
-             d.qmt_connected ? 'lt-badge--ok' : 'lt-badge--danger');
-    setBadge('live-mode', d.mode || '—',
-             d.mode === 'live' ? 'lt-badge--danger' : 'lt-badge--warn');
-    const acc = document.getElementById('live-account');
-    if (acc) acc.textContent = d.account_id || '—';
-    const cap = document.getElementById('live-capital');
-    if (cap) cap.textContent = '¥' + (d.live_capital || 0).toLocaleString();
+    _liveCapital = Number(d.live_capital) || 0;
+    setBadge('live-conn', d.qmt_connected ? 'QMT 已连接' : 'QMT 未连接', d.qmt_connected ? 'lt-badge--ok' : 'lt-badge--danger');
+    setBadge('live-mode', d.mode || '—', d.mode === 'live' ? 'lt-badge--danger' : 'lt-badge--warn');
+    const acc = document.getElementById('live-account'); if (acc) acc.textContent = d.account_id || '—';
+    const cap = document.getElementById('live-capital'); if (cap) cap.textContent = fmtCapital(_liveCapital);
     const ks = d.kill_switch || {};
-    setBadge('live-ks', ks.activated ? 'KS 已激活' : 'KS 未激活',
-             ks.activated ? 'lt-badge--danger' : 'lt-badge--success');
+    setBadge('live-ks', ks.activated ? 'KS 已激活' : 'KS 未激活', ks.activated ? 'lt-badge--danger' : 'lt-badge--success');
   } catch (e) {
     setBadge('live-conn', '服务未启动(8001)', 'lt-badge--danger');
+    resetBadge('live-mode', 'lt-badge--warn');
+    resetBadge('live-ks', 'lt-badge--success');
+    const acc = document.getElementById('live-account'); if (acc) acc.textContent = '—';
+    const cap = document.getElementById('live-capital'); if (cap) cap.textContent = '—';
+    _liveCapital = 0;
   }
 }
 
 async function loadLiveAsset() {
+  const setErr = (id) => { const el = document.getElementById(id); if (el) { el.textContent = '—'; el.style.color = 'var(--text2)'; } };
   try {
     const d = await _liveFetch('/live/asset');
     const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-    const fmt = v => '¥' + (Number(v) || 0).toLocaleString(void 0, { maximumFractionDigits: 2 });
-    const total = Number(d.total_asset) || 0;
-    const mv = Number(d.market_value) || 0;
-    const cash = Number(d.cash) || 0;
-    const frozen = Number(d.frozen_cash) || 0;
+    const fmt = v => { const n = Number(v) || 0; const sign = n > 0 ? '+' : (n < 0 ? '-' : ''); return sign + '¥' + Math.abs(n).toLocaleString(void 0, { maximumFractionDigits: 0 }); };
+    const total = Number(d.total_asset) || 0, mv = Number(d.market_value) || 0, cash = Number(d.cash) || 0, frozen = Number(d.frozen_cash) || 0;
     setText('lt-kpi-total', fmt(total));
     setText('lt-kpi-mv', fmt(mv));
     setText('lt-kpi-cash', fmt(cash));
-    // 副指标
-    const cap = (await _liveFetch('/live/status').catch(() => ({}))).live_capital || 0;
-    if (cap > 0) {
-      const pnlVsCap = total - cap;
-      const absPnl = Math.abs(pnlVsCap);
-      const pctVsCap = (absPnl / cap * 100).toFixed(2);
-      const sign = pnlVsCap >= 0 ? '+' : '-';
+    if (_liveCapital > 0) {
+      const pnlVsCap = total - _liveCapital;
+      const pctVsCap = _liveCapital > 0 ? (pnlVsCap / _liveCapital * 100).toFixed(2) : '0';
       const sub = document.getElementById('lt-kpi-total-sub');
-      if (sub) { sub.textContent = sign + pctVsCap + '% / ' + sign + fmt(absPnl); sub.style.color = pnlVsCap >= 0 ? 'var(--red)' : 'var(--green)'; }
+      if (sub) { sub.textContent = fmt(pnlVsCap) + ' / ' + pctVsCap + '%'; sub.style.color = pnlVsCap > 0 ? 'var(--red)' : (pnlVsCap < 0 ? 'var(--green)' : 'var(--text2)'); }
     }
     const mvSub = document.getElementById('lt-kpi-mv-sub');
     if (mvSub) mvSub.textContent = '仓位 ' + (total > 0 ? (mv / total * 100).toFixed(1) : 0) + '%';
     const cashSub = document.getElementById('lt-kpi-cash-sub');
     if (cashSub) cashSub.textContent = '冻结 ' + fmt(frozen);
-  } catch (e) { /* 静默 */ }
+  } catch (e) {
+    ['lt-kpi-total','lt-kpi-mv','lt-kpi-cash'].forEach(setErr);
+    console.error('live asset 加载失败', e);
+  }
 }
 
 async function loadLivePositions() {
@@ -89,9 +86,8 @@ async function loadLivePositions() {
     }
     const _now = new Date();
     const today = _now.getFullYear() + '-' + String(_now.getMonth()+1).padStart(2,'0') + '-' + String(_now.getDate()).padStart(2,'0');
-    let totalFloat = 0;
-    let totalTodayPnl = 0;
-    let hasMissingClose = false;
+    let totalFloat = 0, totalTodayPnl = 0, hasMissingClose = false;
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     tbody.innerHTML = data.map(p => {
       const fp = Number(p.float_profit) || 0;
       totalFloat += fp;
@@ -99,43 +95,39 @@ async function loadLivePositions() {
       const vol = Number(p.volume) || 0;
       const avgCost = Number(p.avg_cost) || 0;
       const lastClose = Number(p.last_close) || 0;
-      const entryDate = p.entry_date ? String(p.entry_date).slice(0, 10) : '';
-      const isTodayBuy = entryDate === today;
+      const todayBuyVol = Math.min(Number(p.today_buy_volume) || 0, vol);
+      const overnightVol = vol - todayBuyVol;
       let todayPnl = 0;
       if (vol > 0 && last > 0) {
-        if (isTodayBuy) {
-          todayPnl = (last - avgCost) * vol;
-        } else if (lastClose > 0) {
-          todayPnl = (last - lastClose) * vol;
-        } else {
-          hasMissingClose = true;
+        if (todayBuyVol > 0) todayPnl += (last - avgCost) * todayBuyVol;
+        if (overnightVol > 0) {
+          if (lastClose > 0) todayPnl += (last - lastClose) * overnightVol;
+          else hasMissingClose = true;
         }
       }
       totalTodayPnl += todayPnl;
       const tag = p.managed ? '<span class="tc-green">策略</span>' : '<span class="muted">ETF保留</span>';
-      const pnlColor = fp >= 0 ? 'var(--red)' : 'var(--green)';
-      return '<tr><td>' + (p.code || '—') + '</td><td>' + (vol || 0) + '</td><td>' + (p.can_use_volume || 0) + '</td>' +
+      const pnlCls = fp > 0 ? 'up' : (fp < 0 ? 'down' : 'muted');
+      const missingTitle = (overnightVol > 0 && lastClose <= 0) ? ' title="缺昨收,未计入今日盈亏"' : '';
+      return '<tr'+missingTitle+'><td>' + esc(p.code) + '</td><td>' + vol + '</td><td>' + (Number(p.can_use_volume) || 0) + '</td>' +
         '<td>' + avgCost.toFixed(3) + '</td><td>' + last.toFixed(3) + '</td>' +
-        '<td>' + (p.market_value || 0).toFixed(0) + '</td>' +
-        '<td style="color:' + pnlColor + ';">' + fp.toFixed(0) + '</td>' +
+        '<td>' + (Number(p.market_value) || 0).toFixed(0) + '</td>' +
+        '<td class="' + pnlCls + '">' + fp.toFixed(0) + '</td>' +
         '<td>' + tag + '</td></tr>';
     }).join('');
-    // 持仓表汇总浮盈（总浮盈 = float_profit 求和）
-    const floatSign = totalFloat >= 0 ? '+' : '-';
-    const floatText = floatSign + '¥' + Math.abs(totalFloat).toLocaleString(void 0, { maximumFractionDigits: 0 });
-    const floatColor = totalFloat >= 0 ? 'var(--red)' : 'var(--green)';
+    const fmtSign = v => v > 0 ? '+' : (v < 0 ? '-' : '');
+    const floatText = fmtSign(totalFloat) + '¥' + Math.abs(totalFloat).toLocaleString(void 0, { maximumFractionDigits: 0 });
+    const floatColor = totalFloat > 0 ? 'var(--red)' : (totalFloat < 0 ? 'var(--green)' : 'var(--text2)');
     const sumEl = document.getElementById('lt-positions-summary');
     if (sumEl) { sumEl.textContent = floatText; sumEl.style.color = floatColor; }
-    // KPI 第4项：今日盈亏（today_pnl 汇总）
-    const pnlSign = totalTodayPnl >= 0 ? '+' : '-';
-    const pnlText = pnlSign + '¥' + Math.abs(totalTodayPnl).toLocaleString(void 0, { maximumFractionDigits: 0 });
-    const pnlColor = totalTodayPnl >= 0 ? 'var(--red)' : 'var(--green)';
+    const pnlText = fmtSign(totalTodayPnl) + '¥' + Math.abs(totalTodayPnl).toLocaleString(void 0, { maximumFractionDigits: 0 });
+    const pnlColor = totalTodayPnl > 0 ? 'var(--red)' : (totalTodayPnl < 0 ? 'var(--green)' : 'var(--text2)');
     const pnlEl = document.getElementById('lt-kpi-pnl');
     if (pnlEl) { pnlEl.textContent = pnlText; pnlEl.style.color = pnlColor; }
     const pnlLabel = document.getElementById('lt-kpi-pnl-label');
     if (pnlLabel) pnlLabel.textContent = '今日盈亏';
     const pnlSub = document.getElementById('lt-kpi-pnl-sub');
-    if (pnlSub) pnlSub.textContent = hasMissingClose ? '部分持仓缺昨收,未计入' : '过夜按昨收·当日买入按买入价';
+    if (pnlSub) pnlSub.textContent = hasMissingClose ? '部分持仓缺昨收,未计入(鼠标悬停看哪只)' : '过夜按昨收·当日买入按买入价';
   } catch (e) {
     tbody.innerHTML = '<tr><td colspan=8 class="tc-red">加载失败(服务未启动?)</td></tr>';
   }
@@ -161,10 +153,6 @@ async function loadLiveOrders() {
   } catch (e) {
     tbody.innerHTML = '<tr><td colspan=7 style="color:var(--red);">加载失败</td></tr>';
   }
-}
-
-function loadLiveGates() {
-  // v2审计H3: 已由 loadLiveRiskParams 替代(展示 risk 段实际参数,非写死闸门文案)。保留空壳防旧 onclick 报错。
 }
 
 async function runReconcile() {
@@ -281,6 +269,7 @@ async function loadLiveEquity(days) {
       el.innerHTML = '<div style="text-align:center;color:var(--text2);padding:60px;">暂无净值数据(盘中每 5min 采样)</div>';
       return;
     }
+    const _accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#f0b429';
     const xs = pts.map(p => (p.date || '') + ' ' + (p.time || ''));
     const totals = pts.map(p => p.total);
     if (!_liveEquityChart) _liveEquityChart = echarts.init(el);
@@ -290,9 +279,9 @@ async function loadLiveEquity(days) {
       xAxis: { type: 'category', data: xs, axisLabel: { fontSize: 10 } },
       yAxis: { type: 'value', scale: true, axisLabel: { fontSize: 10 } },
       series: [{ name: '总资产', type: 'line', data: totals, smooth: true,
-                lineStyle: { width: 2, color: '#f0b429' },
-                itemStyle: { color: '#f0b429' },
-                areaStyle: { opacity: 0.12, color: '#f0b429' } }],
+                lineStyle: { width: 2, color: _accentColor },
+                itemStyle: { color: _accentColor },
+                areaStyle: { opacity: 0.12, color: _accentColor } }],
     }, true);
   } catch (e) {
     if (_liveEquityChart) { _liveEquityChart.dispose(); _liveEquityChart = null; }
@@ -326,7 +315,12 @@ async function loadLiveSwitches() {
     // 折叠区摘要
     const sb = document.getElementById('lt-sum-buy'); if (sb) sb.textContent = d.buy_enabled ? '开' : '关';
     const ss = document.getElementById('lt-sum-sell'); if (ss) ss.textContent = d.sell_enabled ? '开' : '关';
-  } catch (e) { /* 静默 */ }
+  } catch (e) {
+    const setErr = (id) => { const el = document.getElementById(id); if (el) { el.textContent = '—'; el.style.color = 'var(--text2)'; } };
+    setErr('live-buy-switch'); setErr('live-sell-switch');
+    const sb = document.getElementById('lt-sum-buy'); if (sb) sb.textContent = '—';
+    const ss = document.getElementById('lt-sum-sell'); if (ss) ss.textContent = '—';
+  }
 }
 
 let _liveSwitching = false;
@@ -358,7 +352,11 @@ async function loadLiveModeDisplay() {
     const el = document.getElementById('live-mode-display');
     if (el) { el.textContent = d.mode; el.style.color = d.mode === 'live' ? 'var(--red)' : 'var(--orange)'; }
     const sm = document.getElementById('lt-sum-mode'); if (sm) { sm.textContent = d.mode; sm.style.color = d.mode === 'live' ? 'var(--red)' : 'var(--orange)'; }
-  } catch (e) { /* 静默 */ }
+  } catch (e) {
+    const el = document.getElementById('live-mode-display');
+    if (el) { el.textContent = '—'; el.style.color = 'var(--text2)'; }
+    const sm = document.getElementById('lt-sum-mode'); if (sm) { sm.textContent = '—'; sm.style.color = 'var(--text2)'; }
+  }
 }
 
 async function switchLiveMode() {
