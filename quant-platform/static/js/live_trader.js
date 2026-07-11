@@ -117,7 +117,7 @@ async function loadLiveOrders() {
   if (!tbody) return;
   try {
     const data = await _liveFetch('/live/orders?limit=50');
-    if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan=7 style="text-align:center;color:var(--text-muted);">无委托</td></tr>'; return; }
+    if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan=7 style="text-align:center;color:var(--text2);">无委托</td></tr>'; return; }
     const statusMap = { 48: '未报', 49: '待报', 50: '已报', 51: '待撤', 52: '部成待撤', 53: '部撤', 54: '已撤', 55: '部成', 56: '已成', 57: '废单', 255: '未知' };
     tbody.innerHTML = data.map(o => {
       const dirColor = o.direction === 'buy' ? 'var(--red)' : 'var(--green)';
@@ -148,7 +148,7 @@ async function runReconcile() {
     let html = '<div style="color:' + color + ';">总计 ' + d.total + '只 | CRITICAL ' + d.critical + ' | WARN ' + d.warnings + ' | INFO ' + d.infos + '</div>';
     if (d.details) {
       html += d.details.map(x => {
-        const lc = x.level === 'CRITICAL' ? 'var(--red)' : (x.level === 'WARN' ? 'var(--orange)' : 'var(--text-muted)');
+        const lc = x.level === 'CRITICAL' ? 'var(--red)' : (x.level === 'WARN' ? 'var(--orange)' : 'var(--text2)');
         const tag = x.managed ? '' : ' [ETF豁免]';
         return '<div style="color:' + lc + ';">  ' + x.code + ' local=' + x.local_volume + ' qmt=' + x.qmt_volume + ' diff=' + x.diff_volume + ' ' + x.level + tag + '</div>';
       }).join('');
@@ -276,7 +276,7 @@ async function loadLiveDeals() {
   if (!tbody) return;
   try {
     const data = await _liveFetch('/live/deals?limit=50');
-    if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan=6 style="text-align:center;color:var(--text-muted);">无成交</td></tr>'; return; }
+    if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan=6 style="text-align:center;color:var(--text2);">无成交</td></tr>'; return; }
     tbody.innerHTML = data.map(d => {
       const dirColor = d.direction === 'buy' ? 'var(--red)' : 'var(--green)';
       const ts = d.traded_at ? String(d.traded_at).slice(11, 19) : '';
@@ -374,7 +374,7 @@ async function loadLiveRiskParams() {
       '<div>TC 时间退出 ' + (p.time_exit_days ?? '—') + '天 盈利>' + pct(p.time_exit_min_profit_pct) + '</div>' +
       '<div>TF 强制退出 ' + (p.time_exit_force_days ?? '—') + '天</div>' +
       '<div>FD 首日离场 盈利>' + fdProfit + ' ' + (p.first_day_exit_days ?? '—') + '天</div>' +
-      '<div style="margin-top:6px;color:var(--text-muted);font-size:11px;">闸门1~9 在下单时触发检查(详见 risk_gate.py)</div>';
+      '<div style="margin-top:6px;color:var(--text2);font-size:11px;">闸门1~9 在下单时触发检查(详见 risk_gate.py)</div>';
   } catch (e) { el.innerHTML = '<div style="color:var(--red);">参数加载失败</div>'; }
 }
 
