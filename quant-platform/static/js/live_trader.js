@@ -57,10 +57,11 @@ async function loadLiveAsset() {
     const cap = (await _liveFetch('/live/status').catch(() => ({}))).live_capital || 0;
     if (cap > 0) {
       const pnlVsCap = total - cap;
-      const pctVsCap = (pnlVsCap / cap * 100).toFixed(2);
-      const sign = pnlVsCap >= 0 ? '+' : '';
+      const absPnl = Math.abs(pnlVsCap);
+      const pctVsCap = (absPnl / cap * 100).toFixed(2);
+      const sign = pnlVsCap >= 0 ? '+' : '-';
       const sub = document.getElementById('lt-kpi-total-sub');
-      if (sub) { sub.textContent = sign + pctVsCap + '% / ' + sign + fmt(pnlVsCap); sub.style.color = pnlVsCap >= 0 ? 'var(--red)' : 'var(--green)'; }
+      if (sub) { sub.textContent = sign + pctVsCap + '% / ' + sign + fmt(absPnl); sub.style.color = pnlVsCap >= 0 ? 'var(--red)' : 'var(--green)'; }
     }
     const mvSub = document.getElementById('lt-kpi-mv-sub');
     if (mvSub) mvSub.textContent = '仓位 ' + (total > 0 ? (mv / total * 100).toFixed(1) : 0) + '%';
