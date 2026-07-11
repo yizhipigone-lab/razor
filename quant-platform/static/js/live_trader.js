@@ -89,7 +89,7 @@ async function loadLivePositions() {
       totalFloat += fp;
       const tag = p.managed ? '<span class="tc-green">策略</span>' : '<span class="muted">ETF保留</span>';
       const pnlColor = fp >= 0 ? 'var(--red)' : 'var(--green)';
-      return '<tr><td>' + p.code + '</td><td>' + p.volume + '</td><td>' + p.can_use_volume + '</td>' +
+      return '<tr><td>' + (p.code || '—') + '</td><td>' + (p.volume || 0) + '</td><td>' + (p.can_use_volume || 0) + '</td>' +
         '<td>' + (p.avg_cost || 0).toFixed(3) + '</td><td>' + (p.last_price || 0).toFixed(3) + '</td>' +
         '<td>' + (p.market_value || 0).toFixed(0) + '</td>' +
         '<td style="color:' + pnlColor + ';">' + fp.toFixed(0) + '</td>' +
@@ -99,11 +99,12 @@ async function loadLivePositions() {
     const pnlSign = totalFloat >= 0 ? '+' : '-';
     const absFloat = Math.abs(totalFloat);
     const pnlColor = totalFloat >= 0 ? 'var(--red)' : 'var(--green)';
+    const pnlText = pnlSign + '¥' + absFloat.toLocaleString(void 0, { maximumFractionDigits: 0 });
     const sumEl = document.getElementById('lt-positions-summary');
-    if (sumEl) { sumEl.textContent = pnlSign + '¥' + absFloat.toFixed(0); sumEl.style.color = pnlColor; }
+    if (sumEl) { sumEl.textContent = pnlText; sumEl.style.color = pnlColor; }
     // KPI 第 4 项（第一阶段降级为总浮盈，标注"总浮盈"）
     const pnlEl = document.getElementById('lt-kpi-pnl');
-    if (pnlEl) { pnlEl.textContent = pnlSign + '¥' + absFloat.toFixed(0); pnlEl.style.color = pnlColor; }
+    if (pnlEl) { pnlEl.textContent = pnlText; pnlEl.style.color = pnlColor; }
     const pnlSub = document.getElementById('lt-kpi-pnl-sub');
     if (pnlSub) pnlSub.textContent = '持仓累计 · 待后端补 last_close 升级为今日盈亏';
   } catch (e) {
@@ -119,8 +120,8 @@ async function loadLiveOrders() {
     if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan=7 style="text-align:center;color:var(--text-muted);">无委托</td></tr>'; return; }
     const statusMap = { 48: '未报', 49: '待报', 50: '已报', 51: '待撤', 52: '部成待撤', 53: '部撤', 54: '已撤', 55: '部成', 56: '已成', 57: '废单', 255: '未知' };
     tbody.innerHTML = data.map(o => {
-      const dirColor = o.direction === 'buy' ? 'red' : 'green';
-      const stColor = o.status === 56 ? 'green' : (o.status === 57 ? 'red' : 'orange');
+      const dirColor = o.direction === 'buy' ? 'var(--red)' : 'var(--green)';
+      const stColor = o.status === 56 ? 'var(--green)' : (o.status === 57 ? 'var(--red)' : 'var(--orange)');
       const ts = o.created_at ? o.created_at.slice(11, 19) : '';
       return '<tr><td>' + ts + '</td><td>' + o.code + '</td>' +
         '<td style="color:' + dirColor + ';">' + (o.direction === 'buy' ? '买入' : '卖出') + '</td>' +
@@ -129,7 +130,7 @@ async function loadLiveOrders() {
         '<td>' + o.mode + '</td></tr>';
     }).join('');
   } catch (e) {
-    tbody.innerHTML = '<tr><td colspan=7 style="color:red;">加载失败</td></tr>';
+    tbody.innerHTML = '<tr><td colspan=7 style="color:var(--red);">加载失败</td></tr>';
   }
 }
 
@@ -143,11 +144,11 @@ async function runReconcile() {
   try {
     el.textContent = '对账中...';
     const d = await _liveFetch('/live/reconcile', { method: 'POST' });
-    const color = d.critical > 0 ? 'red' : (d.warnings > 0 ? 'orange' : 'green');
+    const color = d.critical > 0 ? 'var(--red)' : (d.warnings > 0 ? 'var(--orange)' : 'var(--green)');
     let html = '<div style="color:' + color + ';">总计 ' + d.total + '只 | CRITICAL ' + d.critical + ' | WARN ' + d.warnings + ' | INFO ' + d.infos + '</div>';
     if (d.details) {
       html += d.details.map(x => {
-        const lc = x.level === 'CRITICAL' ? 'red' : (x.level === 'WARN' ? 'orange' : 'var(--text-muted)');
+        const lc = x.level === 'CRITICAL' ? 'var(--red)' : (x.level === 'WARN' ? 'var(--orange)' : 'var(--text-muted)');
         const tag = x.managed ? '' : ' [ETF豁免]';
         return '<div style="color:' + lc + ';">  ' + x.code + ' local=' + x.local_volume + ' qmt=' + x.qmt_volume + ' diff=' + x.diff_volume + ' ' + x.level + tag + '</div>';
       }).join('');
@@ -215,7 +216,7 @@ async function saveScanInterval() {
   if (!el) return;
   const val = parseFloat(el.value);
   if (isNaN(val) || val < 10 || val > 300) {
-    if (msgEl) { msgEl.textContent = '范围 10~300 秒'; msgEl.style.color = '#e74c3c'; }
+    if (msgEl) { msgEl.textContent = '范围 10~300 秒'; msgEl.style.color = 'var(--red)'; }
     return;
   }
   try {
@@ -224,9 +225,9 @@ async function saveScanInterval() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ interval_sec: val }),
     });
-    if (msgEl) { msgEl.textContent = '✓ 已保存 (' + d.interval_sec + 's)'; msgEl.style.color = 'green'; }
+    if (msgEl) { msgEl.textContent = '✓ 已保存 (' + d.interval_sec + 's)'; msgEl.style.color = 'var(--green)'; }
   } catch (e) {
-    if (msgEl) { msgEl.textContent = '保存失败: ' + e.message; msgEl.style.color = '#e74c3c'; }
+    if (msgEl) { msgEl.textContent = '保存失败: ' + e.message; msgEl.style.color = 'var(--red)'; }
   }
 }
 
@@ -277,14 +278,14 @@ async function loadLiveDeals() {
     const data = await _liveFetch('/live/deals?limit=50');
     if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan=6 style="text-align:center;color:var(--text-muted);">无成交</td></tr>'; return; }
     tbody.innerHTML = data.map(d => {
-      const dirColor = d.direction === 'buy' ? 'red' : 'green';
+      const dirColor = d.direction === 'buy' ? 'var(--red)' : 'var(--green)';
       const ts = d.traded_at ? String(d.traded_at).slice(11, 19) : '';
       return '<tr><td>' + ts + '</td><td>' + d.code + '</td>' +
         '<td style="color:' + dirColor + ';">' + (d.direction === 'buy' ? '买入' : '卖出') + '</td>' +
         '<td>' + (d.filled_price || 0).toFixed(2) + '</td><td>' + (d.filled_volume || 0) + '</td>' +
         '<td>' + (d.mode || '') + '</td></tr>';
     }).join('');
-  } catch (e) { tbody.innerHTML = '<tr><td colspan=6 style="color:red;">加载失败</td></tr>'; }
+  } catch (e) { tbody.innerHTML = '<tr><td colspan=6 style="color:var(--red);">加载失败</td></tr>'; }
 }
 
 async function loadLiveSwitches() {
@@ -314,9 +315,9 @@ async function toggleLiveSwitch(which) {
       body: JSON.stringify({ [key]: newVal }),
     });
     await loadLiveSwitches();
-    if (msgEl) { msgEl.textContent = '✓ ' + (which === 'buy' ? '买入' : '卖出') + '已' + (newVal ? '开启' : '关闭'); msgEl.style.color = 'green'; }
+    if (msgEl) { msgEl.textContent = '✓ ' + (which === 'buy' ? '买入' : '卖出') + '已' + (newVal ? '开启' : '关闭'); msgEl.style.color = 'var(--green)'; }
   } catch (e) {
-    if (msgEl) { msgEl.textContent = '切换失败: ' + e.message; msgEl.style.color = 'red'; }
+    if (msgEl) { msgEl.textContent = '切换失败: ' + e.message; msgEl.style.color = 'var(--red)'; }
   } finally {
     _liveSwitching = false;
   }
@@ -340,15 +341,15 @@ async function switchLiveMode() {
     const warn = target === 'live' ? '⚠ 将开始真钱交易!' : '将撤所有在途单后切模拟(等终态,超时阻断)';
     if (!confirm('确认切换模式 ' + cur.mode + ' -> ' + target + '?\n' + warn)) return;
     _liveSwitching = true;
-    if (msgEl) { msgEl.textContent = '切换中(最长30s,撤单等终态)...'; msgEl.style.color = 'orange'; }
+    if (msgEl) { msgEl.textContent = '切换中(最长30s,撤单等终态)...'; msgEl.style.color = 'var(--orange)'; }
     const d = await _liveFetch('/live/config/mode', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mode: target }),
     });
-    if (msgEl) { msgEl.textContent = '✓ 已切换 ' + d.old + ' -> ' + d.new; msgEl.style.color = 'green'; }
+    if (msgEl) { msgEl.textContent = '✓ 已切换 ' + d.old + ' -> ' + d.new; msgEl.style.color = 'var(--green)'; }
     loadLiveModeDisplay(); loadLiveStatus();
   } catch (e) {
-    if (msgEl) { msgEl.textContent = '切换失败: ' + e.message; msgEl.style.color = 'red'; }
+    if (msgEl) { msgEl.textContent = '切换失败: ' + e.message; msgEl.style.color = 'var(--red)'; }
   } finally {
     _liveSwitching = false;
   }
@@ -374,7 +375,7 @@ async function loadLiveRiskParams() {
       '<div>TF 强制退出 ' + (p.time_exit_force_days ?? '—') + '天</div>' +
       '<div>FD 首日离场 盈利>' + fdProfit + ' ' + (p.first_day_exit_days ?? '—') + '天</div>' +
       '<div style="margin-top:6px;color:var(--text-muted);font-size:11px;">闸门1~9 在下单时触发检查(详见 risk_gate.py)</div>';
-  } catch (e) { el.innerHTML = '<div style="color:red;">参数加载失败</div>'; }
+  } catch (e) { el.innerHTML = '<div style="color:var(--red);">参数加载失败</div>'; }
 }
 
 // ─── 手风琴折叠交互 ──────────────────────────────
