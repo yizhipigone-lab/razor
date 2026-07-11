@@ -205,6 +205,7 @@ async function loadScanInterval() {
     const d = await _liveFetch('/live/config/scan-interval');
     const el = document.getElementById('live-scan-interval');
     if (el) el.value = d.interval_sec;
+    const sm = document.getElementById('lt-sum-interval'); if (sm) sm.textContent = d.interval_sec;
   } catch (e) { console.warn('加载扫描间隔失败:', e.message); }
 }
 
@@ -289,9 +290,12 @@ async function loadLiveDeals() {
 async function loadLiveSwitches() {
   try {
     const d = await _liveFetch('/live/config/switches');
-    const setEl = (id, v) => { const el = document.getElementById(id); if (el) { el.textContent = v ? '开' : '关'; el.style.color = v ? 'green' : 'var(--text-muted)'; } };
+    const setEl = (id, v) => { const el = document.getElementById(id); if (el) { el.textContent = v ? '开' : '关'; el.style.color = v ? 'var(--green)' : 'var(--text2)'; } };
     setEl('live-buy-switch', d.buy_enabled);
     setEl('live-sell-switch', d.sell_enabled);
+    // 折叠区摘要
+    const sb = document.getElementById('lt-sum-buy'); if (sb) sb.textContent = d.buy_enabled ? '开' : '关';
+    const ss = document.getElementById('lt-sum-sell'); if (ss) ss.textContent = d.sell_enabled ? '开' : '关';
   } catch (e) { /* 静默 */ }
 }
 
@@ -322,7 +326,8 @@ async function loadLiveModeDisplay() {
   try {
     const d = await _liveFetch('/live/config/mode');
     const el = document.getElementById('live-mode-display');
-    if (el) { el.textContent = d.mode; el.style.color = d.mode === 'live' ? 'red' : 'orange'; }
+    if (el) { el.textContent = d.mode; el.style.color = d.mode === 'live' ? 'var(--red)' : 'var(--orange)'; }
+    const sm = document.getElementById('lt-sum-mode'); if (sm) { sm.textContent = d.mode; sm.style.color = d.mode === 'live' ? 'var(--red)' : 'var(--orange)'; }
   } catch (e) { /* 静默 */ }
 }
 
@@ -370,6 +375,14 @@ async function loadLiveRiskParams() {
       '<div>FD 首日离场 盈利>' + fdProfit + ' ' + (p.first_day_exit_days ?? '—') + '天</div>' +
       '<div style="margin-top:6px;color:var(--text-muted);font-size:11px;">闸门1~9 在下单时触发检查(详见 risk_gate.py)</div>';
   } catch (e) { el.innerHTML = '<div style="color:red;">参数加载失败</div>'; }
+}
+
+// ─── 手风琴折叠交互 ──────────────────────────────
+function toggleAccordion(headerEl) {
+  const item = headerEl.parentElement;
+  if (item && item.classList.contains('lt-accordion__item')) {
+    item.classList.toggle('open');
+  }
 }
 
 // v2: 实盘 tab 激活时加载全部(含新增展示)
