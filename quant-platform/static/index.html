@@ -1474,108 +1474,169 @@
 
       <!-- Live Trader Tab: 实盘交易 -->
       <div id="tab-live-trader">
-        <div class="card" style="margin-bottom: 12px;">
-          <h3 style="margin: 0 0 10px 0;"><svg class="nav-ico"><use href="#i-candle"/></svg> 实盘交易 live_trader</h3>
-          <div id="live-status-bar" style="display:flex; gap:24px; flex-wrap:wrap; font-size:13px; padding:8px 0; border-bottom:1px solid var(--border);">
-            <span>状态: <b id="live-conn">—</b></span>
-            <span>模式: <b id="live-mode">—</b></span>
-            <span>账号: <b id="live-account">—</b></span>
-            <span>资金: <b id="live-capital">—</b></span>
-            <span>Kill Switch: <b id="live-ks">—</b></span>
-            <span style="margin-left:auto;"><button onclick="loadLiveStatus()" style="padding:4px 12px;">刷新</button></span>
+
+        <!-- ① 顶栏：状态徽章 + 账号本金 + 一键KS -->
+        <div class="lt-topbar">
+          <div class="lt-topbar__badges">
+            <span class="lt-badge lt-badge--ok" id="live-conn"><span class="lt-badge__dot"></span> QMT —</span>
+            <span class="lt-badge lt-badge--warn" id="live-mode">—</span>
+            <span class="lt-badge lt-badge--success" id="live-ks"><span class="lt-badge__dot"></span> KS —</span>
+            <span class="lt-topbar__meta">账号 <b id="live-account">—</b> · 本金 <b id="live-capital">—</b></span>
           </div>
-          <div id="live-asset-bar" style="display:flex; gap:24px; flex-wrap:wrap; font-size:13px; padding:8px 0;">
-            <span>可用现金: <b id="live-cash">—</b></span>
-            <span>冻结: <b id="live-frozen">—</b></span>
-            <span>持仓市值: <b id="live-mv">—</b></span>
-            <span>总资产: <b id="live-total">—</b></span>
+          <button class="btn btn-danger btn-sm" onclick="activateKillSwitch()">⏻ 一键 Kill Switch</button>
+        </div>
+
+        <!-- ② KPI 四连 -->
+        <div class="lt-kpi-grid">
+          <div class="lt-kpi">
+            <div class="lt-kpi__label">总资产</div>
+            <div class="lt-kpi__value lt-kpi__value--accent" id="lt-kpi-total">—</div>
+            <div class="lt-kpi__sub" id="lt-kpi-total-sub">—</div>
+          </div>
+          <div class="lt-kpi">
+            <div class="lt-kpi__label">持仓市值</div>
+            <div class="lt-kpi__value" id="lt-kpi-mv">—</div>
+            <div class="lt-kpi__sub" id="lt-kpi-mv-sub">—</div>
+          </div>
+          <div class="lt-kpi">
+            <div class="lt-kpi__label">可用现金</div>
+            <div class="lt-kpi__value" id="lt-kpi-cash">—</div>
+            <div class="lt-kpi__sub" id="lt-kpi-cash-sub">—</div>
+          </div>
+          <div class="lt-kpi">
+            <div class="lt-kpi__label" id="lt-kpi-pnl-label">总浮盈</div>
+            <div class="lt-kpi__value" id="lt-kpi-pnl">—</div>
+            <div class="lt-kpi__sub" id="lt-kpi-pnl-sub">—</div>
           </div>
         </div>
 
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:12px;">
-          <div class="card">
-            <h4 class="mb-2">📊 持仓 <span style="font-size:11px;color:var(--text-muted);">(managed=false 为 ETF 保留,策略不动)</span></h4>
-            <table class="data-table" style="font-size:12px; width:100%;">
-              <thead><tr><th>代码</th><th>股数</th><th>可卖</th><th>均价</th><th>现价</th><th>市值</th><th>浮盈</th><th>类型</th></tr></thead>
-              <tbody id="live-positions-tbody"></tbody>
-            </table>
+        <!-- ③ 净值曲线（主角，全宽） -->
+        <div class="card">
+          <div class="lt-chart__head">
+            <div class="lt-chart__title">
+              <svg class="nav-ico"><use href="#i-trend"/></svg>
+              <span class="fs-13">净值曲线</span>
+              <span class="muted fs-xs">当日 5min 快照 · 总资产</span>
+            </div>
+            <div class="lt-chart__range" id="lt-equity-range">
+              <span class="chip active" data-days="1" onclick="loadLiveEquity(1)">1日</span>
+              <span class="chip" data-days="5" onclick="loadLiveEquity(5)">5日</span>
+              <span class="chip" data-days="30" onclick="loadLiveEquity(30)">30日</span>
+              <span class="chip" data-days="365" onclick="loadLiveEquity(365)">全部</span>
+            </div>
           </div>
+          <div id="live-equity-chart" style="height:170px;"></div>
+        </div>
+
+        <!-- ④ 持仓表（全宽 + 汇总浮盈） -->
+        <div class="card">
+          <div class="flex-between mb-2">
+            <span class="fs-13">持仓 <span class="muted fs-xs">(managed=false 为 ETF 保留，策略不动)</span></span>
+            <span class="muted fs-xs">汇总浮盈 <b id="lt-positions-summary" class="tc-red">—</b></span>
+          </div>
+          <table class="data-table">
+            <thead><tr><th>代码</th><th>股数</th><th>可卖</th><th>均价</th><th>现价</th><th>市值</th><th>浮盈</th><th>类型</th></tr></thead>
+            <tbody id="live-positions-tbody"></tbody>
+          </table>
+        </div>
+
+        <!-- ⑤ 委托 + 成交 -->
+        <div class="grid-2">
           <div class="card">
-            <h4 class="mb-2">📋 委托 <span style="font-size:11px;color:var(--text-muted);">(最近 50 笔)</span></h4>
-            <table class="data-table" style="font-size:12px; width:100%;">
+            <h4 class="mb-2">委托 <span class="muted fs-xs">(最近 50 笔)</span></h4>
+            <table class="data-table">
               <thead><tr><th>时间</th><th>代码</th><th>方向</th><th>价格</th><th>股数</th><th>状态</th><th>模式</th></tr></thead>
               <tbody id="live-orders-tbody"></tbody>
             </table>
           </div>
-        </div>
-
-        <!-- v2: 净值曲线(5min 快照) -->
-        <div class="card" style="margin-bottom:12px;">
-          <h4 class="mb-2">📈 净值曲线 <span style="font-size:11px;color:var(--text-muted);">(当日 5min 快照,live_assets_backup)</span></h4>
-          <div id="live-equity-chart" style="height:300px;"></div>
-        </div>
-
-        <!-- v2: 成交记录 + 执行开关/模式 -->
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:12px;">
           <div class="card">
-            <h4 class="mb-2">💹 成交记录 <span style="font-size:11px;color:var(--text-muted);">(最近 50 笔)</span></h4>
-            <table class="data-table" style="font-size:12px; width:100%;">
+            <h4 class="mb-2">成交 <span class="muted fs-xs">(最近 50 笔)</span></h4>
+            <table class="data-table">
               <thead><tr><th>时间</th><th>代码</th><th>方向</th><th>成交价</th><th>股数</th><th>模式</th></tr></thead>
               <tbody id="live-deals-tbody"></tbody>
             </table>
           </div>
-          <div class="card">
-            <h4 class="mb-2">🎛 执行开关 / 模式 <span style="font-size:11px;color:var(--text-muted);">(仅本地可改)</span></h4>
-            <div style="font-size:13px; line-height:2.2;">
-              <div>买入开关: <b id="live-buy-switch">—</b>
-                <button onclick="toggleLiveSwitch('buy')" style="padding:2px 8px;font-size:11px;margin-left:6px;">切换</button></div>
-              <div>卖出开关: <b id="live-sell-switch">—</b>
-                <button onclick="toggleLiveSwitch('sell')" style="padding:2px 8px;font-size:11px;margin-left:6px;">切换</button></div>
-              <div style="margin-top:6px;">当前模式: <b id="live-mode-display">—</b>
-                <button onclick="switchLiveMode()" style="padding:2px 8px;font-size:11px;margin-left:6px;">切换模式</button></div>
-              <div id="live-switch-msg" style="font-size:11px;color:var(--text2);margin-top:4px;">切 live 开始真钱交易(live→dry-run 会先撤在途单等终态)</div>
+        </div>
+
+        <!-- ⑥ 折叠区（手风琴） -->
+        <div class="lt-accordion">
+          <div class="lt-accordion__title">低频操作 · 点击展开</div>
+
+          <div class="lt-accordion__item">
+            <div class="lt-accordion__header" onclick="toggleAccordion(this)">
+              <span class="lt-accordion__head-left"><span class="lt-accordion__arrow">▸</span>执行开关 / 模式</span>
+              <span class="lt-accordion__summary">买入 <b id="lt-sum-buy">—</b> · 卖出 <b id="lt-sum-sell">—</b> · <b id="lt-sum-mode">—</b></span>
+            </div>
+            <div class="lt-accordion__body">
+              <div class="fs-13" style="line-height:2.2;">
+                <div>买入开关: <b id="live-buy-switch">—</b>
+                  <button class="btn btn-sm btn-ghost" onclick="toggleLiveSwitch('buy')">切换</button></div>
+                <div>卖出开关: <b id="live-sell-switch">—</b>
+                  <button class="btn btn-sm btn-ghost" onclick="toggleLiveSwitch('sell')">切换</button></div>
+                <div style="margin-top:6px;">当前模式: <b id="live-mode-display">—</b>
+                  <button class="btn btn-sm btn-ghost" onclick="switchLiveMode()">切换模式</button></div>
+                <div id="live-switch-msg" class="muted fs-xs" style="margin-top:4px;">切 live 开始真钱交易(live→dry-run 会先撤在途单等终态)</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lt-accordion__item">
+            <div class="lt-accordion__header" onclick="toggleAccordion(this)">
+              <span class="lt-accordion__head-left"><span class="lt-accordion__arrow">▸</span>风控参数</span>
+              <span class="lt-accordion__summary muted">(risk 段,实盘与模拟盘共用)</span>
+            </div>
+            <div class="lt-accordion__body">
+              <div id="live-gates" class="fs-xs" style="line-height:1.8;">点"刷新"加载</div>
+            </div>
+          </div>
+
+          <div class="lt-accordion__item">
+            <div class="lt-accordion__header" onclick="toggleAccordion(this)">
+              <span class="lt-accordion__head-left"><span class="lt-accordion__arrow">▸</span>对账记录</span>
+              <span class="lt-accordion__summary muted">点"手动对账"触发</span>
+            </div>
+            <div class="lt-accordion__body">
+              <button class="btn btn-sm btn-ghost mb-2" onclick="runReconcile()">手动对账</button>
+              <div id="live-reconcile" class="fs-xs" style="line-height:1.6;">点"手动对账"触发</div>
+            </div>
+          </div>
+
+          <div class="lt-accordion__item">
+            <div class="lt-accordion__header" onclick="toggleAccordion(this)">
+              <span class="lt-accordion__head-left"><span class="lt-accordion__arrow">▸</span>操作（离场扫描 / 扫描间隔）</span>
+              <span class="lt-accordion__summary muted">间隔 <b id="lt-sum-interval">—</b>s</span>
+            </div>
+            <div class="lt-accordion__body">
+              <div class="flex-gap mb-2">
+                <button class="btn btn-sm" onclick="runExitScan()">触发离场扫描</button>
+                <button class="btn btn-sm btn-danger" onclick="deactivateKillSwitch()">解除 Kill Switch</button>
+              </div>
+              <div class="flex-gap" style="align-items:center;font-size:13px;">
+                <span>离场扫描间隔:</span>
+                <input type="number" id="live-scan-interval" min="10" max="300" step="5" style="width:70px;">
+                <span>秒</span>
+                <button class="btn btn-sm" onclick="saveScanInterval()">保存</button>
+                <span id="live-scan-interval-msg" class="muted fs-xs"></span>
+              </div>
+              <div class="muted fs-xs" style="margin-top:8px;">dry-run 模式下手动下单禁用(防误下单);扫描间隔范围 10~300 秒</div>
+            </div>
+          </div>
+
+          <div class="lt-accordion__item">
+            <div class="lt-accordion__header" onclick="toggleAccordion(this)">
+              <span class="lt-accordion__head-left"><span class="lt-accordion__arrow">▸</span>审计回放</span>
+              <span class="lt-accordion__summary muted">输入 order_id 回放</span>
+            </div>
+            <div class="lt-accordion__body">
+              <div class="flex-gap mb-2">
+                <input id="live-replay-oid" placeholder="输入 order_id" style="width:160px;">
+                <button class="btn btn-sm" onclick="replayOrder()">回放</button>
+              </div>
+              <pre id="live-replay-out" class="fs-xs" style="max-height:200px; overflow:auto; background:var(--bg); padding:8px; border-radius:4px;">回放结果将显示在这里</pre>
             </div>
           </div>
         </div>
 
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:12px;">
-          <div class="card">
-            <h4 class="mb-2">🛡 风控参数 <span style="font-size:11px;color:var(--text-muted);">(risk 段,实盘与模拟盘共用)</span></h4>
-            <div id="live-gates" style="font-size:12px; line-height:1.8;">点"刷新"加载</div>
-          </div>
-          <div class="card">
-            <h4 class="mb-2">🔍 对账记录 <button onclick="runReconcile()" style="float:right;padding:2px 8px;font-size:11px;">手动对账</button></h4>
-            <div id="live-reconcile" style="font-size:12px; line-height:1.6;">点"手动对账"触发</div>
-          </div>
-        </div>
-
-        <div class="card" style="margin-bottom:12px;">
-          <h4 class="mb-2">🎬 操作</h4>
-          <div style="display:flex; gap:8px; flex-wrap:wrap;">
-            <button onclick="runExitScan()" style="padding:6px 16px;">触发离场扫描</button>
-            <button onclick="activateKillSwitch()" style="padding:6px 16px; background:var(--red); color:#fff; border:none;">🔴 激活 Kill Switch</button>
-            <button onclick="deactivateKillSwitch()" style="padding:6px 16px;">解除 Kill Switch</button>
-          </div>
-          <div style="margin-top:10px; display:flex; gap:8px; align-items:center; font-size:13px;">
-            <span>离场扫描间隔:</span>
-            <input type="number" id="live-scan-interval" min="10" max="300" step="5" style="width:70px; padding:3px 6px;">
-            <span>秒</span>
-            <button onclick="saveScanInterval()" style="padding:3px 12px; font-size:12px;">保存</button>
-            <span id="live-scan-interval-msg" style="font-size:11px; color:var(--text2);"></span>
-          </div>
-          <div style="margin-top:8px; font-size:11px; color:var(--text-muted);">
-            dry-run 模式下手动下单禁用(防误下单);离场扫描会模拟 mock 回报验证全链路;扫描间隔范围 10~300 秒
-          </div>
-        </div>
-
-        <div class="card">
-          <h4 class="mb-2">📜 审计回放</h4>
-          <div style="display:flex; gap:8px; margin-bottom:8px;">
-            <input id="live-replay-oid" placeholder="输入 order_id" style="padding:4px 8px; width:160px;">
-            <button onclick="replayOrder()" style="padding:4px 12px;">回放</button>
-          </div>
-          <pre id="live-replay-out" style="font-size:11px; max-height:200px; overflow:auto; background:var(--bg); padding:8px; border-radius:4px;">回放结果将显示在这里</pre>
-        </div>
       </div>
 
       <!-- TQSDK Tab: 通达信选股 -->
@@ -1678,6 +1739,6 @@
 </div>
 
     <script src="/static/js/main.js?v=40"></script>
-    <script src="/static/js/live_trader.js?v=1"></script>
+    <script src="/static/js/live_trader.js?v=2"></script>
 </body>
 </html>
