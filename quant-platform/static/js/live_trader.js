@@ -44,11 +44,28 @@ async function loadLiveStatus() {
 async function loadLiveAsset() {
   try {
     const d = await _liveFetch('/live/asset');
-    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-    set('live-cash', '¥' + (d.cash || 0).toFixed(2));
-    set('live-frozen', '¥' + (d.frozen_cash || 0).toFixed(2));
-    set('live-mv', '¥' + (d.market_value || 0).toFixed(2));
-    set('live-total', '¥' + (d.total_asset || 0).toFixed(2));
+    const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    const fmt = v => '¥' + (Number(v) || 0).toLocaleString(void 0, { maximumFractionDigits: 2 });
+    const total = Number(d.total_asset) || 0;
+    const mv = Number(d.market_value) || 0;
+    const cash = Number(d.cash) || 0;
+    const frozen = Number(d.frozen_cash) || 0;
+    setText('lt-kpi-total', fmt(total));
+    setText('lt-kpi-mv', fmt(mv));
+    setText('lt-kpi-cash', fmt(cash));
+    // 副指标
+    const cap = (await _liveFetch('/live/status').catch(() => ({}))).live_capital || 0;
+    if (cap > 0) {
+      const pnlVsCap = total - cap;
+      const pctVsCap = (pnlVsCap / cap * 100).toFixed(2);
+      const sign = pnlVsCap >= 0 ? '+' : '';
+      const sub = document.getElementById('lt-kpi-total-sub');
+      if (sub) { sub.textContent = sign + pctVsCap + '% / ' + sign + fmt(pnlVsCap); sub.style.color = pnlVsCap >= 0 ? 'var(--red)' : 'var(--green)'; }
+    }
+    const mvSub = document.getElementById('lt-kpi-mv-sub');
+    if (mvSub) mvSub.textContent = '仓位 ' + (total > 0 ? (mv / total * 100).toFixed(1) : 0) + '%';
+    const cashSub = document.getElementById('lt-kpi-cash-sub');
+    if (cashSub) cashSub.textContent = '冻结 ' + fmt(frozen);
   } catch (e) { /* 静默 */ }
 }
 
