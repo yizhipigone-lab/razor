@@ -245,7 +245,11 @@ async function loadLiveEquity(days) {
   try {
     const d = await _liveFetch('/live/equity?days=' + _liveEquityDays);
     const pts = d.points || [];
-    if (pts.length === 0) { el.innerHTML = '<div style="text-align:center;color:var(--text2);padding:60px;">暂无净值数据(盘中每 5min 采样)</div>'; return; }
+    if (pts.length === 0) {
+      if (_liveEquityChart) { _liveEquityChart.dispose(); _liveEquityChart = null; }
+      el.innerHTML = '<div style="text-align:center;color:var(--text2);padding:60px;">暂无净值数据(盘中每 5min 采样)</div>';
+      return;
+    }
     const xs = pts.map(p => (p.date || '') + ' ' + (p.time || ''));
     const totals = pts.map(p => p.total);
     if (!_liveEquityChart) _liveEquityChart = echarts.init(el);
@@ -259,7 +263,10 @@ async function loadLiveEquity(days) {
                 itemStyle: { color: '#f0b429' },
                 areaStyle: { opacity: 0.12, color: '#f0b429' } }],
     }, true);
-  } catch (e) { el.innerHTML = '<div style="color:var(--red);padding:20px;">净值加载失败: ' + e.message + '</div>'; }
+  } catch (e) {
+    if (_liveEquityChart) { _liveEquityChart.dispose(); _liveEquityChart = null; }
+    el.innerHTML = '<div style="color:var(--red);padding:20px;">净值加载失败: ' + e.message + '</div>';
+  }
 }
 
 async function loadLiveDeals() {
