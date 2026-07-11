@@ -231,13 +231,21 @@ async function saveScanInterval() {
 
 // ─── v2: 净值曲线/成交/开关/模式/参数 ──────────────────
 let _liveEquityChart = null;
-async function loadLiveEquity() {
+let _liveEquityDays = 1;
+async function loadLiveEquity(days) {
   const el = document.getElementById('live-equity-chart');
   if (!el) return;
+  if (typeof days === 'number') {
+    _liveEquityDays = days;
+    // 更新切换器 active 状态
+    document.querySelectorAll('#lt-equity-range .chip').forEach(c => {
+      c.classList.toggle('active', Number(c.dataset.days) === days);
+    });
+  }
   try {
-    const d = await _liveFetch('/live/equity?days=1');
+    const d = await _liveFetch('/live/equity?days=' + _liveEquityDays);
     const pts = d.points || [];
-    if (pts.length === 0) { el.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:60px;">暂无净值数据(盘中每 5min 采样)</div>'; return; }
+    if (pts.length === 0) { el.innerHTML = '<div style="text-align:center;color:var(--text2);padding:60px;">暂无净值数据(盘中每 5min 采样)</div>'; return; }
     const xs = pts.map(p => (p.date || '') + ' ' + (p.time || ''));
     const totals = pts.map(p => p.total);
     if (!_liveEquityChart) _liveEquityChart = echarts.init(el);
@@ -247,9 +255,11 @@ async function loadLiveEquity() {
       xAxis: { type: 'category', data: xs, axisLabel: { fontSize: 10 } },
       yAxis: { type: 'value', scale: true, axisLabel: { fontSize: 10 } },
       series: [{ name: '总资产', type: 'line', data: totals, smooth: true,
-                lineStyle: { width: 2 }, areaStyle: { opacity: 0.1 } }],
+                lineStyle: { width: 2, color: '#f0b429' },
+                itemStyle: { color: '#f0b429' },
+                areaStyle: { opacity: 0.12, color: '#f0b429' } }],
     }, true);
-  } catch (e) { el.innerHTML = '<div style="color:red;padding:20px;">净值加载失败: ' + e.message + '</div>'; }
+  } catch (e) { el.innerHTML = '<div style="color:var(--red);padding:20px;">净值加载失败: ' + e.message + '</div>'; }
 }
 
 async function loadLiveDeals() {
