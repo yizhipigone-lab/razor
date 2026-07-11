@@ -75,18 +75,39 @@ async function loadLivePositions() {
   if (!tbody) return;
   try {
     const data = await _liveFetch('/live/positions');
-    if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan=8 style="text-align:center;color:var(--text-muted);">无持仓</td></tr>'; return; }
+    if (!data || data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan=8 style="text-align:center;color:var(--text2);">无持仓</td></tr>';
+      const sumEl = document.getElementById('lt-positions-summary');
+      if (sumEl) { sumEl.textContent = '¥0'; sumEl.style.color = 'var(--text2)'; }
+      const pnlEl = document.getElementById('lt-kpi-pnl');
+      if (pnlEl) { pnlEl.textContent = '¥0'; pnlEl.style.color = 'var(--text2)'; }
+      return;
+    }
+    let totalFloat = 0;
     tbody.innerHTML = data.map(p => {
-      const tag = p.managed ? '<span style="color:green;">策略</span>' : '<span style="color:var(--text-muted);">ETF保留</span>';
-      const pnlColor = (p.float_profit || 0) >= 0 ? 'red' : 'green';
+      const fp = Number(p.float_profit) || 0;
+      totalFloat += fp;
+      const tag = p.managed ? '<span class="tc-green">策略</span>' : '<span class="muted">ETF保留</span>';
+      const pnlColor = fp >= 0 ? 'var(--red)' : 'var(--green)';
       return '<tr><td>' + p.code + '</td><td>' + p.volume + '</td><td>' + p.can_use_volume + '</td>' +
         '<td>' + (p.avg_cost || 0).toFixed(3) + '</td><td>' + (p.last_price || 0).toFixed(3) + '</td>' +
         '<td>' + (p.market_value || 0).toFixed(0) + '</td>' +
-        '<td style="color:' + pnlColor + ';">' + (p.float_profit || 0).toFixed(0) + '</td>' +
+        '<td style="color:' + pnlColor + ';">' + fp.toFixed(0) + '</td>' +
         '<td>' + tag + '</td></tr>';
     }).join('');
+    // 汇总浮盈（对称格式：+¥xxx / -¥xxx）
+    const pnlSign = totalFloat >= 0 ? '+' : '-';
+    const absFloat = Math.abs(totalFloat);
+    const pnlColor = totalFloat >= 0 ? 'var(--red)' : 'var(--green)';
+    const sumEl = document.getElementById('lt-positions-summary');
+    if (sumEl) { sumEl.textContent = pnlSign + '¥' + absFloat.toFixed(0); sumEl.style.color = pnlColor; }
+    // KPI 第 4 项（第一阶段降级为总浮盈，标注"总浮盈"）
+    const pnlEl = document.getElementById('lt-kpi-pnl');
+    if (pnlEl) { pnlEl.textContent = pnlSign + '¥' + absFloat.toFixed(0); pnlEl.style.color = pnlColor; }
+    const pnlSub = document.getElementById('lt-kpi-pnl-sub');
+    if (pnlSub) pnlSub.textContent = '持仓累计 · 待后端补 last_close 升级为今日盈亏';
   } catch (e) {
-    tbody.innerHTML = '<tr><td colspan=8 style="color:red;">加载失败(服务未启动?)</td></tr>';
+    tbody.innerHTML = '<tr><td colspan=8 style="color:var(--red);">加载失败(服务未启动?)</td></tr>';
   }
 }
 
