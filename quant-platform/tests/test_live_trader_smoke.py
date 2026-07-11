@@ -218,11 +218,11 @@ def test_pnl_engine_build_cycles(store):
     engine = PnlEngine(store)
 
     deals = [
-        {"code": "600000.SH", "direction": "buy", "filled_volume": 100,
+        {"code": "600000.SH", "mode": "live", "direction": "buy", "filled_volume": 100,
          "filled_price": 10.0, "filled_amount": 1000.0, "traded_at": datetime(2026, 7, 1, 9, 30)},
-        {"code": "600000.SH", "direction": "buy", "filled_volume": 100,
+        {"code": "600000.SH", "mode": "live", "direction": "buy", "filled_volume": 100,
          "filled_price": 11.0, "filled_amount": 1100.0, "traded_at": datetime(2026, 7, 1, 10, 0)},
-        {"code": "600000.SH", "direction": "sell", "filled_volume": 200,
+        {"code": "600000.SH", "mode": "live", "direction": "sell", "filled_volume": 200,
          "filled_price": 12.0, "filled_amount": 2400.0, "traded_at": datetime(2026, 7, 1, 14, 0)},
     ]
     cycles = engine.build_cycles(deals)
@@ -240,9 +240,9 @@ def test_pnl_engine_ongoing_cycle(store):
     engine = PnlEngine(store)
 
     deals = [
-        {"code": "600000.SH", "direction": "buy", "filled_volume": 100,
+        {"code": "600000.SH", "mode": "live", "direction": "buy", "filled_volume": 100,
          "filled_price": 10.0, "filled_amount": 1000.0, "traded_at": datetime(2026, 7, 1, 9, 30)},
-        {"code": "600000.SH", "direction": "sell", "filled_volume": 50,
+        {"code": "600000.SH", "mode": "live", "direction": "sell", "filled_volume": 50,
          "filled_price": 11.0, "filled_amount": 550.0, "traded_at": datetime(2026, 7, 1, 14, 0)},
     ]
     cycles = engine.build_cycles(deals)
