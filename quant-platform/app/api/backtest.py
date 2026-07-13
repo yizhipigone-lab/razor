@@ -16,29 +16,6 @@ stop_events = {}
 _stop_events_lock = threading.Lock()
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 
-@router.get("/api/backtest/strategies")
-async def list_backtest_strategies():
-    """扫描物理策略文件，返回 AI 回测可用的策略列表"""
-    STRAT_DIR = ROOT_DIR / "app" / "screener" / "strategies"
-    EXCLUDED = {"base.py", "__init__.py"}
-    result = []
-    for f in sorted(STRAT_DIR.glob("*.py")):
-        if f.name in EXCLUDED:
-            continue
-        name = f.stem
-        # 读首行 docstring 作为显示名
-        try:
-            lines = f.read_text(encoding="utf-8").split("\n")
-            desc = next((l.strip(' "\'') for l in lines[:10]
-                         if l.strip().strip('"\'') and not l.startswith("#")
-                         and not l.startswith("from") and not l.startswith("import")
-                         and not l.startswith("class") and not l.startswith("def")
-                         and len(l.strip().strip('"\'')) > 2), name)
-        except Exception:
-            desc = name
-        result.append({"name": name, "label": desc[:40]})
-    return {"status": "ok", "strategies": result}
-
 
 @router.post("/api/backtest/ai/start")
 async def ai_backtest_start(body: dict):
@@ -832,6 +809,7 @@ async def run_simple_backtest(body: dict):
 
             if result.get('status') == 'stopped':
                 sync_broadcast({"type": "log", "level": "warn", "msg": "回测已停止"})
+                sync_broadcast({"type": "simple_bt_stopped"})
                 return
 
             # 检查 TDX 信号为 0 的情况
@@ -866,17 +844,17 @@ async def run_simple_backtest(body: dict):
             sync_broadcast({
                 "type": "simple_bt_done",
                 "result_id": result_id,
-                "summary": result['summary'],
-                "equity": result['equity'],
-                "trades": result['trades'],
-                "indices": result['indices'],
+                "summary": result.get('summary', {'total_return': 0, 'max_drawdown': 0, 'win_rate': 0, 'sharpe': 0}),
+                "equity": result.get('equity', []),
+                "trades": result.get('trades', []),
+                "indices": result.get('indices', []),
                 "daily_trades": result.get('daily_trades', {}),
                 "params": result.get('params', {}),
             })
 
             # 额外的丰富完成日志（前端 simple_bt_done 已记基本日志，这里加更详细）
             try:
-                s = result['summary']
+                s = result.get('summary', {})
                 trades = result.get('trades', [])
                 sync_broadcast({"type": "log", "level": "info",
                     "msg": f"[数据源] {s.get('data_source', '?')} | 数据区间: {s.get('start_date', '')} ~ {s.get('end_date', '')}"})
@@ -933,11 +911,13 @@ async def run_simple_backtest(body: dict):
 
 @router.post("/api/backtest/run-simple/stop")
 async def stop_simple_backtest():
+    """中断正在运行的简化回测（用户在 UI 点停止时调用）"""
     with _stop_events_lock:
-        if 'simple_bt' in stop_events:
-            stop_events['simple_bt'].set()
-            return {"status": "ok", "message": "停止信号已发送"}
-    return {"status": "error", "message": "无正在运行的回测"}
+        evt = stop_events.get('simple_bt')
+        if evt:
+            evt.set()
+    sync_broadcast({"type": "log", "level": "warning", "msg": "🛑 简化回测停止指令已发送"})
+    return {"status": "ok", "message": "停止信号已发送"}
 
 
 @router.get("/api/backtest/simple/history")
