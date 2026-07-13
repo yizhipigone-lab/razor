@@ -9,31 +9,19 @@ import numpy as np
 def generate_signals(df: pd.DataFrame,
                      N: int = 5,
                      ZF: float = 8.0,
-                     filter_st: bool = True,
-                     filter_bj: bool = True,
-                     skip_limit_up: bool = True,
                      ) -> pd.DataFrame:
     """
-    盘整突破选股
+    盘整突破选股(候选⑤:ST/北交所/涨停 过滤已移到 base.preprocess)。
 
     参数:
-      df: 全市场K线
-      N: 横盘最大天数（默认5）
-      ZF: 突破涨幅阈值%（默认8%）
-      filter_st: 过滤ST
-      filter_bj: 过滤北交所
-      skip_limit_up: 涨停过滤
+      df: 全市场K线(已 preprocess 过滤)
+      N: 横盘最大天数(默认5)
+      ZF: 突破涨幅阈值%(默认8%)
     """
     if df is None or len(df) < 60:
         return pd.DataFrame()
 
     df = df.copy()
-
-    # ── 基础过滤 ─────────────────────────────
-    if filter_st and 'name' in df.columns:
-        df = df[~df['name'].str.contains('ST', na=False, case=True)]
-    if filter_bj and 'code' in df.columns:
-        df = df[~df['code'].astype(str).str.startswith(('8', '92'))]
 
     sig_list = []
 
@@ -117,16 +105,7 @@ def generate_signals(df: pd.DataFrame,
 
     result = pd.DataFrame(sig_list)
 
-    # ══════════ 涨停过滤 ══════════
-    # 只排除真正封板的（无法买入），不排除大阳线突破
-    if skip_limit_up and 'ret' in result.columns:
-        limits = {'688': 0.199, '300': 0.199, '301': 0.199, '8': 0.295, '4': 0.295}
-        result['limit_pct'] = 0.099  # 主板 9.9%以上才视为涨停
-        for prefix, lp in limits.items():
-            mask = result['code'].astype(str).str.startswith(prefix)
-            result.loc[mask, 'limit_pct'] = lp
-        result = result[result['ret'] / 100 < result['limit_pct']]
-
+    # 候选⑤:涨停过滤已移到 base.preprocess
     # ══════════ FILTER: 5天内去重 ══════════
     result = result.sort_values(['code', 'date'])
     keep_mask = np.ones(len(result), dtype=bool)
@@ -161,9 +140,12 @@ class PanzhengTupoStrategy(BaseStrategy):
     name = "盘整突破"
     description = "阴转阳后横盘不破 + 放量突破前高 + 5连阳背景"
 
+    def default_params(self) -> dict:
+        return dict(PARAMS)
+
     def generate_signals(self, bars):
         kwargs = {}
-        for k in ('N', 'ZF', 'filter_st', 'filter_bj', 'skip_limit_up'):
+        for k in ('N', 'ZF'):
             if k in self.params:
                 kwargs[k] = self.params[k]
         return generate_signals(bars, **kwargs)

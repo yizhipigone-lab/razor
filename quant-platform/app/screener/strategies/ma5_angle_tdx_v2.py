@@ -7,17 +7,10 @@ import numpy as np
 from datetime import timedelta
 
 # TDX 公式常量
+# 注: TDX_PI=3.141593 与通达信内部精度一致(差 math.pi 约 3e-7，对角度信号无影响)，保持不变以匹配 TDX 输出
 TDX_PI = 3.141593
-LIMIT_PCT_MAP = {
-    '688': 0.195, '300': 0.195, '301': 0.195,
-    '8': 0.29, '4': 0.29,
-}
-
 
 def generate_signals(df: pd.DataFrame,
-                     filter_st: bool = True,
-                     filter_bj: bool = True,
-                     skip_limit_up: bool = True,
                      max_price: float = 0,
                      ) -> pd.DataFrame:
     if df is None or len(df) < 60:
@@ -25,17 +18,7 @@ def generate_signals(df: pd.DataFrame,
 
     df = df.copy()
 
-    # ── ST 过滤 ─────────────────────────────
-    if filter_st and 'name' in df.columns:
-        df = df[~df['name'].str.contains('ST', na=False, case=True)]
-
-    # ── XA: 排除个股（严格匹配 TDX） ──────────
-    if filter_bj:
-        df = df[df['code'] != '300687']
-        df = df[df['code'] != '920001']
-        df = df[~df['code'].astype(str).str.startswith('430')]
-        df = df[~df['code'].astype(str).str.startswith('873')]
-
+    # 候选⑤:ST/北交所/涨停 过滤已移到 base.preprocess
     g = df.groupby('code', group_keys=False)
 
     # ═══════════ MA5 ═══════════
@@ -55,23 +38,13 @@ def generate_signals(df: pd.DataFrame,
     df['golden_cross'] = (df['x1'] > df['x2']) & (df['x1_prev'].notna()) & (df['x1_prev'] <= df['x2_prev'])
     df['death_cross'] = (df['x1'] < df['x2']) & (df['x1_prev'].notna()) & (df['x1_prev'] >= df['x2_prev'])
 
-    # ═══════════ PLOYLINE ═══════════
-    def _plolyline(cross_series, value_series):
-        result = pd.Series(np.nan, index=cross_series.index)
-        last_val = np.nan
-        for i in range(len(cross_series)):
-            if cross_series.iloc[i]:
-                last_val = value_series.iloc[i]
-            result.iloc[i] = last_val
-        return result
-
-    x3_list, x4_list = [], []
-    for code, grp in df.groupby('code'):
-        grp = grp.sort_index()
-        x3_list.append(_plolyline(grp['golden_cross'], grp['x2']))
-        x4_list.append(_plolyline(grp['death_cross'], grp['x1']))
-    df['x3'] = pd.concat(x3_list).sort_index()
-    df['x4'] = pd.concat(x4_list).sort_index()
+    # ═══════════ PLOYLINE (向量化: where+ffill，替代逐行循环) ═══════════
+    # PLOYLINE(COND, VALUE): COND为True时取VALUE，否则延续上一次的VALUE
+    # 按 code 分组 ffill，避免跨股票串值
+    df['_x3_raw'] = df['x2'].where(df['golden_cross'])
+    df['_x4_raw'] = df['x1'].where(df['death_cross'])
+    df['x3'] = df.groupby('code', group_keys=False)['_x3_raw'].ffill()
+    df['x4'] = df.groupby('code', group_keys=False)['_x4_raw'].ffill()
 
     # ═══════════ 三角收敛: X3 < REF(X3,5) AND X4 > REF(X4,5) ═══════════
     df['x3_decline'] = df['x3'] < df.groupby('code')['x3'].shift(5)
@@ -85,19 +58,9 @@ def generate_signals(df: pd.DataFrame,
     # ═══════════ ZT = XG（XA 已预过滤） ═══════════
     df['zt'] = df['xg']
 
-    # ═══════════ 涨停过滤 ═══════════
-    if skip_limit_up:
-        df['daily_ret'] = df['close'] / df.groupby('code')['close'].shift(1) - 1
-        df['limit_pct'] = 0.095
-        for pfx, lp in LIMIT_PCT_MAP.items():
-            mask = df['code'].astype(str).str.startswith(pfx)
-            df.loc[mask, 'limit_pct'] = lp
-        df['limit_up'] = df['daily_ret'] >= df['limit_pct']
-    else:
-        df['limit_up'] = False
-
-    # ═══════════ ZP = ZT AND NOT_LIMIT ═══════════
-    df['zp_raw'] = df['zt'] & (~df['limit_up'])
+    # 候选⑤:涨停过滤已移到 base.preprocess
+    # ═══════════ ZP = ZT ═══════════
+    df['zp_raw'] = df['zt']
 
     # ═══════════ 价格过滤 ═══════════
     if max_price and max_price > 0:
@@ -105,27 +68,13 @@ def generate_signals(df: pd.DataFrame,
     else:
         df['zp_priced'] = df['zp_raw']
 
-    # ═══════════ 20天新鲜度（在价格过滤后的最终信号上统计） ═══════════
-    df['_dt'] = pd.to_datetime(df['date'] if 'date' in df.columns else df['datetime'])
-    df['_dt_date'] = df['_dt'].dt.date
+    # ═══════════ 20天新鲜度（向量化: rolling(20) 交易日窗口，替代自然日循环） ═══════════
+    # M-02 修复: 用 rolling(20) 统计最近20根K线（交易日），与TDX COUNT(X,20)一致
     df['_zp_int'] = df['zp_priced'].astype(int)
-    def _count_in_20d(grp):
-        dates = grp['_dt_date'].values
-        signals = grp['_zp_int'].values
-        result = [0] * len(grp)
-        for i in range(len(grp)):
-            cutoff = dates[i] - timedelta(days=20)
-            cnt = 0
-            for j in range(max(0,i-40), i+1):
-                if dates[j] >= cutoff and signals[j]:
-                    cnt += 1
-            result[i] = cnt
-        return pd.Series(result, index=grp.index)
-    c20_list = []
-    for code, grp in df.groupby('code'):
-        grp = grp.sort_values('_dt')
-        c20_list.append(_count_in_20d(grp))
-    df['count_20'] = pd.concat(c20_list).sort_index()
+    df = df.sort_values(['code', 'date'] if 'date' in df.columns else ['code', 'datetime'])
+    df['count_20'] = df.groupby('code', group_keys=False)['_zp_int'].transform(
+        lambda x: x.rolling(20, min_periods=1).sum()
+    )
     df['zp'] = df['zp_priced'] & (df['count_20'] == 1)
 
     # ═══════════ 输出 ═══════════
@@ -149,10 +98,16 @@ class MA5AngleTDXv2Strategy(BaseStrategy):
     """MA5 角度突破 — 通达信公式"""
     name = "MA5角度_TDXv2"
     description = "ATAN角度 + PLOYLINE三角收敛 + 涨停过滤"
+    # 候选⑤:保留旧 0.195 阈值 + 8/4 用 0.29(原 inline 表)
+    LIMIT_TABLE = {"688": 0.195, "300": 0.195, "301": 0.195, "8": 0.29, "4": 0.29}
+    LIMIT_MAIN_PCT = 0.095
+
+    def default_params(self) -> dict:
+        return dict(PARAMS)
 
     def generate_signals(self, bars):
         kwargs = {}
-        for k in ('filter_st', 'filter_bj', 'skip_limit_up', 'max_price'):
+        for k in ('max_price',):
             if k in self.params:
                 kwargs[k] = self.params[k]
         return generate_signals(bars, **kwargs)

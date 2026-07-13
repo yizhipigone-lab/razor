@@ -100,6 +100,14 @@ def _scan_worker(strategy_module_path, strategy_params, codes, freq, start, end,
         if not strategy_obj:
             return pd.DataFrame()
 
+        # 候选⑤:统一前置过滤(ST/北交所/停牌/涨停) — class 走 self.preprocess(尊重 self.LIMIT_TABLE 覆盖);
+        # function 模式无 self,走自由 preprocess_bars(用 base 默认 limit_table)
+        if hasattr(strategy_obj, "preprocess"):
+            bars = strategy_obj.preprocess(bars)
+        else:
+            from app.screener.strategies.base import preprocess_bars
+            bars = preprocess_bars(bars, getattr(strategy_obj, "params", {}) or {})
+
         if hasattr(strategy_obj, 'generate_signals'):
             import inspect
             sig = inspect.signature(strategy_obj.generate_signals)
