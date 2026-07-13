@@ -916,6 +916,12 @@ async def stop_simple_backtest():
         evt = stop_events.get('simple_bt')
         if evt:
             evt.set()
+    # 跨进程 stop signal: touch 文件让 TDX worker 立即优雅退出(不等 proc.kill)
+    try:
+        os.makedirs("output", exist_ok=True)
+        open("output/bt_stop.signal", "w").close()
+    except Exception as e:
+        log.warning(f"创建 stop signal 文件失败(可能不影响主进程 stop_event): {e}")
     sync_broadcast({"type": "log", "level": "warning", "msg": "🛑 简化回测停止指令已发送"})
     return {"status": "ok", "message": "停止信号已发送"}
 

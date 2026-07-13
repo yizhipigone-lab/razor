@@ -19,6 +19,10 @@ from app.tqsdk import result_cache
 log = get_logger("TdxBridge")
 
 
+# 跨进程停止信号: 主进程 touch 此文件通知 worker 立即停止(不依赖 proc.kill)
+STOP_FLAG_PATH = "output/bt_stop.signal"
+
+
 def _resolve_tdx_user_dir() -> Path:
     """解析 TDX 用户插件目录：环境变量 > 配置文件 > 默认值。"""
     default_dir = r"E:\NEW_TDX\PYPlugins\user"
@@ -358,6 +362,15 @@ class TdxBridge:
         能实时转发前端; 主线程轮询 proc.wait(0.5) 检查超时/stop_event, 避免 readline
         阻塞导致超时失效(回归)。
         """
+        # 跨进程 stop signal: 清理残留 + 注入 path 给 worker(worker 每 batch check,命中立即优雅退出)
+        if os.path.exists(STOP_FLAG_PATH):
+            try:
+                os.remove(STOP_FLAG_PATH)
+            except OSError:
+                pass
+        task = dict(task)
+        task["stop_flag_path"] = STOP_FLAG_PATH
+
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".json", delete=False, encoding="utf-8"
         ) as f:
