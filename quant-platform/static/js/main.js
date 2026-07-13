@@ -4823,7 +4823,7 @@ async function stopSimpleBacktest() {
     addLog('warning', '🛑 简化回测停止指令已发送');
   } catch (e) {
     addLog('error', '发送停止指令失败: ' + e.message);
-    if (stopBtn) { stopBtn.disabled = false; stopBtn.textContent = '⏹ 停止回测'; }
+    _resetSimpleBtButtons();
   }
 }
 
