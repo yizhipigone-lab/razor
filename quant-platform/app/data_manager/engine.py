@@ -240,7 +240,8 @@ def get_index_realtime() -> dict:
             for _, row in df.iterrows():
                 code = row['code']
                 price = float(row['price'])
-                lc = float(row.get('last_close', price))
+                # Q6 守约: last_close 缺失时严禁用现价冒充,归 0 跳过 change_pct
+                lc = float(row.get('last_close') or 0)
                 indices[code] = {
                     "price": price,
                     "change_pct": round((price - lc) / lc * 100, 2) if lc > 0 else 0,

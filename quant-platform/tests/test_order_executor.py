@@ -383,3 +383,57 @@ class TestExceptions:
         assert result["ok"] is False
         assert "boom" in result["reason"]
         deps.clearance_lock.release.assert_called_once_with("600000.SH")
+
+
+# ===== 11. 审计 H2/H3 修复 =====
+# H2: on_order_submitted 回调异常应被 logger.exception 捕获,主路径仍 ok=True
+# H3: live seq<=0 应被防御拦截并返回 qmt_rejected(不写 audit/不冻结)
+
+class TestAuditFixes:
+    def test_h2_on_order_submitted_exception_still_ok(self, executor, deps, sell_intent):
+        """H2:回调异常 → 主路径仍返回 ok=True,但 logger.exception 被调用"""
+        def buggy_cb(order_id, intent):
+            raise RuntimeError("TP mark boom")
+
+        result = executor.execute(
+            sell_intent, source="EXIT",
+            persist_live_orders=False,
+            on_order_submitted=buggy_cb,
+        )
+        # 主路径:订单已提交成功,返回 ok
+        assert result["ok"] is True
+        assert result["status"] == "submitted"
+        # 审计写入仍发生(回调异常不应阻断主流程)
+        deps.audit.order_placed.assert_called_once()
+
+    def test_h3_live_seq_zero_returns_qmt_rejected(self, executor, deps, buy_intent):
+        """H3:live 模式 qmt.order_stock_async 返 seq=0(软拒绝)→ 不当成功"""
+        deps.runtime_state.mode = "live"
+        deps.runtime_state.is_dry_run = lambda: False
+        deps.qmt.order_stock_async.return_value = 0  # 软拒绝,不抛异常
+        result = executor.execute(buy_intent, source="WEB")
+        assert result["ok"] is False
+        assert result["status"] == "qmt_rejected"
+        # 不应触达 freeze_pending_buy / 写 live_orders / 审计
+        deps.risk_gate.freeze_pending_buy.assert_not_called()
+        deps.store.sync_terminal_write.assert_not_called()
+        deps.audit.order_placed.assert_not_called()
+        # 锁必须释放(短路失败时)
+        deps.clearance_lock.release.assert_called_once_with("600000.SH")
+
+    def test_h3_buy_seq_zero_no_freeze_with_live(self, executor, deps, buy_intent):
+        """H3 + buy 方向:不冻结(我们没有成功下到单)"""
+        deps.runtime_state.mode = "live"
+        deps.runtime_state.is_dry_run = lambda: False
+        deps.qmt.order_stock_async.return_value = 0
+        executor.execute(buy_intent, source="WEB")
+        deps.risk_gate.freeze_pending_buy.assert_not_called()
+
+    def test_h3_buy_seq_positive_freezes(self, executor, deps, buy_intent):
+        """回归:H3 修复不应误伤 seq>0 的正常路径"""
+        deps.runtime_state.mode = "live"
+        deps.runtime_state.is_dry_run = lambda: False
+        deps.qmt.order_stock_async.return_value = 42  # 正常
+        executor.execute(buy_intent, source="WEB")
+        deps.risk_gate.freeze_pending_buy.assert_called_once_with("600000.SH", 100)
+

@@ -197,8 +197,18 @@ class OrderExecutor:
                     intent.strategy_name, intent.reason,
                 )
                 order_id = seq
+                # H3 防御:即便 qmt_wrapper 通常 raise(seq<=0),某些 mock/legacy 实现可能
+                # 直接返回 0 不抛,显式拦截避免审计写入幽灵订单
+                if seq is None or seq <= 0:
+                    if self.clearance_lock and lock_acquired:
+                        self.clearance_lock.release(code_fmt)
+                    return {
+                        "ok": False, "status": "qmt_rejected",
+                        "code": code_fmt, "client_order_id": intent.client_order_id,
+                        "reason": f"QMT 下单未接受 seq={seq}",
+                    }
                 # C1:买入成功后冻在途预扣
-                if intent.direction == "buy" and seq > 0 and self.risk_gate:
+                if intent.direction == "buy" and self.risk_gate:
                     self.risk_gate.freeze_pending_buy(code_fmt, intent.volume)
 
             # 9. 写 live_orders(WEB/TDX;EXIT 默认不写,保留旧行为防破坏交易查询页)
@@ -241,11 +251,16 @@ class OrderExecutor:
             )
 
             # 11. 提交成功回调(EXIT 用作 TP 档位标记)
+            # 回调异常时 logger.exception 带 traceback,主路径仍返回 ok=True
+            # (锁释放由 callback_handler 在 QMT 成交通知时通过 release_by_order_id 兜底)
             if on_order_submitted is not None and order_id and order_id > 0:
                 try:
                     on_order_submitted(order_id, intent)
-                except Exception as e:
-                    logger.error(f"on_order_submitted 回调异常 {code_fmt}: {e}")
+                except Exception:
+                    logger.exception(
+                        f"on_order_submitted 回调异常 {code_fmt} oid={order_id}"
+                        f"(订单已提交成功,只是 TP 标记/扩展处理失败)"
+                    )
 
             return {
                 "ok": True, "order_id": order_id,

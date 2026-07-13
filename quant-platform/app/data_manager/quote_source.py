@@ -18,6 +18,7 @@ Phase 2 起 engine.get_realtime_quote 委托给本 module(见 app/data_manager/e
 """
 from __future__ import annotations
 
+import threading
 import time
 from typing import Callable, Optional, Protocol
 
@@ -140,6 +141,10 @@ class QuoteSource:
         self._clock: Callable[[], float] = _clock or time.time
         self._cache: dict[str, tuple[dict, float]] = {}   # code -> (row_dict, expire_ts)
         self._breaker: dict[str, float] = {}              # adapter.name -> failed_until_ts
+        # H4 fix: 多线程并发(sim_trader/intraday_monitor + API + live_trader)调
+        # 同一单例时,缓存/熔断器的读-改-写需用锁保护。CPython GIL 只保证单条
+        # 操作原子,复合操作(读 cache + 写 cache、读 breaker + 写 breaker)不安全。
+        self._lock = threading.RLock()
 
     def _adapter_available(self, name: str) -> bool:
         until = self._breaker.get(name)
@@ -153,27 +158,32 @@ class QuoteSource:
         row_by_code: dict[str, dict] = {}
         pending: list[str] = []
 
-        # 1. 吃缓存
-        for code in codes:
-            hit = self._cache.get(code)
-            if hit and now < hit[1]:
-                row_by_code[code] = hit[0]
-            else:
-                pending.append(code)
+        # 1. 吃缓存(快照 — 锁内快速 read-only)
+        with self._lock:
+            for code in codes:
+                hit = self._cache.get(code)
+                if hit and now < hit[1]:
+                    row_by_code[code] = hit[0]
+                else:
+                    pending.append(code)
 
-        # 2. 逐 adapter 降级 pending(跳过熔断中的)
+        # 2. 逐 adapter 降级 pending(不持锁,fetch 可能秒级)
         resolved: dict[str, tuple[dict, str]] = {}
         still: list[str] = list(pending)
+        breaker_updates: dict[str, float] = {}  # 收集后批量写,缩短临界区
         for adapter in self._adapters:
             if not still:
                 break
-            if not self._adapter_available(adapter.name):
+            # 读熔断状态(短锁)
+            with self._lock:
+                available = self._adapter_available(adapter.name)
+            if not available:
                 continue
             try:
                 fetched = adapter.fetch(list(still))
             except Exception:
-                # adapter 故障 → 熔断,窗内不再调
-                self._breaker[adapter.name] = now + self._breaker_cooldown
+                # adapter 故障 → 标记熔断,稍后批量写入
+                breaker_updates[adapter.name] = now + self._breaker_cooldown
                 continue
             if not fetched:
                 continue  # 合法空(无数据),不熔断
@@ -185,15 +195,17 @@ class QuoteSource:
                     nxt.append(code)
             still = nxt
 
-        # 3. 建 row + 回填缓存(含 missing,避免反复打未解出的 code)
+        # 3. 建 row + 写缓存 + 写熔断器(短锁聚合)
         expire = now + self._cache_ttl
-        for code in pending:
-            if code in resolved:
-                row = _make_row(code, *resolved[code])
-            else:
-                row = _missing_row(code)
-            row_by_code[code] = row
-            self._cache[code] = (row, expire)
+        with self._lock:
+            self._breaker.update(breaker_updates)
+            for code in pending:
+                if code in resolved:
+                    row = _make_row(code, *resolved[code])
+                else:
+                    row = _missing_row(code)
+                row_by_code[code] = row
+                self._cache[code] = (row, expire)
 
         return pd.DataFrame([row_by_code[c] for c in codes], columns=CONTRACT_COLUMNS)
 
