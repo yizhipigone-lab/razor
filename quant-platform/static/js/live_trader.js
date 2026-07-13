@@ -26,7 +26,8 @@ async function loadLiveStatus() {
     const d = await _liveFetch('/live/status');
     _liveCapital = Number(d.live_capital) || 0;
     setBadge('live-conn', d.qmt_connected ? 'QMT 已连接' : 'QMT 未连接', d.qmt_connected ? 'lt-badge--ok' : 'lt-badge--danger');
-    setBadge('live-mode', d.mode || '—', d.mode === 'live' ? 'lt-badge--danger' : 'lt-badge--warn');
+    const _modeText = d.mode === 'live' ? '实盘·真钱' : (d.mode === 'dry-run' ? '模拟·不下单' : (d.mode || '—'));
+    setBadge('live-mode', _modeText, d.mode === 'live' ? 'lt-badge--danger' : 'lt-badge--warn');
     const acc = document.getElementById('live-account'); if (acc) acc.textContent = d.account_id || '—';
     const cap = document.getElementById('live-capital'); if (cap) cap.textContent = fmtCapital(_liveCapital);
     const ks = d.kill_switch || {};
@@ -73,7 +74,7 @@ async function loadLivePositions() {
   try {
     const data = await _liveFetch('/live/positions');
     if (!data || data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan=8 class="ta-c muted">无持仓</td></tr>';
+      tbody.innerHTML = '<tr><td colspan=9 class="ta-c muted">无持仓</td></tr>';
       const sumEl = document.getElementById('lt-positions-summary');
       if (sumEl) { sumEl.textContent = '¥0'; sumEl.style.color = 'var(--text2)'; }
       const pnlEl = document.getElementById('lt-kpi-pnl');
@@ -109,7 +110,7 @@ async function loadLivePositions() {
       const tag = p.managed ? '<span class="tc-green">策略</span>' : '<span class="muted">ETF保留</span>';
       const pnlCls = fp > 0 ? 'up' : (fp < 0 ? 'down' : 'muted');
       const missingTitle = (overnightVol > 0 && lastClose <= 0) ? ' title="缺昨收,未计入今日盈亏"' : '';
-      return '<tr'+missingTitle+'><td>' + esc(p.code) + '</td><td>' + vol + '</td><td>' + (Number(p.can_use_volume) || 0) + '</td>' +
+      return '<tr'+missingTitle+'><td>' + esc(p.code) + '</td><td class="muted">' + esc(p.name || '') + '</td><td>' + vol + '</td><td>' + (Number(p.can_use_volume) || 0) + '</td>' +
         '<td>' + avgCost.toFixed(3) + '</td><td>' + last.toFixed(3) + '</td>' +
         '<td>' + (Number(p.market_value) || 0).toFixed(0) + '</td>' +
         '<td class="' + pnlCls + '">' + fp.toFixed(0) + '</td>' +
@@ -129,7 +130,7 @@ async function loadLivePositions() {
     const pnlSub = document.getElementById('lt-kpi-pnl-sub');
     if (pnlSub) pnlSub.textContent = hasMissingClose ? '部分持仓缺昨收,未计入(鼠标悬停看哪只)' : '过夜按昨收·当日买入按买入价';
   } catch (e) {
-    tbody.innerHTML = '<tr><td colspan=8 class="tc-red">加载失败(服务未启动?)</td></tr>';
+    tbody.innerHTML = '<tr><td colspan=9 class="tc-red">加载失败(服务未启动?)</td></tr>';
   }
 }
 

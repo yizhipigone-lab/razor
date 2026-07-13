@@ -676,6 +676,8 @@ async function loadSimMonitor() {
     if (r.status === 'ok') {
       document.getElementById('sim-mon-val').textContent = r.monitor_enabled ? '开启' : '关闭';
       document.getElementById('sim-mon-mode-val').textContent = r.monitor_mode === 'intraday' ? '盘中执行' : '仅告警';
+      const dot = document.getElementById('sim-monitor-status');
+      if (dot) dot.style.background = r.monitor_enabled ? 'var(--green)' : 'var(--text3)';
     }
   } catch(e) { console.error("loadSimMonitor error", e); }
 }
@@ -699,6 +701,8 @@ async function saveSimMonitor() {
     if (msg) { msg.textContent = r.status === 'ok' ? '已保存' : '失败'; msg.style.color = r.status === 'ok' ? 'var(--green)' : 'var(--red)'; }
     document.getElementById('sim-mon-val').textContent = body.monitor_enabled ? '开启' : '关闭';
     document.getElementById('sim-mon-mode-val').textContent = body.monitor_mode === 'intraday' ? '盘中执行' : '仅告警';
+    const dot = document.getElementById('sim-monitor-status');
+    if (dot) dot.style.background = body.monitor_enabled ? 'var(--green)' : 'var(--text3)';
     document.getElementById('sim-monitor-display').style.display = 'block';
     document.getElementById('sim-monitor-edit').style.display = 'none';
     document.getElementById('btn-sim-save-monitor').style.display = 'none';
@@ -715,12 +719,6 @@ async function loadSimSwitches() {
       document.getElementById('sim-sell-val').textContent = r.auto_sell ? '开' : '关';
       document.getElementById('sim-scan-val').textContent = r.auto_scan ? '开' : '关';
       document.getElementById('sim-buy-val').textContent = r.auto_buy ? '开' : '关';
-      const lsVal = document.getElementById('sim-live-signal-val');
-      if (lsVal) {
-        const mode = r.live_signal_mode || 'off';
-        lsVal.textContent = mode === 'sim_and_live' ? '模拟+实盘' : '关';
-        lsVal.style.color = mode === 'sim_and_live' ? 'var(--red)' : 'var(--text1)';
-      }
     }
   } catch(e) { console.error("loadSimSwitches error", e); }
 }
@@ -736,11 +734,6 @@ function editSimSwitches() {
   document.getElementById('sim-edit-sell').value = document.getElementById('sim-sell-val').textContent === '开' ? 'true' : 'false';
   document.getElementById('sim-edit-scan').value = document.getElementById('sim-scan-val').textContent === '开' ? 'true' : 'false';
   document.getElementById('sim-edit-buy').value = document.getElementById('sim-buy-val').textContent === '开' ? 'true' : 'false';
-  const lsEdit = document.getElementById('sim-edit-live-signal');
-  if (lsEdit) {
-    const lsVal = document.getElementById('sim-live-signal-val');
-    lsEdit.value = (lsVal && lsVal.textContent !== '关') ? 'sim_and_live' : 'off';
-  }
 }
 
 async function saveSimSwitches() {
@@ -748,7 +741,6 @@ async function saveSimSwitches() {
     auto_sell: document.getElementById('sim-edit-sell').value === 'true',
     auto_scan: document.getElementById('sim-edit-scan').value === 'true',
     auto_buy: document.getElementById('sim-edit-buy').value === 'true',
-    live_signal_mode: (document.getElementById('sim-edit-live-signal') || {}).value || 'off',
   };
   try {
     const r = await fetch('/api/settings/sim-switches', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) }).then(r => r.json());
@@ -758,11 +750,6 @@ async function saveSimSwitches() {
     document.getElementById('sim-sell-val').textContent = body.auto_sell ? '开' : '关';
     document.getElementById('sim-scan-val').textContent = body.auto_scan ? '开' : '关';
     document.getElementById('sim-buy-val').textContent = body.auto_buy ? '开' : '关';
-    const lsVal = document.getElementById('sim-live-signal-val');
-    if (lsVal) {
-      lsVal.textContent = body.live_signal_mode === 'sim_and_live' ? '模拟+实盘' : '关';
-      lsVal.style.color = body.live_signal_mode === 'sim_and_live' ? 'var(--red)' : 'var(--text1)';
-    }
     // hide edit
     document.getElementById('sim-switches-display').style.display = 'flex';
     document.getElementById('sim-switches-edit').style.display = 'none';
@@ -2606,6 +2593,19 @@ function handleWS(msg) {
     toggleTaskButtons('backtest', false);
     // 自动刷新回测历史列表
     setTimeout(() => loadBacktestHistory(), 800);
+  } else if (msg.type === 'backtest_progress') {
+    // 后端 backtest.py:780 推送，context='simple_bt' 来自 simple-bt 回测
+    if (msg.context === 'simple_bt') {
+      showProgress('simple-bt', msg.msg || '回测中...');
+      if (msg.step != null && msg.total) {
+        updateProgressFill('simple-bt', msg.step, msg.total);
+      }
+      // 输出带阶段百分比的系统日志（双反馈：进度条 + 日志面板）
+      if (msg.msg) {
+        const phase = (msg.total && msg.total > 0) ? `[${Math.round(msg.step / msg.total * 100)}%]` : `[${msg.step}/${msg.total}]`;
+        addLog('info', '[回测] ' + phase + ' ' + msg.msg);
+      }
+    }
   } else if (msg.type === 'simple_bt_done') {
     _lastSimpleBtResult = { summary: msg.summary, equity: msg.equity, trades: msg.trades, indices: msg.indices, dailyTrades: msg.daily_trades, resultId: msg.result_id };
     renderSimpleBtResults(msg.summary, msg.equity, msg.trades, msg.indices);
@@ -2623,13 +2623,6 @@ function handleWS(msg) {
     }
     hideProgress('simple-bt');
     document.getElementById('btn-simple-bt-run').disabled = false;
-    showProgress('simple-bt', msg.msg);
-    updateProgressFill('simple-bt', msg.step, msg.total);
-    // 同时输出到系统日志（带级别 + 阶段百分比）
-    if (msg.msg) {
-      const phase = (msg.total && msg.total > 0) ? `[${Math.round(msg.step/msg.total*100)}%]` : `[${msg.step}/${msg.total}]`;
-      addLog('info', '[回测] ' + phase + ' ' + msg.msg);
-    }
   } else if (msg.type === 'done') {
     addLog('ok', getMsg(msg));
     hideProgress('dl');

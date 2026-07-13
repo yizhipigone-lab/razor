@@ -187,7 +187,7 @@
     "redis_ttl_seconds": 600,
     "enable_ths_concepts": true,
     "enable_tushare_concepts": true,
-    "last_updated": "07/02 15:31"
+    "last_updated": "07/13 13:15"
   },
   "tqsdk": {
     "formula_name": "QUANTQQ"
@@ -198,14 +198,18 @@
     "auto_buy": true,
     "monitor_enabled": true,
     "monitor_mode": "intraday",
-    "strategy_name": "QUANTQQ",
-    "live_signal_mode": "off"
+    "strategy_name": "QUANTQQ"
   },
   "live_trader": {
     "buy_position_size": 10000,
     "buy_signal_token": "Qwer1234",
     "buy_signal_enabled": true,
     "buy_signal_cutoff": "14:59",
-    "exit_scan_interval_sec": 60
+    "exit_scan_interval_sec": 60,
+    "runtime": {
+      "mode": "live",
+      "buy_enabled": true,
+      "sell_enabled": true
+    }
   }
 }

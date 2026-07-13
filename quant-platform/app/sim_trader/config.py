@@ -62,10 +62,6 @@ AUTO_SELL = True    # 是否执行卖出（止盈止损）
 AUTO_SCAN = True    # 是否执行选股（生成买入信号）
 AUTO_BUY  = True    # 是否执行买入
 
-# ═══════════ 实盘信号转发(v1.2.2 §3) ═══════════
-# off=不转发 / sim_only=仅模拟盘(等同off) / sim_and_live=模拟盘+实盘真买
-LIVE_SIGNAL_MODE = settings.get("sim_trader", "live_signal_mode", default="off")
-
 # ═══════════ 盘中监控 ═══════════
 MONITOR_ENABLED = True      # 启动时是否自动开启盘中监控
 MONITOR_MODE = "close"      # "intraday"(触发即卖) | "close"(仅告警)
