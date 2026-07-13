@@ -136,42 +136,46 @@ def download_daily_bars(code: str, years: int = 1) -> pd.DataFrame:
     return None
 
 def download_min5_bars(code: str, count: int = 800) -> pd.DataFrame:
-    """下载 5 分钟 K 线 (Tushare优先，然后通达信TCP极速专线)"""
+    """下载 5 分钟 K 线 (QMT优先 → TDX兜底，不消耗Tushare积分)"""
     import os
-    try:
-        import tushare as ts
-        ts_key = os.getenv("TUSHARE_KEY")
-        if ts_key:
-            ts.set_token(ts_key)
-            ts_code = f"{code}.{'SH' if str(code).startswith('6') else 'SZ'}"
-            # Tushare 获取分钟线
-            df = ts.pro_bar(ts_code=ts_code, freq='5min', adj='qfq')
-            if df is not None and not df.empty:
-                df = df.head(count)
-                # 数据-C1: min5 统一输出 datetime 列(load_all_bars 对 min5 读 datetime)。
-                # 原双键 rename {'trade_time':'date','trade_time':'datetime'} 第一键被pandas静默丢弃。
-                df = df.rename(columns={'trade_time': 'datetime', 'vol': 'volume'})
-                df['datetime'] = pd.to_datetime(df['datetime'])
-                # Tushare amount 字段单位是元，无需转换
-                df = df[['datetime', 'open', 'high', 'low', 'close', 'volume', 'amount']].sort_values('datetime')
-                return df
-    except Exception as e:
-        log.debug(f"Tushare M5 {code} 失败: {e}，尝试使用 TDX兜底")
 
+    # 1. QMT/xtquant（本地数据，无限流/不耗积分）
+    try:
+        from xtquant import xtdata
+        # QMT 要求带后缀(.SH/.SZ/.BJ),920271 → 920271.BJ,否则报 invalid stockCode
+        # TDX 那边只支持沪深,带后缀反而连不上,所以先 format 再尝试,QMT 失败后再剥回
+        try:
+            from app.utils.xtquant_compat import format_code
+            qmt_code = format_code(code)
+        except Exception:
+            qmt_code = code if '.' in code else f"{code}.SH" if code.startswith('6') else f"{code}.SZ"
+        xtdata.download_history_data(qmt_code, period='5m')
+        data = xtdata.get_local_data(field_list=[], stock_list=[qmt_code], period='5m', count=-1)
+        if qmt_code in data and len(data[qmt_code]) > 0:
+            df = data[qmt_code]
+            df = df.reset_index().rename(columns={'time': 'datetime', 'vol': 'volume'})
+            if 'datetime' in df.columns:
+                df['datetime'] = pd.to_datetime(df['datetime'])
+                df['amount'] = df['close'] * df['volume'] * 100
+                return df[['datetime','open','high','low','close','volume','amount']].head(count)
+    except ImportError:
+        pass
+    except Exception:
+        log.debug(f"QMT M5 {code} 失败，降级 TDX")
+
+    # 2. TDX TCP 兜底（免费高速，不耗积分）
     api = TdxHq_API()
     try:
         if api.connect(*TDX_SERVER, time_out=3):
             market = 1 if code.startswith('6') else 0
-            # 获取指定根数 (category=0 为 5分钟)
             data = api.get_security_bars(0, market, code, 0, count)
             api.disconnect()
             if data:
                 df = api.to_df(data)
-                # 数据-C1: TDX 兜底路径同样统一输出 datetime 列
-                df = df.rename(columns={'datetime': 'datetime', 'vol': 'volume'})
+                df = df.rename(columns={'vol': 'volume'})
                 df['datetime'] = pd.to_datetime(df['datetime'])
                 df['amount'] = df['close'] * df['volume'] * 100
-                return df[['datetime', 'open', 'high', 'low', 'close', 'volume', 'amount']]
+                return df[['datetime','open','high','low','close','volume','amount']]
     except Exception:
         log.warning(f"TDX 5分钟线下载失败 {code}")
     return None
@@ -205,136 +209,14 @@ def update_sectors_from_baostock():
         log.info(f"✅ 行业信息补全完成，共处理 {len(df)} 条。")
 
 def get_realtime_quote(code_list: list) -> pd.DataFrame:
-    """[极速重构] 批量获取实时行情快照 (优先尝试 QMT Proxy，完全废弃 Tushare 轮询)"""
-    from core.settings import settings
-    
-    # 强制路由到 QMT 代理 (劫持原有的 Tushare/TDX 流程)
-    if settings.get("gateway", "active_gateway") == "qmt":
-        try:
-            from app.trader.gateways.qmt import qmt_gateway
-            quotes = qmt_gateway.get_realtime_quotes(code_list)
-            if quotes:
-                results = []
-                for code, q in quotes.items():
-                    price = float(q.get('lastPrice', 0))
-                    # 昨收价核心修正：尝试 lastClose 和 preClose。由于刚开盘时 lastClose 可能为 0
-                    last_close = float(q.get('lastClose', 0) or q.get('preClose', 0))
-                    # 兼容性字段补齐 (保持跟旧版 DataFrame 结构一致以支持前端显示)
-                    results.append({
-                        "code": code,
-                        "price": price,
-                        "open": float(q.get('open', price)),
-                        "high": float(q.get('high', price)),
-                        "low": float(q.get('low', price)),
-                        "volume": float(q.get('volume', 0)),
-                        "amount": float(q.get('amount', 0)),
-                        "last_close": last_close if last_close > 0 else price,
-                        "change_pct": round((price - last_close) / last_close * 100, 2) if last_close > 0 else 0
-                    })
-                return pd.DataFrame(results)
-        except Exception as e:
-            log.debug(f"尝试劫持 QMT 行情快照失败(可能是未开市或Proxy未响应): {e}")
+    """批量获取实时行情快照(已委托给 quote_source 深 module)。
 
-    # 万一 QMT 挂了，极简回退到 TDX 高速通道 (作为最后一道物理防线，不调 Tushare)
-    from pytdx2.hq import TdxHq_API
-    api = TdxHq_API()
-    try:
-        TDX_SERVER = ('119.147.212.81', 7709)
-        if api.connect(*TDX_SERVER, time_out=2):
-            results = []
-            for i in range(0, len(code_list), 80):
-                batch_codes = code_list[i : i + 80]
-                tdx_queries = []
-                tdx_to_orig = {}
-                for c in batch_codes:
-                    c_str = str(c)
-                    if '.' in c_str:
-                        parts = c_str.split('.')
-                        clean_code = parts[0]
-                        # 优先用后缀判断市场，避免 000858.SZ 被误判为沪市
-                        suffix = parts[1].upper()
-                        market = 1 if suffix == 'SH' else 0
-                    else:
-                        clean_code = c_str
-                        # 无后缀时用前缀推断：6xx/000(指数)→沪市，其余→深市
-                        market = 1 if (clean_code.startswith('6') or
-                                       (clean_code.startswith('000') and len(clean_code) <= 6)) else 0
-                    tdx_queries.append((market, clean_code))
-                    tdx_to_orig[clean_code] = c_str
-                
-                quotes = api.get_security_quotes(tdx_queries)
-                if quotes:
-                    for q in quotes:
-                        orig = tdx_to_orig.get(q['code'], q['code'])
-                        price = float(q['price']) if q['price'] > 0 else float(q['last_close'])
-                        # 优先取 lastClose, 没值取 preClose (QMT 大盘指数常用), 再没值取 price (涨幅为0)
-                        lc = q.get('last_close', 0) or q.get('pre_close', 0)
-                        results.append({
-                            "code": orig,
-                            "price": price,
-                            "open": float(q.get('open', price)),
-                            "high": float(q.get('high', price)),
-                            "low": float(q.get('low', price)),
-                            "volume": float(q.get('vol', 0)),
-                            "amount": float(q.get('amount', 0)),
-                            "last_close": float(lc if lc > 0 else price)
-                        })
-            api.disconnect()
-            return pd.DataFrame(results)
-    except Exception:
-        log.warning("TDX 实时行情获取失败，回退到腾讯 HTTP")
-
-    # 腾讯 HTTP 极速通道 (终极防线)
-    try:
-        tenc_codes = []
-        for c in code_list:
-            clean = str(c).split('.')[0]
-            prefix = "sh" if clean.startswith(('6', '000')) else "sz"
-            tenc_codes.append(f"s_{prefix}{clean}")
-
-        url = f"http://qt.gtimg.cn/q={','.join(tenc_codes)}"
-        resp = requests.get(url, timeout=2)
-        if resp.status_code == 200:
-            results = []
-            lines = resp.text.split(';')
-            for line in lines:
-                if '~' not in line or '=' not in line: continue
-                raw = line.split('=')[1].replace('"', '').strip()
-                parts = raw.split('~')
-                if len(parts) < 6: continue
-                code_raw = parts[2]
-                if not code_raw: continue
-                # 恢复带后缀的原始 code
-                orig = None
-                for c in code_list:
-                    if c.split('.')[0] == code_raw or c == code_raw:
-                        orig = c
-                        break
-                if not orig:
-                    orig = code_raw
-
-                price = float(parts[3])
-                chg = float(parts[4])  # 涨跌额
-                last_close = price - chg  # 昨收 = 现价 - 涨跌额
-                chg_pct = float(parts[5])
-
-                results.append({
-                    "code": orig,
-                    "price": price,
-                    "open": price,
-                    "high": price,
-                    "low": price,
-                    "volume": float(parts[6]) if len(parts) > 6 else 0,
-                    "amount": 0,
-                    "last_close": last_close if last_close > 0 else price,
-                    "change_pct": chg_pct
-                })
-            if results:
-                return pd.DataFrame(results)
-    except Exception as e:
-        log.debug(f"腾讯 HTTP 回退行情失败: {e}")
-
-    return pd.DataFrame()
+    4 源逐只降级(QMT→TDX→腾讯→Parquet)+ 3s 缓存 + 30s 熔断 + 严格昨收不伪造。
+    返回 DataFrame 列:code/open/high/low/price/volume/amount/last_close/change_pct/source。
+    设计/契约见 CONTEXT.md → QuoteSource。
+    """
+    from app.data_manager.quote_source import get_realtime_quotes
+    return get_realtime_quotes(list(code_list))
 
 def get_all_market_quotes() -> list:
     """拉取全市场实时快照 (用于选股缝合)"""
@@ -342,6 +224,8 @@ def get_all_market_quotes() -> list:
     if stocks.empty: return []
     codes = stocks["code"].tolist()
     df = get_realtime_quote(codes)
+    if not df.empty:
+        df = df[df["price"] > 0]  # 委托 quote_source 后过滤缺价行(保留旧行为)
     return df.to_dict(orient="records") if not df.empty else []
 
 def get_index_realtime() -> dict:
@@ -349,6 +233,8 @@ def get_index_realtime() -> dict:
     TARGET_CODES = ['000001.SH', '399001.SZ', '399006.SZ', '000905.SH', '000510.SH']
     try:
         df = get_realtime_quote(TARGET_CODES)
+        if not df.empty:
+            df = df[df["price"] > 0]  # 委托 quote_source 后过滤缺价指数行(price=NaN 的 missing)
         if not df.empty:
             indices = {}
             for _, row in df.iterrows():
@@ -406,9 +292,10 @@ def batch_download_all(freq: str = "daily", years: int = 1, mode: str = "increme
         _last_tushare_call = [0.0]  # 最后一次 Tushare 调用时间 (秒)
 
         def _rate_limit_tushare():
-            """Tushare 限流: 最小间隔 1.2 秒"""
+            """Tushare 限流 (仅日线使用，min5 已改为 QMT→TDX 无需限流)"""
             import os
-            # 如果没配置 TUSHARE_KEY, 直接走 TDX, 不需要限流
+            if freq != "daily":
+                return  # min5 走 QMT/TDX，不调 Tushare，无需限流
             if not os.getenv("TUSHARE_KEY"):
                 return
             with _tushare_lock:

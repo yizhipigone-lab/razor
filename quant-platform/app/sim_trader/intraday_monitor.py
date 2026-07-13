@@ -247,6 +247,10 @@ class IntradayMonitor:
             if q.empty:
                 continue
             price = float(q.iloc[0]["price"])
+            # 委托 quote_source 后,缺价 code 会得到 source='missing' 行(price=NaN)。
+            # 跳过缺价 pos(保留旧行为:未取到价不监控),防 NaN 传入 _check_and_act。
+            if not (price > 0):
+                continue
             self._check_and_act(pos.code, price)
 
     # ── 辅助 ────────────────────────────────────

@@ -359,24 +359,31 @@ class SimTraderEngine:
         if not codes:
             return {}
         try:
-            from app.trader.gateways.qmt import qmt_gateway
-            quotes = qmt_gateway.get_realtime_quotes(codes) or {}
+            from app.data_manager.quote_source import get_realtime_quotes
+            qdf = get_realtime_quotes(codes)
         except Exception as e:
-            log.debug(f"[实时快照] QMT 获取失败: {e}")
+            log.debug(f"[实时快照] 行情获取失败: {e}")
+            return {}
+        if qdf.empty:
             return {}
         snap = {}
         for code in codes:
-            q = quotes.get(code) or quotes.get(code.split('.')[0]) or {}
-            if not isinstance(q, dict):
+            # 兼容带/不带后缀:先精确,再按裸 code
+            rows = qdf[qdf['code'] == code]
+            if rows.empty and '.' in code:
+                rows = qdf[qdf['code'] == code.split('.')[0]]
+            if rows.empty:
                 continue
-            price = float(q.get('lastPrice', 0) or q.get('price', 0) or 0)
+            row = rows.iloc[0]
+            price = float(row.get('price', 0) or 0)
             if price <= 0:
                 continue
-            pre = float(q.get('lastClose', 0) or q.get('preClose', 0) or 0)
+            _lc = row.get('last_close', 0)
+            pre = float(_lc) if (_lc is not None and _lc == _lc and _lc > 0) else 0.0  # NaN/缺失→0(守 Q6,不用现价冒充)
             snap[code] = {
-                'open': float(q.get('open', price) or price),
-                'high': float(q.get('high', price) or price),
-                'low': float(q.get('low', price) or price),
+                'open': float(row.get('open', price) or price),
+                'high': float(row.get('high', price) or price),
+                'low': float(row.get('low', price) or price),
                 'close': price,
                 'preClose': pre,
             }

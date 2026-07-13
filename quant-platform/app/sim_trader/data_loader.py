@@ -78,80 +78,30 @@ def augment_bars_with_realtime(bars: pd.DataFrame, today: date):
             last_row['volume'] = float(q.get('volume', 0) or q.get('vol', 0))
             new_rows.append(last_row)
 
-    # 通道 1: QMT（最快，本地代理）
+    # 走 quote_source 统一深 module(QMT→TDX→腾讯→Parquet 逐只降级);
+    # 原内嵌腾讯解析已由 quote_source.TencentAdapter 承接,此处不再重复。
     try:
-        from app.trader.gateways.qmt import qmt_gateway
-        qmt_quotes = qmt_gateway.get_realtime_quotes(codes)
-        if qmt_quotes:
-            # 规范化 QMT 字段名
-            normalized = {}
-            for code, q in qmt_quotes.items():
-                normalized[code] = {
-                    'price': q.get('lastPrice', 0),
-                    'open': q.get('open', q.get('lastPrice', 0)),
-                    'high': q.get('high', q.get('lastPrice', 0)),
-                    'low': q.get('low', q.get('lastPrice', 0)),
-                    'volume': q.get('volume', 0),
+        from app.data_manager.quote_source import get_realtime_quotes
+        qdf = get_realtime_quotes(codes)
+        if qdf is not None and not qdf.empty:
+            qdf = qdf[qdf["price"] > 0]
+        if qdf is not None and not qdf.empty:
+            quotes_dict = {
+                str(row["code"]): {
+                    "price": float(row.get("price", 0)),
+                    "open": float(row.get("open", 0) or 0),
+                    "high": float(row.get("high", 0) or 0),
+                    "low": float(row.get("low", 0) or 0),
+                    "volume": float(row.get("volume", 0) or 0),
                 }
-            _build_result(normalized)
+                for _, row in qdf.iterrows()
+            }
+            _build_result(quotes_dict)
             if snapshot:
-                log.info(f"QMT 实时行情已注入: {len(snapshot)} 只股票")
+                log.info(f"实时行情已注入: {len(snapshot)} 只股票")
                 return _finalize(bars, today, new_rows, snapshot)
     except Exception as e:
-        log.debug(f"QMT 行情获取失败: {e}")
-
-    # 通道 2: 腾讯 HTTP（批量、快速、无需 QMT）
-    try:
-        import requests
-        # 构建 code 查找表
-        code_set = {str(c).split('.')[0]: str(c) for c in codes}
-
-        tencent_codes = []
-        for c in codes:
-            clean = str(c).split('.')[0]
-            prefix = "sh" if clean.startswith(('6', '000')) else "sz"
-            tencent_codes.append(f"s_{prefix}{clean}")
-
-        tencent_quotes = {}
-        batch_size = 300  # 腾讯 API 单次 URL 长度安全上限
-        for i in range(0, len(tencent_codes), batch_size):
-            batch = tencent_codes[i:i + batch_size]
-            url = f"http://qt.gtimg.cn/q={','.join(batch)}"
-            resp = requests.get(url, timeout=5)
-            if resp.status_code != 200:
-                continue
-            raw = resp.text
-            for line in raw.split(';'):
-                if '~' not in line or '=' not in line:
-                    continue
-                try:
-                    seg = line.split('=')[1].replace('"', '').strip()
-                    parts = seg.split('~')
-                    if len(parts) < 7:
-                        continue
-                    code_raw = parts[2]
-                    price = float(parts[3])
-                    if price <= 0:
-                        continue
-                    chg = float(parts[4])
-                    orig = code_set.get(code_raw, code_raw)
-                    tencent_quotes[orig] = {
-                        'price': price,
-                        'open': price,
-                        'high': price,
-                        'low': price,
-                        'volume': float(parts[6]) if len(parts) > 6 else 0,
-                        'last_close': price - chg,
-                    }
-                except (ValueError, IndexError):
-                    continue
-
-        if tencent_quotes:
-            _build_result(tencent_quotes)
-            log.info(f"腾讯行情已注入: {len(snapshot)} 只股票")
-            return _finalize(bars, today, new_rows, snapshot)
-    except Exception as e:
-        log.warning(f"腾讯行情获取失败: {e}")
+        log.warning(f"实时行情获取失败: {e}")
 
     log.warning("所有实时行情通道均失败，回退到历史数据")
     return bars, get_daily_snapshot(bars, today)
