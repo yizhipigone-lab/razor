@@ -1,5 +1,7 @@
 from fastapi import APIRouter
 from pathlib import Path
+from pydantic import BaseModel, Field, field_validator
+import re
 from core.logger import get_logger
 from database.duckdb_manager import db
 
@@ -7,6 +9,33 @@ log = get_logger("API-Factory")
 router = APIRouter()
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
+
+
+class SaveStrategyRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    code_content: str = Field(..., max_length=100_000)
+
+    @field_validator('name')
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        if not re.match(r'^[\w一-鿿]+$', v):
+            raise ValueError('策略名称只允许字母、数字、下划线、中文')
+        return v
+
+
+class TestStrategyRequest(BaseModel):
+    name: str = Field(default="new_test", max_length=100)
+    code_content: str = Field(..., max_length=100_000)
+
+
+class TranslateTdxRequest(BaseModel):
+    formula: str = Field(..., min_length=1, max_length=50_000)
+    name: str = Field(..., min_length=1, max_length=100)
+
+
+class ToggleStatusRequest(BaseModel):
+    id: int
+    is_active: bool
 
 @router.get("/api/factory/strategies")
 async def list_strategies():
@@ -41,24 +70,22 @@ async def sync_strategies():
     return {"status": "ok", "message": "本地策略库已同步"}
 
 @router.post("/api/factory/save_physical_strategy")
-async def save_strategy(req: dict):
+async def save_strategy(req: SaveStrategyRequest):
     """保存策略内容到物理文件"""
     from app.strategy_factory.engine import factory
     # 强制统一返回格式
-    res = factory.save_and_reload(req['name'], req['code_content'])
+    res = factory.save_and_reload(req.name, req.code_content)
     if isinstance(res, dict) and res.get('status') == 'success':
         res['status'] = 'ok'
     return res
 
 @router.post("/api/factory/test_syntax_secure")
-async def test_strategy(req: dict):
+async def test_strategy(req: TestStrategyRequest):
     """高隔离度语法与信号测试接口"""
     from app.strategy_factory.engine import factory
     import traceback
     try:
-        code = req.get('code_content', '')
-        if not code: return {"status": "error", "message": "代码内容为空"}
-        res = factory.test_run(code)
+        res = factory.test_run(req.code_content)
         if isinstance(res, dict) and "status" not in res:
             res["status"] = "ok"
         return res
@@ -76,10 +103,12 @@ async def physical_delete_strategy(req: dict):
         log.warning(f"☢️ [物理销毁] {name}")
         try:
             factory.delete_local_strategy(name)
+        except ValueError as e:
+            return {"status": "error", "message": str(e)}
         except Exception as e:
             log.warning(f"物理删除策略文件失败（可能已不存在）: {e}")
         db.conn.execute("DELETE FROM strategies WHERE name=?", [name])
-        db.conn.commit() 
+        db.conn.commit()
         factory.sync_local_strategies()
         return {"status": "ok", "message": f"物理销毁完成: {name}"}
     except Exception as e:
@@ -87,16 +116,16 @@ async def physical_delete_strategy(req: dict):
         return {"status": "error", "message": str(e)}
 
 @router.post("/api/factory/translate_tdx")
-async def translate_tdx(req: dict):
+async def translate_tdx(req: TranslateTdxRequest):
     """通达信公式转 Python"""
     from app.strategy_factory.translator import translator
-    code = translator.translate(req['formula'], req['name'])
+    code = translator.translate(req.formula, req.name)
     return {"status": "ok", "code": code}
 
 @router.post("/api/factory/toggle_status")
-async def toggle_strategy(req: dict):
+async def toggle_strategy(req: ToggleStatusRequest):
     """切换策略有效/废弃状态"""
-    db.set_strategy_status(req['id'], req['is_active'])
+    db.set_strategy_status(req.id, req.is_active)
     return {"status": "ok"}
 
 # ─── 持仓 API ─────────────────────────────────────────────────

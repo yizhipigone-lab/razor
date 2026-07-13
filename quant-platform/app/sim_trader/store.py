@@ -157,7 +157,11 @@ class SimTraderStore:
     # ── 净值曲线 ────────────────────────────────
 
     def save_equity_point(self, d: date, equity: float, cash: float,
-                          positions: int):
+                          positions: int, source: str = 'record'):
+        # source 参数为与 JsonSimStore.save_equity_point 签名对齐而保留
+        # (engine.py:295/684 与 replay 脚本均传 source);
+        # DuckDB 版 sim_equity 表无 source 列,此处接受但暂不入库。
+        _ = source
         self.conn.execute("""
             INSERT OR REPLACE INTO sim_equity VALUES (?, ?, ?, ?)
         """, [d, equity, cash, positions])

@@ -52,6 +52,50 @@ def can_sell_today(entry_date: date, today: date) -> bool:
     return today > entry_date  # 严格大于
 
 
+def get_limit_down_pct(code: str) -> float:
+    """根据股票代码前缀返回跌停幅度(与涨停对称)
+
+    v5.4 新增:实盘 C2 跌停不可成交性判断需要。
+    主板 ±10%,创业板/科创 ±20%,北证 ±30%。
+    """
+    return get_limit_up_pct(code)
+
+
+def is_limit_down(code: str, last_price: float, prev_close: float, tolerance: float = 0.005) -> bool:
+    """判断当前是否已跌停(C2:跌停时市价清仓无意义,跳过)
+
+    Args:
+        code: 股票代码
+        last_price: 最新价
+        prev_close: 昨收价
+        tolerance: 容差(0.5%,向下接近跌停价视为已跌停)
+
+    Returns:
+        True=已跌停,应跳过强平
+    """
+    if prev_close <= 0 or last_price <= 0:
+        return False
+    down_pct = get_limit_down_pct(code)
+    limit_down_price = prev_close * (1 - down_pct)
+    # 最新价 <= 跌停价*(1+容差) 视为已跌停
+    return last_price <= limit_down_price * (1 + tolerance)
+
+
+def is_suspended_or_locked(code: str, last_price: float, prev_close: float,
+                            today_open: float, today_high: float, today_low: float) -> bool:
+    """判断停牌/一字板(C2:这类票市价清仓无意义)
+
+    一字板:开盘=最高=最低=昨收±涨停/跌停(全天锁死)
+    停牌:无最新价或开高低全为0
+    """
+    if last_price <= 0 or today_open <= 0:
+        return True  # 停牌
+    # 一字板:振幅几乎为0且接近涨跌停
+    if today_high > 0 and today_low > 0 and today_high == today_low:
+        return True
+    return False
+
+
 # 默认成本配置（settings 缺失时的 fallback）
 DEFAULT_COST_CFG = {
     'commission_rate': 0.00025,   # 万2.5

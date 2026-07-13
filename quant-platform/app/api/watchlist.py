@@ -33,6 +33,10 @@ async def api_get_watchlist(limit: int = 50, offset: int = 0):
         if "added_at" in df.columns:
             df["added_at"] = df["added_at"].apply(lambda x: str(x)[:19] if x else "-")
 
+        # 统一 code 为裸码（去掉 .SH/.SZ 后缀），避免前端行情匹配失败
+        if "code" in df.columns:
+            df["code"] = df["code"].astype(str).str.replace(r'\.(SH|SZ|BJ)$', '', regex=True)
+
         return df.fillna("-").to_dict(orient="records")
     except Exception as e:
         log.error(f"API/watchlist 意外崩溃: {e}")
@@ -57,6 +61,7 @@ async def api_add_watchlist(body: dict):
 @router.delete("/{code}")
 async def api_remove_watchlist(code: str):
     try:
+        # DB 层 remove_from_watchlist 已做裸码提取+双条件删除，直接透传即可
         db.remove_from_watchlist(code)
         return {"status": "ok", "message": f"移出自选股: {code}"}
     except Exception as e:

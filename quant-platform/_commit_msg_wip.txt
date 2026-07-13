@@ -1,0 +1,8 @@
+chore: 压缩工作区 WIP 一次性提交(清树,为 ③④⑥ 扫清场地)
+
+fix/sim-trader-data-pollution-20260701 分支进行中工作一次性 commit:
+- 68 个删除:_deprecated/ 下旧脚本(check_300413/debug_stock/fix_metadata/tdx_*/...)、根目录临时脚本(_run_ai_opt/_test_hot_concept/_optimize_*/_run_backtest*/_verify_baseline 等)
+- 38 个修改:docker-compose / CLAUDE.md / README / agents/committee / api/*(agents/backtest/data_sync/factory/hot_screener/screener/sim_trader/system/market/watchlist)/backtest/* / data_manager/* / hot_sector/* 等
+- 75 个新增:docs/、FIX_REALTIME_QUOTES.md、scratch/、probe_*、test_batch_*/test_bt/test_cb/test_chart_data 等根目录脚本与文档
+
+与候选①/②/⑤ 的 commit 独立(候选 commit 在前,本批 WIP 在后),不干扰 ③④⑥ 后续提交。

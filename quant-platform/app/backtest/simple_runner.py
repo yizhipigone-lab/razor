@@ -51,6 +51,7 @@ class FastEngine:
         self.cl = 0
         self.pause = None
         self.td_list = td_list
+        self._td_index = {d: i for i, d in enumerate(td_list)}  # 日期→序号，供 _td O(1) 查表
         self.p = params
         if 'take_profit_tiers' not in self.p:
             tiers = []
@@ -71,7 +72,17 @@ class FastEngine:
         return sum(1 for p in self.positions.values() if p.active)
 
     def _td(self, d1, d2):
-        return sum(1 for t in self.td_list if d1 <= t <= d2)
+        # 持仓天数 = 交易日序号之差 + 1（含买入日与当天，与原 sum(<=) 语义一致）
+        # getattr 防御：子类若重写 __init__ 不调 super（缺 _td_index）→ 走线性扫描兜底，不崩
+        idx = getattr(self, '_td_index', None)
+        if idx is None:
+            return sum(1 for t in self.td_list if d1 <= t <= d2)
+        i1 = idx.get(d1)
+        i2 = idx.get(d2)
+        if i1 is None or i2 is None:
+            # d1/d2 不在 td_list（非交易日/超界）→ 退回线性扫描
+            return sum(1 for t in self.td_list if d1 <= t <= d2)
+        return max(0, i2 - i1 + 1)
 
     def eq(self, prices):
         pv = 0
@@ -86,7 +97,7 @@ class FastEngine:
         if code in self.positions: return None
         # L28 修复: 统一成交执行层 - 涨停过滤
         # simple_runner 没有 prev_close 历史,简化处理:prev_close = px (无涨停判断)
-        # 严格过滤由 strict_runner / engine 承担
+        # 严格过滤由 engine 承担(原 strict_runner 已废弃移除)
         prev_close = px
         can_buy_ok, _ = can_buy(code, prev_close, px)
         if not can_buy_ok:
@@ -125,8 +136,8 @@ class FastEngine:
                     )
 
             ctx = exit_rule_engine.build_context(p, bar, hd, self.p, use_high_for_tp=True)
-            signal = exit_rule_engine.check(ctx)
-            if signal:
+            # check_all: trailing_first 下 ladder部分卖后继续trailing/cost_stop（对齐VERA），可能返回多个signal
+            for signal in exit_rule_engine.check_all(ctx):
                 if signal.reason.startswith('TP'):
                     idx = int(signal.reason[2]) - 1
                     p.tp_triggered.add(idx)

@@ -99,14 +99,18 @@ class Notifier:
         with self._lock:
             self._send_wework(content)
 
-    def kill_switch_activated(self, reason: str, source: str) -> None:
-        """kill switch 激活(CRITICAL,多通道)"""
+    def kill_switch_activated(self, reason: str, source: str, hint: str = "需人工介入") -> None:
+        """kill switch 激活(CRITICAL,多通道)
+
+        hint: 末尾行动提示, 默认"需人工介入"。自动可解除的场景(如 scheduler 非交易日
+              激活的残留)传"交易日 09:20 自动解除, 无需人工"等, 避免误导人去手动操作。
+        """
         content = (
             f"**🔴 KILL SWITCH 激活**\n"
             f"> 原因:{reason}\n"
             f"> 来源:{source}\n"
             f"> 时间:{datetime.now().strftime('%H:%M:%S')}\n"
-            f"> **需人工介入**"
+            f"> **{hint}**"
         )
         with self._lock:
             self._send_wework(content, mentioned=True)

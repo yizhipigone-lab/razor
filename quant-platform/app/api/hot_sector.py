@@ -33,35 +33,6 @@ async def get_last_updated():
     """获取最近一次热度重算的时间"""
     return {"last_updated": hot_sector_engine.last_updated}
 
-@router.get("/api/hot/sector/{name}/stocks")
-async def get_sector_stocks(name: str):
-    """获取行业板块成分股"""
-    try:
-        rows = db.conn.execute(
-            "SELECT code, name FROM stocks WHERE sector = ? AND status = 'active' ORDER BY code",
-            [name]
-        ).fetchall()
-        return [{"code": r[0], "name": r[1]} for r in rows]
-    except Exception as e:
-        log.error(f"查询板块成分股失败 {name}: {e}")
-        return []
-
-
-@router.get("/api/hot/concept/{name}/stocks")
-async def get_concept_stocks(name: str):
-    """获取概念板块成分股"""
-    try:
-        rows = db.conn.execute(
-            "SELECT cs.stock_code, s.name FROM concept_stocks cs "
-            "LEFT JOIN stocks s ON cs.stock_code = s.code "
-            "WHERE cs.concept_name = ? ORDER BY cs.stock_code",
-            [name]
-        ).fetchall()
-        return [{"code": r[0], "name": r[1] or ""} for r in rows]
-    except Exception as e:
-        log.error(f"查询概念成分股失败 {name}: {e}")
-        return []
-
 
 @router.get("/api/hot/stock/{code}")
 async def get_stock_hot_score(code: str):
@@ -74,20 +45,6 @@ async def get_stock_hot_score(code: str):
         return {"status": "error", "data": {"code": code, "composite_score": 0}}
 
 
-@router.get("/api/hot/stocks/batch")
-async def batch_stock_scores(codes: str = Query(..., description="逗号分隔的股票代码")):
-    """批量查询多只股票的板块评分（供策略调用）"""
-    try:
-        code_list = [c.strip() for c in codes.split(",") if c.strip()]
-        if not code_list:
-            return {}
-        scores = hot_sector_engine.batch_score_stocks(code_list)
-        return scores
-    except Exception as e:
-        log.error(f"批量评分失败: {e}")
-        return {}
-
-
 @router.post("/api/hot/refresh")
 async def refresh_hotness():
     """手动触发热度全量重算"""
@@ -96,15 +53,4 @@ async def refresh_hotness():
         return {"status": "ok", "summary": summary}
     except Exception as e:
         log.error(f"热度刷新失败: {e}")
-        return {"status": "error", "message": str(e)}
-
-
-@router.post("/api/hot/sync_concepts")
-async def sync_concepts():
-    """手动触发 Tushare 概念数据同步"""
-    try:
-        result = concept_syncer.sync_all()
-        return {"status": result.get("status", "ok"), "data": result}
-    except Exception as e:
-        log.error(f"概念同步失败: {e}")
         return {"status": "error", "message": str(e)}

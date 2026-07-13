@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from datetime import date, timedelta
+from pydantic import BaseModel, Field
 from core.logger import get_logger
 from database.duckdb_manager import db
 import threading
@@ -12,17 +13,31 @@ router = APIRouter()
 stop_events = {}
 _stop_events_lock = threading.Lock()
 
+
+class ScanRequest(BaseModel):
+    strategy_name: str = Field(..., min_length=1, max_length=100)
+    freq: str = Field(default="daily", pattern=r"^(daily|min5|min1)$")
+    exchanges: list[str] | None = Field(None, max_length=10)
+    sectors: list[str] | None = Field(None, max_length=20)
+    hot_only: bool = False
+    index_filter: list[str] | None = None
+    min_mv: float | None = Field(None, ge=0)
+    max_mv: float | None = Field(None, ge=0)
+    start: str | None = None
+    end: str | None = None
+    params: dict | None = None
+
 @router.post("/api/screener/scan")
-async def run_scan(req: dict):
+async def run_scan(req: ScanRequest):
     from app.screener.engine import ScreenerEngine
-    log.info(f"📡 [API] 收到选股请求: {req.get('strategy_name', 'unknown')}")
+    log.info(f"📡 [API] 收到选股请求: {req.strategy_name}")
     try:
         engine = ScreenerEngine()
-        
+
         today = date.today()
         today_str = today.isoformat()
-        start_str = req.get('start') or (today - timedelta(days=30)).isoformat()
-        end_str = req.get('end') or today_str
+        start_str = req.start or (today - timedelta(days=30)).isoformat()
+        end_str = req.end or today_str
         start_dt = date.fromisoformat(start_str)
         end_dt = date.fromisoformat(end_str)
 
@@ -32,7 +47,7 @@ async def run_scan(req: dict):
             stop_events['scan'] = stop_event
 
         def _do_scan():
-            log.info(f"🚀 [Thread] 选股任务线程已启动: {req.get('strategy_name')}")
+            log.info(f"🚀 [Thread] 选股任务线程已启动: {req.strategy_name}")
             try:
                 # 进度反馈闭包
                 def _on_progress(curr, tot, msg):
@@ -45,14 +60,14 @@ async def run_scan(req: dict):
                     sync_broadcast({"type": "log", "level": "info", "msg": f"[{curr}/{tot}] {msg}"})
 
                 res = engine.run_scan(
-                    strategy_name=req['strategy_name'],
-                    freq=req.get('freq', 'daily'),
-                    exchanges=req.get('exchanges'),
-                    sectors=req.get('sectors'),
-                    hot_sectors_only=req.get('hot_only', False),
-                    index_filter=req.get('index_filter') or None,
-                    min_mv=req.get('min_mv'),
-                    max_mv=req.get('max_mv'),
+                    strategy_name=req.strategy_name,
+                    freq=req.freq,
+                    exchanges=req.exchanges,
+                    sectors=req.sectors,
+                    hot_sectors_only=req.hot_only,
+                    index_filter=req.index_filter or None,
+                    min_mv=req.min_mv,
+                    max_mv=req.max_mv,
                     start=start_dt,
                     end=end_dt,
                     progress_callback=_on_progress,

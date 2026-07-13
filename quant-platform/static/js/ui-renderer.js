@@ -132,6 +132,7 @@ export class UIRenderer {
     }
     if (code.startsWith('6')) return data[code + '.SH'] || null;
     if (code.startsWith('0') || code.startsWith('3')) return data[code + '.SZ'] || null;
+    if (code.startsWith('8') || code.startsWith('4')) return data[code + '.BJ'] || data[code + '.SZ'] || null;
     return null;
   }
 }

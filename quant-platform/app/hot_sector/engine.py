@@ -3,6 +3,7 @@
 
 核心评分公式：stock_score = sector_hotness * sector_weight + max(concept_hotness) * concept_weight
 支持 Redis 缓存（T+0 盘中 10 分钟 TTL）和 DuckDB 持久化（T+1 历史）。
+Redis 不可用时自动降级到进程内内存缓存。
 """
 
 import json
@@ -23,6 +24,9 @@ log = get_logger("HotSectorEngine")
 DEFAULT_SECTOR_WEIGHT = 0.6
 DEFAULT_CONCEPT_WEIGHT = 0.4
 
+# 概念同步重试间隔（秒），避免频繁重试消耗 Tushare 配额
+_CONCEPT_SYNC_RETRY_INTERVAL = 3600  # 1 小时
+
 
 class HotSectorEngine:
     """热点板块评分引擎（单例，线程安全）"""
@@ -30,6 +34,7 @@ class HotSectorEngine:
     _instance = None
     _lock = threading.Lock()
     _calc_lock = threading.Lock()
+    _last_concept_sync_attempt: float = 0.0  # 上次概念同步尝试的时间戳
 
     def __new__(cls):
         if cls._instance is None:
@@ -233,22 +238,25 @@ class HotSectorEngine:
 
         return result
 
-    # ─── Redis 缓存 ──────────────────────────────────────────
-
-    def _get_redis(self):
-        """获取 Redis 客户端（容错）"""
+    # ─── 缓存 ─────────────────────────────────────────────    def _batch_read_redis(self, codes: list) -> dict:
+        """从缓存批量读取评分（Redis 优先，不可用时走内存缓存）"""
         try:
             from core.redis_manager import redis_manager
-            return redis_manager.get_client()
-        except Exception:
-            return None
-
-    def _batch_read_redis(self, codes: list) -> dict:
-        """从 Redis 批量读取缓存评分"""
-        try:
-            client = self._get_redis()
-            if not client:
+            if not redis_manager.is_available() and not redis_manager.get_client():
                 return {}
+
+            client = redis_manager.get_client()
+            if not client:
+                # 内存缓存模式：逐个读
+                out = {}
+                for code in codes:
+                    val = redis_manager.cache_get(f"hot_sector:score:{code}")
+                    if val is not None:
+                        try:
+                            out[code] = float(val)
+                        except (ValueError, TypeError):
+                            pass
+                return out
 
             pipe = client.pipeline()
             for code in codes:
@@ -264,26 +272,34 @@ class HotSectorEngine:
                         pass
             return out
         except Exception as e:
-            log.debug(f"Redis 批量读取失败: {e}")
+            log.debug(f"缓存批量读取失败: {e}")
             return {}
 
     def _batch_write_redis(self, scores: dict, trade_date: date):
-        """批量写入 Redis 缓存评分"""
+        """批量写入缓存评分（Redis 优先，不可用时走内存缓存）"""
         try:
-            client = self._get_redis()
-            if not client:
-                return
+            from core.redis_manager import redis_manager
+            client = redis_manager.get_client()
+            if client:
+                try:
+                    pipe = client.pipeline()
+                    for code, score in scores.items():
+                        pipe.setex(f"hot_sector:score:{code}", self.redis_ttl, score)
+                    pipe.execute()
+                    # 更新时间戳
+                    client.setex("hot_sector:last_update", self.redis_ttl,
+                                 datetime.now().isoformat())
+                    return
+                except Exception as e:
+                    log.debug(f"Redis 批量写入失败，降级内存缓存: {e}")
 
-            pipe = client.pipeline()
+            # 降级到内存缓存
             for code, score in scores.items():
-                pipe.setex(f"hot_sector:score:{code}", self.redis_ttl, score)
-            pipe.execute()
-
-            # 更新时间戳
-            client.setex("hot_sector:last_update", self.redis_ttl,
-                         datetime.now().isoformat())
+                redis_manager.cache_setex(f"hot_sector:score:{code}", self.redis_ttl, score)
+            redis_manager.cache_setex("hot_sector:last_update", self.redis_ttl,
+                                      datetime.now().isoformat())
         except Exception as e:
-            log.debug(f"Redis 批量写入失败: {e}")
+            log.debug(f"缓存批量写入失败: {e}")
 
     # ─── 刷新 ────────────────────────────────────────────────
 
@@ -294,12 +310,30 @@ class HotSectorEngine:
             today = date.today()
             summary = calculator.calc_all_heat(trade_date=today)
 
+            # 概念热度为 0 时自动重试同步（限频：最多每小时重试一次）
+            if summary.get("concepts_processed", 0) == 0:
+                import time
+                now_ts = time.time()
+                if now_ts - self._last_concept_sync_attempt > _CONCEPT_SYNC_RETRY_INTERVAL:
+                    self._last_concept_sync_attempt = now_ts
+                    log.info("概念热度为 0，自动重试概念数据同步...")
+                    try:
+                        from app.hot_sector.concept_sync import concept_syncer
+                        sync_result = concept_syncer.sync_all()
+                        if sync_result.get("total_concepts", 0) > 0:
+                            log.info(f"概念同步成功: {sync_result['total_concepts']} 概念, 重新计算热度")
+                            summary = calculator.calc_all_heat(trade_date=today)
+                        else:
+                            log.warning(f"概念同步仍无数据: {sync_result.get('message', '未知原因')}")
+                    except Exception as e:
+                        log.warning(f"概念自动重试同步失败: {e}")
+
             if use_redis:
-                # 预热热门板块/概念到 Redis
+                # 预热热门板块/概念到缓存（Redis 或内存）
                 try:
                     self._cache_top_sectors_to_redis()
                 except Exception as e:
-                    log.warning(f"Redis 缓存热门板块失败: {e}")
+                    log.debug(f"缓存热门板块失败: {e}")
 
             # 记录本次重算时间
             now_str = datetime.now().strftime("%m/%d %H:%M")
@@ -314,11 +348,8 @@ class HotSectorEngine:
         return str(settings.get("hot_sector", "last_updated", default="--"))
 
     def _cache_top_sectors_to_redis(self):
-        """将 TOP 板块和概念缓存到 Redis（供前端快速展示）"""
-        client = self._get_redis()
-        if not client:
-            return
-
+        """将 TOP 板块和概念缓存（Redis 优先，不可用时走内存缓存）"""
+        from core.redis_manager import redis_manager
         today = date.today()
 
         # 热门概念 TOP 50
@@ -329,9 +360,9 @@ class HotSectorEngine:
                 ORDER BY hotness DESC LIMIT 50
             """, [today]).fetchall()
             if rows:
-                client.setex("hot_sector:top_concepts", self.redis_ttl,
-                             json.dumps([{"name": r[0], "hotness": round(float(r[1]), 2),
-                                          "count": int(r[2])} for r in rows]))
+                data = json.dumps([{"name": r[0], "hotness": round(float(r[1]), 2),
+                                     "count": int(r[2])} for r in rows])
+                redis_manager.cache_setex("hot_sector:top_concepts", self.redis_ttl, data)
         except Exception as e:
             log.debug(f"缓存热门概念失败: {e}")
 
@@ -343,9 +374,9 @@ class HotSectorEngine:
                 ORDER BY hotness DESC LIMIT 30
             """, [today]).fetchall()
             if rows:
-                client.setex("hot_sector:top_sectors", self.redis_ttl,
-                             json.dumps([{"name": r[0], "hotness": round(float(r[1]), 2),
-                                          "count": int(r[2])} for r in rows]))
+                data = json.dumps([{"name": r[0], "hotness": round(float(r[1]), 2),
+                                     "count": int(r[2])} for r in rows])
+                redis_manager.cache_setex("hot_sector:top_sectors", self.redis_ttl, data)
         except Exception as e:
             log.debug(f"缓存热门板块失败: {e}")
 
@@ -384,15 +415,13 @@ class HotSectorEngine:
         return df
 
     def cache_valid(self) -> bool:
-        """检查 Redis 缓存是否仍有效（10 分钟内）"""
+        """检查缓存是否仍有效（TTL 内）"""
         try:
-            client = self._get_redis()
-            if not client:
-                return False
-            ts = client.get("hot_sector:last_update")
+            from core.redis_manager import redis_manager
+            ts = redis_manager.cache_get("hot_sector:last_update")
             if ts is None:
                 return False
-            last = datetime.fromisoformat(ts.decode() if isinstance(ts, bytes) else ts)
+            last = datetime.fromisoformat(ts if isinstance(ts, str) else ts.decode() if isinstance(ts, bytes) else str(ts))
             return (datetime.now() - last).total_seconds() < self.redis_ttl
         except Exception:
             return False

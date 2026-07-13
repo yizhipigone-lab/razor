@@ -39,63 +39,6 @@ async def force_run_sync():
     asyncio.create_task(pipeline_scheduler.trigger_manual_run())
     return {"status": "ok", "message": "全自动同步清洗已在后台启动！"}
 
-@router.post("/api/sync/config")
-async def update_sync_config(body: dict):
-    updates = []
-    if "times" in body:
-        settings.set("cron", "sync_times", body["times"])
-        updates.append(f"时段: {', '.join(body['times'])}")
-    elif "time" in body:
-        settings.set("cron", "sync_times", [body["time"]])
-        updates.append(f"单次时段: {body['time']}")
-    
-    if "enabled" in body:
-        settings.set("cron", "enabled", body["enabled"])
-        updates.append(f"状态: {'启用' if body['enabled'] else '禁用'}")
-    
-    pipeline_scheduler.reload_config()
-    
-    # WebSocket 广播详细信息
-    await manager.broadcast({"type": "info", "message": f"⏰ 盘后自动化任务已更新并重载。项: {', '.join(updates)}"})
-    
-    return {"status": "ok", "message": "自动同步设定已更新并重载！"}
-
-
-@router.post("/api/sync/redis_harvest")
-async def redis_harvest_now():
-    """
-    手动触发 Redis→DuckDB 数据收割。
-    正常情况下由 TaskWorker 在每天 15:30 自动执行，
-    此接口允许在任意时刻（如系统重启前）手动触发持久化。
-    """
-    await pipeline_scheduler.trigger_redis_harvest()
-    await manager.broadcast({"type": "info", "message": "🔄 Redis→DuckDB 数据收割任务已手动触发，查看日志了解进度。"})
-    return {"status": "ok", "message": "Redis 收割任务已启动"}
-
-
-@router.get("/api/redis/status")
-async def get_redis_status():
-    """查询 Redis 连接状态与当前缓存的持仓最高价数量"""
-    try:
-        from core.redis_manager import redis_manager
-        client = redis_manager.get_client()
-        if not client:
-            return {"status": "disconnected", "message": "Redis 未连接"}
-        client.ping()
-        keys = client.keys("pos:highest:*")
-        cached = []
-        for key in keys:
-            data = client.hgetall(key)
-            cached.append({
-                "pos_id": key.decode().split(":")[-1] if isinstance(key, bytes) else key.split(":")[-1],
-                "code": data.get(b"code", b"?").decode() if b"code" in data else data.get("code", "?"),
-                "highest_price": data.get(b"price", b"?").decode() if b"price" in data else data.get("price", "?"),
-                "update_time": data.get(b"update_time", b"?").decode() if b"update_time" in data else data.get("update_time", "?"),
-            })
-        return {"status": "connected", "cached_positions": len(cached), "positions": cached}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
 
 @router.post("/api/data/download")
 async def start_download(mode: str = "incremental", freq: str = "daily", years: int = 1, start_date: str = None, end_date: str = None):
@@ -200,37 +143,6 @@ async def stop_qmt_intra():
         return {"status": "ok", "message": "停止信号已发送，同步将在当前批次结束后停止"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
-
-
-@router.post("/api/data/sync_stocks")
-async def sync_stocks_from_qmt():
-    """通过 QMT 同步全量股票列表（自动处理新股添加、退市标记）"""
-    if not _sync_acquire():
-        return {"status": "error", "message": "系统正忙于其他同步任务，请稍后再试"}
-
-    def _do():
-        try:
-            from app.data_manager.qmt_stock_sync import qmt_stock_sync
-            result = qmt_stock_sync.sync()
-            if result.get("status") == "ok":
-                sync_broadcast({
-                    "type": "done",
-                    "msg": f"✅ 股票列表同步完成: QMT {result['total_qmt']} 只, "
-                           f"新增 {result['added']}, 退市 {result['delisted']}"
-                })
-            else:
-                sync_broadcast({
-                    "type": "log", "level": "error",
-                    "msg": f"❌ 股票同步失败: {result.get('message')}"
-                })
-        except Exception as e:
-            log.error(f"股票同步异常: {e}")
-            sync_broadcast({"type": "log", "level": "error", "msg": f"❌ 股票同步异常: {e}"})
-        finally:
-            _sync_release()
-
-    run_in_thread(_do)
-    return {"status": "started", "message": "股票列表同步任务已启动，请查看日志"}
 
 
 # ─── AI 回测：参数自动优化端点 ───────────────────────────────────────

@@ -1,8 +1,8 @@
 """
-Tushare 概念数据同步器
+概念数据同步器
 
-从 Tushare API 同步概念分类和成分股映射到 DuckDB concept_stocks 表。
-支持标准概念 (concept) 和同花顺概念 (ths_concept) 两种数据源。
+数据源优先级：Tushare API > akshare/同花顺网页爬取
+同步概念分类和成分股映射到 DuckDB concept_stocks 表。
 """
 
 import time
@@ -14,7 +14,7 @@ log = get_logger("ConceptSync")
 
 
 class TushareConceptSyncer:
-    """Tushare 概念数据同步器"""
+    """概念数据同步器（Tushare 优先，akshare 降级）"""
 
     def __init__(self):
         self.pro = None
@@ -43,11 +43,30 @@ class TushareConceptSyncer:
     def sync_all(self, progress_cb=None) -> dict:
         """
         全量同步概念数据。
-        优先尝试标准概念，失败则降级到同花顺概念。
-        两者均失败时返回 warning（不影响板块热度功能）。
+        数据源优先级：Tushare 标准概念 → Tushare 同花顺概念 → akshare/同花顺网页。
+        三者均失败时返回 warning（不影响板块热度功能）。
         """
+        # 1. 尝试 Tushare
+        tushare_result = self._try_tushare(progress_cb)
+        if tushare_result["total_concepts"] > 0:
+            return tushare_result
+
+        # 2. Tushare 失败，降级到 akshare
+        log.info("Tushare 概念同步不可用，尝试 akshare/同花顺数据源...")
+        akshare_result = self._try_akshare(progress_cb)
+        if akshare_result["total_concepts"] > 0:
+            return akshare_result
+
+        # 3. 全部失败
+        log.warning("所有概念数据源均不可用，板块热度功能不受影响")
+        return {"status": "warning", "message": "概念同步不可用，仅板块热度可用",
+                "total_concepts": 0, "total_mappings": 0}
+
+    def _try_tushare(self, progress_cb=None) -> dict:
+        """尝试 Tushare 数据源"""
         if self.pro is None:
-            return {"status": "error", "message": "Tushare API 未初始化"}
+            return {"status": "error", "message": "Tushare API 未初始化",
+                    "total_concepts": 0, "total_mappings": 0}
 
         total_concepts = 0
         total_mappings = 0
@@ -79,8 +98,7 @@ class TushareConceptSyncer:
                 log.warning(f"同花顺概念也同步失败: {e2}")
 
         if not concept_ok:
-            log.warning("概念数据同步不可用（Tushare API 权限或网络问题），板块热度功能不受影响")
-            return {"status": "warning", "message": "概念同步不可用，仅板块热度可用",
+            return {"status": "warning", "message": "Tushare 概念权限不足",
                     "total_concepts": 0, "total_mappings": 0}
 
         return {
@@ -89,6 +107,129 @@ class TushareConceptSyncer:
             "total_mappings": total_mappings,
             "failed_concepts": failed[:10]
         }
+
+    def _try_akshare(self, progress_cb=None) -> dict:
+        """通过 akshare 爬取同花顺概念及成分股"""
+        try:
+            import akshare as ak
+        except ImportError:
+            log.warning("akshare 未安装，无法使用同花顺概念数据源")
+            return {"status": "error", "message": "akshare 未安装",
+                    "total_concepts": 0, "total_mappings": 0}
+
+        try:
+            import requests
+            from bs4 import BeautifulSoup
+        except ImportError:
+            log.warning("requests/beautifulsoup4 未安装")
+            return {"status": "error", "message": "依赖库未安装",
+                    "total_concepts": 0, "total_mappings": 0}
+
+        # Step 1: 获取概念列表
+        try:
+            df_concepts = ak.stock_board_concept_name_ths()
+        except Exception as e:
+            log.warning(f"akshare 获取概念列表失败: {e}")
+            return {"status": "error", "message": f"概念列表获取失败: {e}",
+                    "total_concepts": 0, "total_mappings": 0}
+
+        if df_concepts is None or df_concepts.empty:
+            return {"status": "warning", "message": "概念列表为空",
+                    "total_concepts": 0, "total_mappings": 0}
+
+        total_concepts_count = len(df_concepts)
+        log.info(f"akshare: 获取到 {total_concepts_count} 个同花顺概念")
+
+        # Step 2: 逐概念爬取成分股
+        all_rows: list[dict] = []
+        failed: list[str] = []
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+
+        for i, row in df_concepts.iterrows():
+            concept_name = str(row['name'])
+            concept_code = str(row['code'])
+
+            try:
+                concept_stocks = self._scrape_ths_concept_stocks(
+                    concept_code, headers
+                )
+                for stock_code in concept_stocks:
+                    all_rows.append({
+                        'concept_name': concept_name,
+                        'stock_code': stock_code,
+                        'source': 'akshare_ths'
+                    })
+            except Exception as e:
+                failed.append(concept_name)
+                log.debug(f"akshare: 爬取概念 '{concept_name}' 成分股失败: {e}")
+
+            if progress_cb and i % 5 == 0:
+                progress_cb(i + 1, total_concepts_count,
+                            f"akshare 概念 {i+1}/{total_concepts_count}")
+
+            # 礼貌限流：每个概念间隔 0.3 秒
+            time.sleep(0.3)
+
+        # Step 3: 批量写入 DuckDB
+        if all_rows:
+            df = pd.DataFrame(all_rows)
+            db.upsert_concept_stocks(df)
+            log.info(f"akshare: 写入 {len(all_rows)} 条概念映射到 DuckDB")
+        else:
+            log.warning("akshare: 无有效成分股数据")
+
+        distinct_concepts = len(set(r['concept_name'] for r in all_rows))
+        return {
+            "status": "ok",
+            "total_concepts": distinct_concepts,
+            "total_mappings": len(all_rows),
+            "failed_concepts": failed[:10]
+        }
+
+    def _scrape_ths_concept_stocks(
+        self, concept_code: str, headers: dict
+    ) -> list[str]:
+        """爬取同花顺概念成分股（支持翻页）"""
+        import requests
+        from bs4 import BeautifulSoup
+
+        stocks: list[str] = []
+        page = 1
+
+        while True:
+            url = (
+                f"https://q.10jqka.com.cn/gn/detail/field/264648/"
+                f"order/desc/page/{page}/ajax/1/code/{concept_code}"
+            )
+            try:
+                resp = requests.get(url, headers=headers, timeout=10)
+                if resp.status_code != 200:
+                    break
+            except Exception:
+                break
+
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            rows = soup.select('tbody tr')
+            if not rows:
+                break
+
+            for tr in rows:
+                tds = tr.select('td')
+                if len(tds) >= 2:
+                    code_text = tds[1].text.strip()
+                    # 只保留纯数字股票代码（6 位）
+                    if code_text and len(code_text) == 6 and code_text.isdigit():
+                        stocks.append(code_text)
+
+            # 如果本页不足 10 条，说明是最后一页
+            if len(rows) < 10:
+                break
+            page += 1
+            time.sleep(0.1)  # 翻页限流
+
+        return stocks
 
     def _sync_concept(self, source: str, progress_cb=None) -> dict:
         """

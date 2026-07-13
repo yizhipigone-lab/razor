@@ -28,15 +28,21 @@ class ConnectionManager:
             for ws in self.active:
                 try:
                     await ws.send_json(safe_data)
-                except Exception as e:
-                    print(f"WebSocket 消息发送失败: {e}")
+                except Exception:
+                    # 发送失败：WS已不可用，加入 dead 列表稍后清理
                     dead.append(ws)
 
+        # 清理发送失败的 WS（关闭连接 + 从 active 移除）
         if dead:
             async with self._lock:
                 for ws in dead:
                     if ws in self.active:
                         self.active.remove(ws)
+                for ws in dead:
+                    try:
+                        await ws.close()
+                    except Exception:
+                        pass
 
     def _json_safe(self, obj):
         """递归转换不可序列化对象（NaN → None 确保 JSON 合法）"""

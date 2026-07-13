@@ -106,9 +106,10 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
             progress_cb(0, 5, f"使用日线回测 (公式: {_formula_name or 'settings'})...")
         sig_result = bridge.execute_screen_range(
             end_time=end_time, kline_count=kline_count,
-            start_time=formula_start, formula_name=_formula_name)
+            start_time=formula_start, formula_name=_formula_name,
+            progress_cb=progress_cb, stop_event=stop_event)
         if sig_result.get("status") != "ok":
-            return {"status": "error", "message": sig_result.get("message", "TDX 信号获取失败")}
+            return _empty_result(params, 0, sig_result.get("message", "TDX 信号获取失败"))
         return _run_daily_backtest(
             sig_result, params, start, end, progress_cb, stop_event, stock_names or {})
     # 日内精度: 5m 或 1m
@@ -128,6 +129,7 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
             signal_start=start_time_str,
             period=period,
             formula_name=_formula_name,
+            progress_cb=progress_cb, stop_event=stop_event,
         )
         if sig_result.get("status") == "ok":
             bars_intra = sig_result.get("bars_intraday", sig_result.get("bars_intra", []))
@@ -149,7 +151,8 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
             sig_result = bridge.execute_screen_range_intraday(
                 end_time=end_time, kline_count=kline_count,
                 start_time=formula_start, signal_start=start_time_str,
-                period="5m", formula_name=_formula_name)
+                period="5m", formula_name=_formula_name,
+                progress_cb=progress_cb, stop_event=stop_event)
             if sig_result.get("status") == "ok":
                 bars_5m = sig_result.get("bars_intraday", sig_result.get("bars_5m", []))
                 valid_bars = [b for b in (bars_5m or []) if b.get("close", 0) > 0]
@@ -172,9 +175,10 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
             kline_count=kline_count,
             start_time=formula_start,
             formula_name=_formula_name,
+            progress_cb=progress_cb, stop_event=stop_event,
         )
         if sig_result.get("status") != "ok":
-            return {"status": "error", "message": sig_result.get("message", "TDX 信号获取失败")}
+            return _empty_result(params, 0, sig_result.get("message", "TDX 信号获取失败"))
         return _run_daily_backtest(
             sig_result, params, start, end, progress_cb,
             stop_event, stock_names or {},
@@ -761,20 +765,32 @@ def _run_daily_backtest(sig_result: dict, params: dict, start: date, end: date,
                     pass
 
     if progress_cb:
-        progress_cb(1, 4, f"逐日回放 ({len(prices_by_date)}个交易日)...")
+        progress_cb(0, len(prices_by_date), f"逐日回放 ({len(prices_by_date)}个交易日)...")
 
     if stop_event and stop_event.is_set():
         return {"status": "stopped"}
 
     td_list = sorted(date.fromisoformat(d) for d in prices_by_date.keys())
 
+    # 预建 {日期: [当天有信号的 code 列表]} 反向索引，主循环 O(1) 取当天信号
+    # 替代原"每天遍历全部 sig_by_code"的 O(天×股) 扫描（5421只×2383天≈1290万次→24980次）
+    pending_buys = defaultdict(list)
+    for code, sigs in sig_by_code.items():
+        for dt_str, zp in sigs.items():
+            if _is_signal_value(zp):
+                pending_buys[dt_str].append(code)
+
     eng = FastEngine(td_list, params)
     prev_snap = None
     total_buy_signals = 0
+    _PROGRESS_EVERY = 50  # 逐日回放进度节流：每 50 天推一次，避免刷爆 WebSocket
 
-    for d_obj in td_list:
+    for d_idx, d_obj in enumerate(td_list):
         if stop_event and stop_event.is_set():
             return {"status": "stopped"}
+        # 节流推送逐日回放进度（主循环最长段，按天推让用户看到连续进度）
+        if progress_cb and (d_idx % _PROGRESS_EVERY == 0 or d_idx == len(td_list) - 1):
+            progress_cb(d_idx, len(td_list), f"逐日回放 {d_idx}/{len(td_list)} 天")
 
         d_str = str(d_obj)
         snap = prices_by_date.get(d_str, {})
@@ -795,10 +811,7 @@ def _run_daily_backtest(sig_result: dict, params: dict, start: date, end: date,
         # 动态仓位：按当前净值比例
         eng.position_size = eng.eq(snap) * params["position_ratio"]
 
-        signals_today = sorted(
-            code for code, sigs in sig_by_code.items()
-            if _is_signal_value(sigs.get(d_str))
-        )
+        signals_today = sorted(pending_buys.get(d_str, []))
         total_buy_signals += len(signals_today)
         for code in signals_today:
             bar = snap.get(code)
@@ -843,7 +856,7 @@ def _run_daily_backtest(sig_result: dict, params: dict, start: date, end: date,
                            total_buy_signals, start, end, indices)
     result["summary"]["data_source"] = "daily"
     if progress_cb:
-        progress_cb(3, 4, "日线回测完成")
+        progress_cb(len(td_list), len(td_list), "日线回测完成")
     return result
 
 
