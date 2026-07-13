@@ -89,6 +89,8 @@ async function loadLivePositions() {
     const today = _now.getFullYear() + '-' + String(_now.getMonth()+1).padStart(2,'0') + '-' + String(_now.getDate()).padStart(2,'0');
     let totalFloat = 0, totalTodayPnl = 0, hasMissingClose = false;
     const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    // 整数千位分隔符(股数/可卖/市值/浮盈);股价列不加(A股基本不上千)
+    const fmtInt = v => (Number(v) || 0).toLocaleString(void 0, { maximumFractionDigits: 0 });
     tbody.innerHTML = data.map(p => {
       const fp = Number(p.float_profit) || 0;
       totalFloat += fp;
@@ -110,10 +112,10 @@ async function loadLivePositions() {
       const tag = p.managed ? '<span class="tc-green">策略</span>' : '<span class="muted">ETF保留</span>';
       const pnlCls = fp > 0 ? 'up' : (fp < 0 ? 'down' : 'muted');
       const missingTitle = (overnightVol > 0 && lastClose <= 0) ? ' title="缺昨收,未计入今日盈亏"' : '';
-      return '<tr'+missingTitle+'><td>' + esc(p.code) + '</td><td class="muted">' + esc(p.name || '') + '</td><td>' + vol + '</td><td>' + (Number(p.can_use_volume) || 0) + '</td>' +
+      return '<tr'+missingTitle+'><td>' + esc(p.code) + '</td><td class="muted">' + esc(p.name || '') + '</td><td>' + fmtInt(vol) + '</td><td>' + fmtInt(p.can_use_volume) + '</td>' +
         '<td>' + avgCost.toFixed(3) + '</td><td>' + last.toFixed(3) + '</td>' +
-        '<td>' + (Number(p.market_value) || 0).toFixed(0) + '</td>' +
-        '<td class="' + pnlCls + '">' + fp.toFixed(0) + '</td>' +
+        '<td>' + fmtInt(p.market_value) + '</td>' +
+        '<td class="' + pnlCls + '">' + fmtInt(fp) + '</td>' +
         '<td>' + tag + '</td></tr>';
     }).join('');
     const fmtSign = v => v > 0 ? '+' : (v < 0 ? '-' : '');
@@ -414,9 +416,44 @@ function toggleAccordion(headerEl) {
   }
 }
 
+// ─── 单只占本金比例配置 ──────────────────────────────
+async function loadLiveBuyRatio() {
+  try {
+    const d = await _liveFetch('/live/config/buy-ratio');
+    const pct = (Number(d.buy_position_ratio) * 100).toFixed(1);
+    const el = document.getElementById('lt-buy-ratio');
+    if (el) el.value = pct;
+    const sm = document.getElementById('lt-sum-ratio'); if (sm) sm.textContent = pct + '%';
+  } catch (e) { console.warn('加载买入比例失败:', e.message); }
+}
+
+async function saveLiveBuyRatio() {
+  const el = document.getElementById('lt-buy-ratio');
+  const msgEl = document.getElementById('lt-buy-ratio-msg');
+  if (!el) return;
+  const pct = parseFloat(el.value);
+  if (isNaN(pct) || pct <= 0 || pct > 100) {
+    if (msgEl) { msgEl.textContent = '范围 0~100%(不含0)'; msgEl.style.color = 'var(--red)'; }
+    return;
+  }
+  const ratio = pct / 100;
+  try {
+    const d = await _liveFetch('/live/config/buy-ratio', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ buy_position_ratio: ratio }),
+    });
+    const shown = (Number(d.buy_position_ratio) * 100).toFixed(1);
+    if (msgEl) { msgEl.textContent = '✓ 已保存 (' + shown + '%)'; msgEl.style.color = 'var(--green)'; }
+    const sm = document.getElementById('lt-sum-ratio'); if (sm) sm.textContent = shown + '%';
+  } catch (e) {
+    if (msgEl) { msgEl.textContent = '保存失败: ' + e.message; msgEl.style.color = 'var(--red)'; }
+  }
+}
+
 // v2: 实盘 tab 激活时加载全部(含新增展示)
 async function loadLiveAll() {
   loadLiveStatus(); loadLiveAsset(); loadLivePositions(); loadLiveOrders();
   loadLiveEquity(); loadLiveDeals(); loadLiveSwitches(); loadLiveModeDisplay();
-  loadLiveRiskParams(); loadScanInterval();
+  loadLiveRiskParams(); loadScanInterval(); loadLiveBuyRatio();
 }

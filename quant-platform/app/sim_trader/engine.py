@@ -417,6 +417,11 @@ class SimTraderEngine:
         if code in self.positions:
             return None
         max_amt = min(self.max_buy_amount(), self.cash)
+        # 全局 min/max 卡边界(与实盘同源,系统设置 trading 段;模拟盘同进程即时生效)
+        from core.settings import settings
+        g_min = float(settings.get("trading", "min_buy_amount", default=5000))
+        g_max = float(settings.get("trading", "max_buy_amount", default=60000))
+        max_amt = max(g_min, min(max_amt, g_max))
         if max_amt < MIN_BUY_AMT:
             return None
         shares = int(max_amt / price / 100) * 100

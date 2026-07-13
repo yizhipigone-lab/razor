@@ -17,11 +17,13 @@ class RuntimeState:
     """运行时可变状态: buy_enabled / sell_enabled / mode"""
 
     def __init__(self, initial_mode: str = "dry-run",
-                 initial_buy: bool = True, initial_sell: bool = True):
+                 initial_buy: bool = True, initial_sell: bool = True,
+                 initial_ratio: float = 0.05):
         self._lock = threading.Lock()
         self._mode = initial_mode
         self._buy_enabled = initial_buy
         self._sell_enabled = initial_sell
+        self._buy_position_ratio = initial_ratio
 
     # ===== mode =====
     @property
@@ -47,6 +49,22 @@ class RuntimeState:
     def sell_enabled(self) -> bool:
         with self._lock:
             return self._sell_enabled
+
+    # ===== 单只占本金比例(实盘 tab 热配;不进 _persist,由专用端点写 settings 顶层) =====
+    @property
+    def buy_position_ratio(self) -> float:
+        with self._lock:
+            return self._buy_position_ratio
+
+    def set_buy_position_ratio(self, ratio: float) -> float:
+        """设置单只占本金比例(仅改内存;持久化由端点写 settings 顶层)。返回旧值(供 audit)。"""
+        if not (0 < ratio <= 1):
+            raise ValueError(f"buy_position_ratio 必须在 (0,1],当前 {ratio}")
+        with self._lock:
+            old = self._buy_position_ratio
+            self._buy_position_ratio = ratio
+        logger.info(f"buy_position_ratio 切换: {old} -> {ratio}")
+        return old
 
     # ===== 状态快照 =====
     def get_state(self) -> dict:
@@ -105,10 +123,14 @@ def load_runtime_state(config) -> RuntimeState:
     """
     try:
         rt = settings.get("live_trader", "runtime", default={}) or {}
+        # buy_position_ratio 真相源是 live_trader.buy_position_ratio 顶层(不进 runtime 段),fallback config 种子
+        ratio = settings.get("live_trader", "buy_position_ratio",
+                             default=getattr(config, "buy_position_ratio", 0.05))
         return RuntimeState(
             initial_mode=rt.get("mode", getattr(config, "mode", "dry-run")),
             initial_buy=rt.get("buy_enabled", True),
             initial_sell=rt.get("sell_enabled", True),
+            initial_ratio=float(ratio) if ratio is not None else 0.05,
         )
     except Exception as e:
         logger.warning(f"加载 runtime 段失败,用 config 种子: {e}")

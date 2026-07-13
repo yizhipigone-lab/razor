@@ -982,6 +982,7 @@ async function saveSettings() {
     await Promise.resolve(saveRiskSettings());
     await Promise.resolve(saveDataSettings());
     await Promise.resolve(saveGatewaySettings());
+    await Promise.resolve(saveBuyAmtSettings());
     if (msg) { msg.style.display = 'inline'; msg.textContent = '✓ 配置已持久化保存'; msg.style.color = 'var(--green)'; }
     addLog('ok', '全局设置已保存（搜索空间/风控/数据/网关）');
   } catch (e) {
@@ -1111,6 +1112,25 @@ function saveGatewaySettings() {
     }
   };
   var msg = document.getElementById('save-gateway-msg');
+  return fetch('/api/settings', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({data: data})
+  }).then(function(r) { return r.json(); }).then(function(res) {
+    if (msg) { msg.textContent = res.message || '已保存'; msg.style.color = 'var(--green)'; }
+    return res;
+  }).catch(function() {
+    if (msg) { msg.textContent = '保存失败'; msg.style.color = 'var(--red)'; }
+  });
+}
+function saveBuyAmtSettings() {
+  var minV = parseFloat((document.getElementById('set-buy-min') || {}).value);
+  var maxV = parseFloat((document.getElementById('set-buy-max') || {}).value);
+  var msg = document.getElementById('save-buy-msg');
+  if (isNaN(minV) || isNaN(maxV) || minV < 0 || maxV < 0 || minV > maxV) {
+    if (msg) { msg.textContent = '请检查金额(0≤最小≤最大)'; msg.style.color = 'var(--red)'; }
+    return Promise.resolve();
+  }
+  var data = { trading: { min_buy_amount: minV, max_buy_amount: maxV } };
   return fetch('/api/settings', {
     method: 'POST', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({data: data})
@@ -2621,8 +2641,9 @@ function handleWS(msg) {
       const reasons = Object.entries(s.exit_reasons).sort((a,b) => b[1]-a[1]).slice(0, 5).map(([k,v]) => `${k}:${v}`).join(', ');
       addLog('info', `[退出原因] ${reasons}`);
     }
-    hideProgress('simple-bt');
-    document.getElementById('btn-simple-bt-run').disabled = false;
+    _resetSimpleBtButtons();
+  } else if (msg.type === 'simple_bt_stopped') {
+    _resetSimpleBtButtons();
   } else if (msg.type === 'done') {
     addLog('ok', getMsg(msg));
     hideProgress('dl');
@@ -4341,8 +4362,8 @@ async function loadSettings() {
     const c = data.cron || {};
     const dd = data.data || {};
 
-    setVal('set-auto-max', t.max_buy_amount || a.max_amount_per_stock);
-    setVal('set-lot-size', t.order_lot_size);
+    setVal('set-buy-min', t.min_buy_amount);
+    setVal('set-buy-max', t.max_buy_amount);
     setVal('set-trail-act', r.trailing_stop_activate_pct);
     setVal('set-trail-dd', r.trailing_stop_drawdown_pct);
     setVal('set-stop', r.hard_stop_loss_pct);
@@ -4773,7 +4794,15 @@ async function runSimpleBacktest() {
 
   document.getElementById('simple-bt-result').style.display = 'none';
   showProgress('simple-bt', '正在启动回测...');
-  document.getElementById('btn-simple-bt-run').disabled = true;
+  // 切按钮 + 禁用配置按钮(避免回测中改配置)
+  const runBtn = document.getElementById('btn-simple-bt-run');
+  const stopBtn = document.getElementById('btn-simple-bt-stop');
+  if (runBtn) runBtn.style.display = 'none';
+  if (stopBtn) { stopBtn.style.display = 'inline-block'; stopBtn.disabled = false; stopBtn.textContent = '⏹ 停止回测'; }
+  ['btn-simple-bt-save', 'btn-simple-bt-reset', 'btn-simple-bt-load-sys'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = true;
+  });
 
   try {
     await fetch('/api/backtest/run-simple', {
@@ -4782,9 +4811,32 @@ async function runSimpleBacktest() {
     });
   } catch (e) {
     addLog('error', '启动回测失败: ' + e.message);
-    hideProgress('simple-bt');
-    document.getElementById('btn-simple-bt-run').disabled = false;
+    _resetSimpleBtButtons();
   }
+}
+
+async function stopSimpleBacktest() {
+  const stopBtn = document.getElementById('btn-simple-bt-stop');
+  if (stopBtn) { stopBtn.disabled = true; stopBtn.textContent = '⏳ 发送中...'; }
+  try {
+    await fetch('/api/backtest/run-simple/stop', { method: 'POST' });
+    addLog('warning', '🛑 简化回测停止指令已发送');
+  } catch (e) {
+    addLog('error', '发送停止指令失败: ' + e.message);
+    if (stopBtn) { stopBtn.disabled = false; stopBtn.textContent = '⏹ 停止回测'; }
+  }
+}
+
+function _resetSimpleBtButtons() {
+  const runBtn = document.getElementById('btn-simple-bt-run');
+  const stopBtn = document.getElementById('btn-simple-bt-stop');
+  if (runBtn) { runBtn.style.display = 'inline-block'; runBtn.disabled = false; }
+  if (stopBtn) { stopBtn.style.display = 'none'; stopBtn.disabled = false; stopBtn.textContent = '⏹ 停止回测'; }
+  ['btn-simple-bt-save', 'btn-simple-bt-reset', 'btn-simple-bt-load-sys'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = false;
+  });
+  hideProgress('simple-bt');
 }
 
 function showProgress(ctx, msg) {

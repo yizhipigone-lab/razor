@@ -268,10 +268,11 @@
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
             <h3 style="margin:0">日线收盘价回测 <span style="font-size:11px;color:var(--text2);font-weight:400">（独立配置，不影响实盘）</span></h3>
             <div style="display:flex; gap:8px">
-              <button class="btn btn-sm" onclick="loadBtConfigFromSystem()" style="font-size:12px">系统配置</button>
-              <button class="btn btn-sm" style="border-color:var(--orange);color:var(--orange);font-size:12px" onclick="resetBtSimpleConfig()">重置</button>
+              <button class="btn btn-sm" id="btn-simple-bt-load-sys" onclick="loadBtConfigFromSystem()" style="font-size:12px">系统配置</button>
+              <button class="btn btn-sm" id="btn-simple-bt-reset" style="border-color:var(--orange);color:var(--orange);font-size:12px" onclick="resetBtSimpleConfig()">重置</button>
               <button class="btn btn-primary btn-sm" id="btn-simple-bt-save" onclick="saveBtSimpleConfig()" style="font-size:12px">保存配置</button>
               <button class="btn btn-success btn-sm" id="btn-simple-bt-run" onclick="runSimpleBacktest()" style="font-size:13px;font-weight:bold">开始回测</button>
+              <button class="btn btn-warning btn-sm" id="btn-simple-bt-stop" onclick="stopSimpleBacktest()" style="display:none;font-size:13px;font-weight:bold">⏹ 停止回测</button>
             </div>
           </div>
 
@@ -1049,6 +1050,22 @@
             </div>
           </div>
 
+          <!-- Card: 买入金额(全局·模拟盘与实盘共用) -->
+          <div class="settings-card">
+            <div class="flex-between">
+              <h4>💰 买入金额（全局）</h4>
+              <div>
+                <button class="btn btn-ghost btn-sm" onclick="saveBuyAmtSettings()" style="color:var(--accent)">保存此卡</button>
+                <span id="save-buy-msg" class="fs-xs ml-6 muted"></span>
+              </div>
+            </div>
+            <p class="hint">单笔买入金额边界，写 trading 段。实盘 = clamp(本金×比例, 最小, 最大)；模拟盘 = clamp(POSITION_SIZE, 最小, 最大)。</p>
+            <div class="row">
+              <div><label>最小买入 (元)</label><input type="number" id="set-buy-min" step="1000" min="0"><p class="hint">单笔下限，防碎单</p></div>
+              <div><label>最大买入 (元)</label><input type="number" id="set-buy-max" step="10000" min="0"><p class="hint">单笔上限，实盘"本金×比例"也受此卡。改后实盘需重启 live_trader 生效</p></div>
+            </div>
+          </div>
+
           <!-- Card 3: Data & Schedule -->
           <div class="settings-card">
             <div class="flex-between">
@@ -1593,6 +1610,21 @@
 
           <div class="lt-accordion__item">
             <div class="lt-accordion__header" onclick="toggleAccordion(this)">
+              <span class="lt-accordion__head-left"><span class="lt-accordion__arrow">▸</span>仓位参数</span>
+              <span class="lt-accordion__summary">单只占本金 <b id="lt-sum-ratio">—</b></span>
+            </div>
+            <div class="lt-accordion__body">
+              <div class="fs-13 lt-lh-2">
+                <div>单只占本金比例: <input type="number" id="lt-buy-ratio" step="0.5" min="0.5" max="100" style="width:80px"> %
+                  <button class="btn btn-sm btn-ghost" onclick="saveLiveBuyRatio()">保存</button>
+                  <span id="lt-buy-ratio-msg" class="muted fs-xs ml-6"></span></div>
+                <div class="muted fs-xs mt-1">实盘下单 = clamp(本金 × 此比例, 全局最小, 全局最大)。保存后立即生效(无需重启)。本金 115 万 · 5% ≈ 5.75 万/笔</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lt-accordion__item">
+            <div class="lt-accordion__header" onclick="toggleAccordion(this)">
               <span class="lt-accordion__head-left"><span class="lt-accordion__arrow">▸</span>风控参数</span>
               <span class="lt-accordion__summary muted">(risk 段,实盘与模拟盘共用)</span>
             </div>
@@ -1750,7 +1782,7 @@
 </div>
 
     <script src="/static/js/main.js?v=42"></script>
-    <script src="/static/js/live_trader.js?v=6"></script>
+    <script src="/static/js/live_trader.js?v=7"></script>
 </body>
 </html>
 

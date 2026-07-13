@@ -1,6 +1,7 @@
 {
   "trading": {
-    "max_buy_amount": 10000,
+    "min_buy_amount": 5000,
+    "max_buy_amount": 60000,
     "order_lot_size": 100,
     "order_price_type": "auto"
   },
@@ -202,6 +203,7 @@
   },
   "live_trader": {
     "buy_position_size": 10000,
+    "buy_position_ratio": 0.05,
     "buy_signal_token": "Qwer1234",
     "buy_signal_enabled": true,
     "buy_signal_cutoff": "14:59",

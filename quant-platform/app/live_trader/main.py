@@ -5,7 +5,9 @@
 """
 import asyncio
 import os
+import signal
 import socket
+import threading
 import time
 from contextlib import asynccontextmanager
 from datetime import date, datetime
@@ -107,9 +109,23 @@ async def lifespan(app: FastAPI):
 
     # 检查 kill switch 文件(上次崩溃可能留下)
     if kill_switch.is_active():
-        logger.warning("⚠ 启动时检测到 kill switch 已激活,需人工解除后才下单")
+        # 带上当初激活的真实信息(从残留文件加载), 否则笼统"检测到残留"让人不知为何被按下
+        _ks = kill_switch.status()
+        # 激活时间 ISO -> 友好格式, 解析失败回退原值
+        _at_raw = _ks.get('activated_at')
+        try:
+            from datetime import datetime as _dt
+            _at = _dt.fromisoformat(_at_raw).strftime('%Y-%m-%d %H:%M:%S') if _at_raw else '未知'
+        except Exception:
+            _at = _at_raw or '未知'
+        _detail = (f"当初原因:{_ks.get('reason') or '未知'} | "
+                   f"当初来源:{_ks.get('source') or '未知'} | "
+                   f"激活于:{_at}")
+        logger.warning(f"⚠ 启动检测到残留 kill switch ({_detail}), 需人工解除后才下单")
         if notifier:
-            notifier.kill_switch_activated("启动时检测到残留 kill switch", "startup_check")
+            # scheduler 激活的(非交易日)会在交易日 09:20 自动解除, 提示无需人工; 其他来源仍需人工
+            _hint = "交易日 09:20 自动解除, 无需人工" if _ks.get('source') == 'scheduler' else "需人工介入"
+            notifier.kill_switch_activated(f"启动检测到残留（{_detail}）", "startup_check", hint=_hint)
 
     qmt = QmtWrapper(config)
     callback = CallbackHandler(config, store, kill_switch, clearance_lock, pnl_engine, notifier, runtime_state)
@@ -426,9 +442,13 @@ async def asset():
     return qmt.query_asset()
 
 
+# 简称缓存: code -> name(xtdata.get_instrument_detail 返回,股票/ETF/指数全覆盖)
+# 只缓存非空结果,空结果不缓存(防 xtquant 抖动时永久踩死,下次轮询自动重试)
+_instrument_name_cache: dict = {}
+
 @app.get("/live/positions")
 async def positions():
-    """持仓查询(含 managed 标记 + today_buy_volume)"""
+    """持仓查询(含 managed 标记 + today_buy_volume + 简称)"""
     store = _state.get("store")
     if not store:
         raise HTTPException(503, "Store 未初始化")
@@ -446,6 +466,23 @@ async def positions():
         buy_map = {r[0]: int(r[1] or 0) for r in rows}
         for p in positions:
             p['today_buy_volume'] = buy_map.get(p.get('code'), 0)
+    # 补股票简称(stocks 基础表不含 ETF,改用 xtdata.get_instrument_detail 全覆盖)
+    qmt = _state.get("qmt")
+    for p in positions:
+        code = p.get('code', '')
+        if not code:
+            p['name'] = ''
+            continue
+        name = _instrument_name_cache.get(code)
+        if name is None and qmt:
+            try:
+                detail = qmt.get_instrument_detail(code) or {}
+                name = str(detail.get('InstrumentName') or '').strip()
+                if name:
+                    _instrument_name_cache[code] = name
+            except Exception:
+                name = ''
+        p['name'] = name or ''
     return positions
 
 
@@ -801,8 +838,15 @@ async def _process_one_signal(signal, semaphore, lock_wait_sec: int = 5, strateg
             f"buy_signal|{code_fmt}|{date.today()}".encode()
         ).hexdigest()[:16]
 
-        # 计算买入量:buy_position_size 是软上限,闸门1是硬上限(漏洞F)
-        position_size = config.buy_position_size if config else 10000.0
+        # 计算买入量:本金×比例,卡在全局 [min_buy_amount, max_buy_amount] 之间
+        # buy_position_ratio 走 runtime_state 可变 holder(热更新);min/max 走 settings trading 段(全局,与模拟盘同源)
+        rs = _state.get("runtime_state")
+        ratio = rs.buy_position_ratio if rs else (config.buy_position_ratio if config else 0.05)
+        capital = config.live_capital if config else 0
+        from core.settings import settings as _settings
+        min_amt = float(_settings.get("trading", "min_buy_amount", default=5000))
+        max_amt = float(_settings.get("trading", "max_buy_amount", default=60000))
+        position_size = max(min_amt, min(ratio * capital, max_amt))
         price = signal.price  # service 内 TDX source 会用 QMT 实时价覆盖
 
         # 先用传入价格估算 volume(如果是0则用默认估算价)
@@ -1035,6 +1079,37 @@ async def health():
     return {"status": "ok", "ts": datetime.now().isoformat()}
 
 
+@app.post("/shutdown")
+async def shutdown_service(request: Request):
+    """优雅关闭服务(仅 localhost)。
+
+    替代 stop.bat 的 taskkill /F(后者绕过 atexit、DuckDB 不 close)。
+    Windows 下 SIGINT 不能可靠触发 uvicorn lifespan shutdown(实测日志无"已关闭"),
+    故在此显式 store.close() 触发 live_trader.duckdb 的 WAL checkpoint, 不依赖 lifespan。
+    """
+    if not _is_local(request):
+        raise HTTPException(403, "仅允许本地调用")
+    logger.info("/shutdown 收到请求, 准备优雅关闭 (显式 store.close + SIGINT)...")
+
+    # 显式关 store: 停 flusher + 最后 flush + close 连接(= checkpoint WAL)
+    store = _state.get("store")
+    if store:
+        try:
+            store.close()
+        except Exception as e:
+            logger.warning(f"/shutdown store.close 异常: {e}")
+
+    def _trigger_exit():
+        time.sleep(0.5)
+        try:
+            os.kill(os.getpid(), signal.SIGINT)
+        except Exception as e:
+            logger.warning(f"/shutdown SIGINT 触发失败: {e}")
+
+    threading.Thread(target=_trigger_exit, daemon=True).start()
+    return {"status": "shutting down"}
+
+
 @app.get("/live/config/scan-interval")
 async def get_scan_interval():
     """获取当前离场扫描间隔(秒)"""
@@ -1065,6 +1140,42 @@ async def set_scan_interval(body: dict):
     from core.settings import settings
     settings.set("live_trader", "exit_scan_interval_sec", seconds, save=True)
     return {"interval_sec": scheduler.get_scan_interval(), "saved": True}
+
+
+@app.get("/live/config/buy-ratio")
+async def get_buy_ratio():
+    """获取单只占本金比例(实盘下单 = clamp(本金×比例, 全局min, 全局max))"""
+    rs = _state.get("runtime_state")
+    if not rs:
+        raise HTTPException(503, "未初始化")
+    return {"buy_position_ratio": rs.buy_position_ratio}
+
+
+@app.put("/live/config/buy-ratio")
+async def set_buy_ratio(request: Request, body: dict):
+    """设置单只占本金比例(仅本地)。内存立即生效 + 持久化到 live_trader.buy_position_ratio 顶层。范围:(0,1]"""
+    if not _is_local(request):
+        raise HTTPException(403, "仅允许本地调用")
+    rs = _state.get("runtime_state")
+    if not rs:
+        raise HTTPException(503, "未初始化")
+    ratio = body.get("buy_position_ratio")
+    if ratio is None:
+        raise HTTPException(400, "缺少 buy_position_ratio 参数")
+    try:
+        ratio = float(ratio)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "buy_position_ratio 必须为数字")
+    if not (0 < ratio <= 1):
+        raise HTTPException(400, "buy_position_ratio 范围:(0,1]")
+    old = rs.set_buy_position_ratio(ratio)                                  # 内存立即生效
+    from core.settings import settings
+    settings.set("live_trader", "buy_position_ratio", ratio, save=True)     # 落盘顶层(不进 runtime 段)
+    audit = _state.get("audit")
+    if audit:
+        audit.log("buy_ratio_changed", snapshot={"old": old, "new": ratio})
+    logger.info(f"buy_position_ratio: {old} -> {ratio}")
+    return {"buy_position_ratio": rs.buy_position_ratio, "saved": True}
 
 
 # ===== 运行时开关/模式切换(v2 §3.3/§3.4)=====
