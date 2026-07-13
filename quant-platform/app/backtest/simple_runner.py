@@ -475,19 +475,10 @@ def _run_intraday_backtest(
         })
         prev_snap = day_snap
 
-    # 最终清仓
-    for code, p in list(positions.items()):
-        if not p.active:
-            continue
-        px = closes.get(td[-1], {}).get(code, p.entry_price) if td else p.entry_price
-        ret = (px / p.entry_price - 1) * 100
-        profit = p.remaining * (px - p.entry_price)
-        cash += p.remaining * px
-        trades_all.append(Trade(code, p.entry_date, td[-1] if td else end,
-                                p.entry_price, px, p.remaining,
-                                round(ret, 2), round(profit, 0), "FE",
-                                sum(1 for t in td if p.entry_date <= t <= td[-1]) if td else 0))
-        sell_reasons["FE"] += 1
+    # 注: 原"最终清仓"循环已删除 —— 回测结束时不再强制卖出持仓
+    # 持仓按市值(equity_curve 已有 pos_value)计入 final_equity,标记为"持仓中"
+    # 修复 FE 误标记: 之前用 entry_price fallback 算 profit=-15248 的 4 笔 7-13 trades 是 bug
+    # 持仓未平仓部分在 positions 字典保留,equity_curve 末尾的 pos_value 已 mark-to-market
 
     # 构建结果
     indices = {}

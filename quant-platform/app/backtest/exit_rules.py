@@ -100,7 +100,9 @@ class RuleContext:
 # ═══════════════════════════════════════════════════
 
 def rule_hard_stop(ctx: RuleContext) -> Optional[ExitSignal]:
-    """硬止损：用 Low 检测"""
+    """硬止损：用 Low 检测(T+1: 持仓<2日不触发, 隔夜跳空才能卖)"""
+    if ctx.hold_days < 2:
+        return None
     stop_price = ctx.entry_price * (1 + ctx.hard_stop)
     if ctx.low > 0 and ctx.low <= stop_price:
         # 成交价假设: False/"max"=旧乐观(max(stop,open)); True/"min"=真实(min); "stop"=纯止损线(对齐VERA)
@@ -144,11 +146,13 @@ def rule_time_force(ctx: RuleContext) -> Optional[ExitSignal]:
 
 
 def rule_take_profit(ctx: RuleContext) -> Optional[ExitSignal]:
-    """多档阶梯止盈
+    """多档阶梯止盈(T+1: 持仓<2日不触发)
 
     tp_stack_mode=False(旧): 首个非None生效，一根K线只触发一档
     tp_stack_mode=True(叠加,对齐VERA): 同bar内所有未触发档位全触发，按最高档成交价，sell_ratio累加(钳位1.0)
     """
+    if ctx.hold_days < 2:
+        return None
     tiers = ctx.take_profit_tiers
     if not tiers:
         return None
@@ -200,7 +204,9 @@ def rule_take_profit(ctx: RuleContext) -> Optional[ExitSignal]:
 
 
 def rule_trailing_stop(ctx: RuleContext) -> Optional[ExitSignal]:
-    """移动止盈：峰值盈利超激活线后，从峰值回撤超阈值触发"""
+    """移动止盈：峰值盈利超激活线后，从峰值回撤超阈值触发(T+1)"""
+    if ctx.hold_days < 2:
+        return None
     peak_pct = ctx.peak_price / ctx.entry_price - 1
 
     if peak_pct < ctx.trail_activate:
@@ -244,7 +250,9 @@ def rule_time_condition(ctx: RuleContext) -> Optional[ExitSignal]:
 
 
 def rule_breakeven_stop(ctx: RuleContext) -> Optional[ExitSignal]:
-    """保本止损：最高盈利曾达阈值后，回落到保本线就卖"""
+    """保本止损：最高盈利曾达阈值后，回落到保本线就卖(T+1)"""
+    if ctx.hold_days < 2:
+        return None
     if ctx.breakeven_threshold <= 0:
         return None
     peak_pct = ctx.peak_price / ctx.entry_price - 1

@@ -588,31 +588,12 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
             # 更新 prev_day,供下一天买入时取前收
             prev_day = d
 
-        # ── 最终清仓 ──────────────────────────────────
-        for code, p in list(positions.items()):
-            if not p.active:
-                continue
-            if code in stocks_with_intraday:
-                code_bars = [b for b in bars_intra if b["code"] == code]
-                px = code_bars[-1]["close"] if code_bars else p.entry_price
-            else:
-                last_snap = prices_by_date.get(str(sorted_dates[-1]), {})
-                px = last_snap.get(code, {}).get("close", p.entry_price)
-            # 任务一: 期末清仓扣成本(含费成本基, 满足资金守恒断言)
-            _sr = calc_sell_revenue(px, p.shares)
-            profit = _sr['total'] - p.cost
-            ret = (profit / p.cost * 100) if p.cost else 0.0
-            cash += _sr['total']
-            p.active = False
-            last_date = date.fromisoformat(sorted_dates[-1]) if sorted_dates else end
-            trades_all.append(Trade(
-                code, p.entry_date, last_date, p.entry_price, px,
-                p.shares, round(ret, 2), round(profit, 0), "FE",
-                (last_date - p.entry_date).days,
-            ))
-            sell_reasons["FE"] += 1
+        # 注: 原"最终清仓"循环已删除 —— 回测结束时不再强制卖出持仓
+        # 持仓按市值计入 final_equity(下面 equity_curve 的 pos_value)
+        # 修复 FE 误标记: 之前 calc_sell_revenue(0, ...) 算 profit=-cost 接近 0, 标 FE 误导
+        # 持仓未平仓部分保留在 positions 字典, 由 equity_curve 末尾 mark-to-market
 
-        # 补充净值终值 (L27: 用 close 而非 entry_price 计算持仓市值)
+        # 补充净值终值 (持仓按市值计入)
         active_positions = [pp for pp in positions.values() if pp.active]
         pos_value = 0
         for p in active_positions:
@@ -628,11 +609,12 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
             "cash": round(cash, 2), "pos": len(active_positions),
         })
 
-        # ── 不变式断言 ──────────────────────────────
+        # ── 不变式断言(仅在全部平仓时检查)──────────────
+        # 持仓未平仓时 pos_value 含未实现 P&L, 不在 trade profit 中, 等式不再成立
         total_trade_profit = sum(t.profit for t in trades_all)
         expected_equity = params["initial_capital"] + total_trade_profit
         final_snapshot_equity = cash + pos_value
-        if abs(final_snapshot_equity - expected_equity) > 2.0:
+        if not active_positions and abs(final_snapshot_equity - expected_equity) > 2.0:
             log.error(
                 f"混合回测资金不一致！equity={final_snapshot_equity:.2f} "
                 f"expected={expected_equity:.2f} diff={final_snapshot_equity - expected_equity:.2f} "
@@ -829,21 +811,10 @@ def _run_daily_backtest(sig_result: dict, params: dict, start: date, end: date,
         eng.record(d_obj, snap)
         prev_snap = snap
 
-    # 最终清仓
-    for code, p in list(eng.positions.items()):
-        if not p.active or p.remaining <= 0:
-            continue
-        last_date = td_list[-1] if td_list else date.today()
-        last_snap = prices_by_date.get(str(last_date), {})
-        bar = last_snap.get(code)
-        try:
-            px = float(bar["close"]) if isinstance(bar, dict) else float(bar) if bar else p.entry_price
-        except (ValueError, TypeError, KeyError):
-            px = p.entry_price
-        t = eng.sell(p, px, "FE", None, last_date)
-        if t:
-            t.hold = eng._td(p.entry_date, last_date)
-            eng.trades.append(t)
+    # 注: 原"最终清仓"循环已删除 —— 回测结束时不再强制卖出持仓
+    # 持仓按市值计入 final_equity(_build_result 里的 equity_curve mark-to-market)
+    # 修复 FE 误标记: 之前用 entry_price fallback 算 profit=-300508 的 22 笔 7-13/7-10 trades 是 bug
+    # 持仓未平仓部分保留在 eng.positions, _build_result 通过 mark-to-market 算 final_equity
 
     # 指数
     indices = {}
