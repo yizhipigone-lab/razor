@@ -36,79 +36,37 @@ def augment_bars_with_realtime(bars: pd.DataFrame, today: date):
     用实时行情补充今日 bar 数据（14:52 盘中执行时需要）。
     Parquet 文件中没有当日未收盘的 bar，必须从 QMT/TDX/腾讯 获取。
     返回: (augmented_bars, snapshot_dict)
+
+    候选⑥:实时缝合逻辑委托给 LiveBarStitcher(避免重复 quote 拉取 +
+    snapshot 构造 + DataFrame merge 样板)。
     """
-    if today != date.today():
-        return bars, get_daily_snapshot(bars, today)
+    from app.data_manager.live_bar_stitcher import LiveBarStitcher
+    stitcher = LiveBarStitcher()
+    new_bars, snapshot = stitcher.stitch_bars(bars, today)
 
-    from core.logger import get_logger
-    log = get_logger("SimLoader")
+    if snapshot and bars is not new_bars:
+        # 成功注入实时行情 → 走原 log 提示
+        try:
+            from core.logger import get_logger
+            log = get_logger("SimLoader")
+            log.info(f"实时行情已注入: {len(snapshot)} 只股票")
+        except Exception:
+            pass
+        return new_bars, snapshot
 
-    if 'code' not in bars.columns:
-        log.warning("bars 缺少 'code' 列，回退到历史数据")
-        return bars, get_daily_snapshot(bars, today)
-
-    codes = bars['code'].unique().tolist()
-
-    snapshot = {}
-    new_rows = []
-    grouped = bars.groupby("code")
-
-    def _build_result(quotes_dict):
-        """将行情字典转换为 snapshot 和 bars 行"""
-        nonlocal snapshot, new_rows
-        for code, q in quotes_dict.items():
-            price = float(q.get('price', 0) or q.get('lastPrice', 0))
-            if price <= 0:
-                continue
-            group = grouped.get_group(code) if code in grouped.groups else None
-            if group is None or group.empty:
-                continue
-            last_row = group.iloc[-1].to_dict()
-            snapshot[code] = {
-                'open': float(q.get('open', price)),
-                'high': float(q.get('high', price)),
-                'low': float(q.get('low', price)),
-                'close': price,
-            }
-            last_row['date'] = today
-            last_row['open'] = snapshot[code]['open']
-            last_row['high'] = snapshot[code]['high']
-            last_row['low'] = snapshot[code]['low']
-            last_row['close'] = snapshot[code]['close']
-            last_row['volume'] = float(q.get('volume', 0) or q.get('vol', 0))
-            new_rows.append(last_row)
-
-    # 走 quote_source 统一深 module(QMT→TDX→腾讯→Parquet 逐只降级);
-    # 原内嵌腾讯解析已由 quote_source.TencentAdapter 承接,此处不再重复。
-    try:
-        from app.data_manager.quote_source import get_realtime_quotes
-        qdf = get_realtime_quotes(codes)
-        if qdf is not None and not qdf.empty:
-            qdf = qdf[qdf["price"] > 0]
-        if qdf is not None and not qdf.empty:
-            quotes_dict = {
-                str(row["code"]): {
-                    "price": float(row.get("price", 0)),
-                    "open": float(row.get("open", 0) or 0),
-                    "high": float(row.get("high", 0) or 0),
-                    "low": float(row.get("low", 0) or 0),
-                    "volume": float(row.get("volume", 0) or 0),
-                }
-                for _, row in qdf.iterrows()
-            }
-            _build_result(quotes_dict)
-            if snapshot:
-                log.info(f"实时行情已注入: {len(snapshot)} 只股票")
-                return _finalize(bars, today, new_rows, snapshot)
-    except Exception as e:
-        log.warning(f"实时行情获取失败: {e}")
-
-    log.warning("所有实时行情通道均失败，回退到历史数据")
-    return bars, get_daily_snapshot(bars, today)
+    if not snapshot:
+        # 回退到历史:LiveBarStitcher 返回 history snapshot(无缝等价)
+        try:
+            from core.logger import get_logger
+            log = get_logger("SimLoader")
+            log.warning("所有实时行情通道均失败，回退到历史数据")
+        except Exception:
+            pass
+    return new_bars, snapshot
 
 
 def _finalize(bars, today, new_rows, snapshot):
-    """将实时行情行合并到 bars 中"""
+    """合并实时行情行到 bars(候选⑥后,该函数保留以防外部调用,但 augment_bars_with_realtime 不再走它)"""
     if new_rows:
         bars = bars[bars['date'] != today]
         ndf = pd.DataFrame(new_rows)

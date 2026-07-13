@@ -159,54 +159,12 @@ async def get_bars(code: str, freq: str = "daily", limit: int = 400):
             df[col] = df[col].replace([np.inf, -np.inf], np.nan).fillna(0.0)
             
         records = df.to_dict(orient="records")
-            
-        # --- 注入实时行情缝合最后一根 K 线 ---
+
+        # --- 注入实时行情缝合最后一根 K 线(候选⑥:委托 LiveBarStitcher) ---
         try:
             if settings.get("gateway", "active_gateway") == "qmt":
-                from app.data_manager.quote_source import get_realtime_quotes
-                qdf = get_realtime_quotes([code])
-                if not qdf.empty:
-                    row = qdf.iloc[0]
-                    last_price = float(row.get('price', 0) or 0)
-                    if last_price > 0:
-                        _lc = row.get('last_close', 0)
-                        pre_close = float(_lc) if (_lc is not None and _lc == _lc and _lc > 0) else 0.0  # NaN/缺失→0
-                        # 用(最新价 - 昨收)/昨收 精确计算涨跌幅
-                        pct_chg = round((last_price - pre_close) / pre_close * 100, 2) if pre_close > 0 else 0
-                        today_str = datetime.now().strftime('%Y-%m-%d')
-                        today_vol = float(row.get('volume', 0) or 0)
-                        # 获取昨日成交量（最后一条历史 bar 的量）
-                        yest_vol = records[-1].get('volume', 0) if records else 0
-                        vol_active = yest_vol > 0 and today_vol > yest_vol
-                        q_open = float(row.get('open', last_price))
-                        q_high = float(row.get('high', last_price))
-                        q_low = float(row.get('low', last_price))
-                        q_amount = float(row.get('amount', 0))
-
-                        if not records or records[-1].get(date_col) != today_str:
-                            live_bar = {
-                                date_col: today_str,
-                                "open": q_open,
-                                "high": q_high,
-                                "low": q_low,
-                                "close": last_price,
-                                "pre_close": pre_close,
-                                "volume": today_vol,
-                                "amount": q_amount,
-                                "pct_chg": pct_chg,
-                                "vol_active": vol_active,
-                            }
-                            records.append(live_bar)
-                        else:
-                            records[-1].update({
-                                "close": last_price,
-                                "pre_close": pre_close,
-                                "high": max(records[-1].get("high", 0), q_high),
-                                "low": min(records[-1].get("low", 999999), q_low),
-                                "volume": today_vol,
-                                "pct_chg": pct_chg,
-                                "vol_active": vol_active,
-                            })
+                from app.data_manager.live_bar_stitcher import LiveBarStitcher
+                LiveBarStitcher().stitch_record(records, code, date_col=date_col)
         except Exception as e:
             log.warning(f"图表实时行情缝合失败: {e}")
         # --- END 实时行情缝合 ---
