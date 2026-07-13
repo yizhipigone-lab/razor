@@ -20,7 +20,7 @@ class LiveTraderConfig:
     qmt_call_timeout_sec: float = 3.0  # 所有 xtquant 调用超时(v5.1 §10.2)
 
     # ===== 资金与模式 =====
-    live_capital: float = 100000.0  # LIVE_CAPITAL,默认 10 万(用户待确认)
+    live_capital: float = 1150000.0  # LIVE_CAPITAL,用户实际入金 115 万(2026-07-13 确认)
     mode: str = "dry-run"  # dry-run / live(v5.3 mode 字段方案)
 
     # ===== 持仓接管(§3.3.1 ETF 保留决策)=====
@@ -75,7 +75,8 @@ class LiveTraderConfig:
     restart_counter_file: str = "data/live_trader/restart_counter.json"
 
     # ===== 信号桥接(v1.2.2 §5.2) =====
-    buy_position_size: float = 10000.0       # 单只买入软上限(元),闸门1是硬上限
+    buy_position_size: float = 10000.0       # [已废弃] 由 buy_position_ratio + 全局 max 取代,保留向后兼容
+    buy_position_ratio: float = 0.05         # 单只占本金比例(实盘 tab 可配,热更新;5%×本金=单只金额,被全局 min/max 卡)
     buy_signal_token: str = ""               # Bearer token 鉴权(从 app_setting.json 读)
     buy_signal_enabled: bool = True          # 冗余开关(buy-signal 端点检查)
     buy_signal_cutoff: str = "14:59"         # buy-signal 截止时点(14:59 后拒收)
@@ -106,7 +107,7 @@ def load_config() -> LiveTraderConfig:
 
     # 合并:环境变量 > JSON > 默认值
     mode = env_mode or cfg_dict.get("mode", "dry-run")
-    live_capital = float(env_capital) if env_capital else float(cfg_dict.get("live_capital", 100000.0))
+    live_capital = float(env_capital) if env_capital else float(cfg_dict.get("live_capital", 1150000.0))
 
     config = LiveTraderConfig(
         qmt_userdata_path=qmt_userdata_path,
@@ -122,6 +123,7 @@ def load_config() -> LiveTraderConfig:
         max_single_loss_pct=float(cfg_dict.get("max_single_loss_pct", 0.05)),
         wework_webhook=wework_webhook,
         buy_position_size=float(cfg_dict.get("buy_position_size", 10000.0)),
+        buy_position_ratio=float(cfg_dict.get("buy_position_ratio", 0.05)),
         buy_signal_token=cfg_dict.get("buy_signal_token", ""),
         buy_signal_enabled=cfg_dict.get("buy_signal_enabled", True),
         buy_signal_cutoff=cfg_dict.get("buy_signal_cutoff", "14:59"),
@@ -140,6 +142,8 @@ def _validate_config(config: LiveTraderConfig) -> None:
         errors.append("QMT_ACCOUNT_ID 环境变量未设置")
     if config.live_capital <= 0:
         errors.append("live_capital 必须 > 0")
+    if not (0 < config.buy_position_ratio <= 1):
+        errors.append("buy_position_ratio 必须在 (0,1]")
     if config.max_single_trade_pct <= 0 or config.max_single_trade_pct > 1:
         errors.append("max_single_trade_pct 必须在 (0,1]")
     if config.max_position_pct <= 0 or config.max_total_position_pct <= 0:

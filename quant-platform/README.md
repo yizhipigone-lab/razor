@@ -155,7 +155,7 @@ start.bat
 | `QMT_ACCOUNT_ID` | QMT 资金账号 | (必填) |
 | `QMT_USERDATA_PATH` | QMT 数据目录 | `D:\Program Files\XCXT\userdata_mini` |
 | `LIVE_TRADER_MODE` | dry-run / live | `dry-run` |
-| `LIVE_TRADER_CAPITAL` | 实盘资金 | `100000` |
+| `LIVE_TRADER_CAPITAL` | 实盘资金 | `1150000` |
 | `LIVE_TRADER_URL` | 实盘服务地址 | `http://127.0.0.1:8001` |
 
 ---

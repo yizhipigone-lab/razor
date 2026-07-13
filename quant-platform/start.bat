@@ -1,4 +1,3 @@
-<string>:15: SyntaxWarning: invalid escape sequence '\S'
 @echo off
 cd /d "%~dp0"
 echo ============================================
@@ -7,7 +6,7 @@ echo ============================================
 echo.
 
 echo [1/3] 启动后端 API 服务 (main.py:8888)...
-netstat -ano | findstr ":8888 " | findstr LISTENING >/dev/null
+netstat -ano | findstr ":8888 " | findstr LISTENING >nul
 if errorlevel 1 (
     start "P9-API" cmd /k "venv313\Scripts\python.exe main.py"
     echo   [OK] API 服务正在启动...
@@ -17,9 +16,15 @@ if errorlevel 1 (
 
 echo.
 echo [2/3] 启动实盘交易服务 (live_trader:8001)...
-netstat -ano | findstr ":8001 " | findstr LISTENING >/dev/null
+netstat -ano | findstr ":8001 " | findstr LISTENING >nul
 if errorlevel 1 (
-    start "P9-LiveTrader" cmd /k "set QMT_ACCOUNT_ID=180056133 && set PYTHONIOENCODING=utf-8 && venv313\Scripts\python.exe -m uvicorn app.live_trader.main:app --host 127.0.0.1 --port 8001"
+    setlocal
+    set "QMT_ACCOUNT_ID=180056133"
+    set "LIVE_TRADER_MODE=live"
+    set "LIVE_TRADER_CAPITAL=1150000"
+    set "PYTHONIOENCODING=utf-8"
+    start "P9-LiveTrader" cmd /k "venv313\Scripts\python.exe -m uvicorn app.live_trader.main:app --host 127.0.0.1 --port 8001"
+    endlocal
     echo   [OK] live_trader 正在启动 (预计 5-10 秒)
 ) else (
     echo   [--] 8001 端口已占用，跳过启动
@@ -27,7 +32,7 @@ if errorlevel 1 (
 
 echo.
 echo [3/3] 等待服务就绪...
-timeout /t 8 /nobreak >/dev/null
+timeout /t 8 /nobreak >nul
 
 echo.
 echo 正在打开前端页面...
