@@ -208,6 +208,18 @@ async def lifespan(app: FastAPI):
         "exit_monitor": exit_monitor, "audit": audit, "pnl_engine": pnl_engine,
     })
 
+    # 候选③:OrderExecutor 深 module(3 路下单委托同一入口)
+    from .order_executor import OrderExecutor
+    executor = OrderExecutor(
+        config=config, runtime_state=runtime_state,
+        store=store, qmt=qmt, risk_gate=risk_gate,
+        clearance_lock=clearance_lock, kill_switch=kill_switch,
+        callback_handler=callback, audit=audit, notifier=notifier,
+    )
+    _state["executor"] = executor
+    # exit_monitor 也需要同实例(exit_monitor 内部 _execute_sell 要委托)
+    exit_monitor.order_executor = executor
+
     # 启动调度器(离场扫描 + 对账 + EOD 归档 + 非交易日检测)
     scheduler = LiveScheduler(
         config, store, qmt, exit_monitor, reconciler, kill_switch, notifier, audit
@@ -611,198 +623,23 @@ async def place_order(req: dict):
 
 
 def place_order_service(intent, source: str = "WEB", lock_wait_sec: int = 30) -> dict:
-    """下单核心逻辑(幂等→风控→清仓锁→下单→写DB)
+    """下单核心逻辑 — 委托给 OrderExecutor(候选③)。
 
-    供 /live/order 和 /live/buy-signal 共用。
+    供 /live/order(WEB)和 /live/buy-signal(TDX)共用。
 
     Args:
         intent: OrderIntent 下单意图
-        source: 下单来源 "WEB"/"TDX"/"SCHEDULER",决定价格策略和 terminal 标记
+        source: 下单来源 "WEB"/"TDX",决定价格策略和 terminal 标记
         lock_wait_sec: 清仓锁等待秒数(手动30s, buy-signal 5s)
 
     Returns:
         dict 下单结果 {"ok", "order_id", "client_order_id", "status", "reason", ...}
     """
-    from .schemas import OrderIntent
-    from app.utils.xtquant_compat import (
-        ORDER_TYPE_BUY, ORDER_TYPE_SELL, format_code,
-    )
-
-    config = _state.get("config")
-    runtime_state = _state.get("runtime_state")  # v2(A6): 运行时 mode
-    store = _state.get("store")
-    qmt = _state.get("qmt")
-    risk_gate = _state.get("risk_gate")
-    clearance_lock = _state.get("clearance_lock")
-    kill_switch = _state.get("kill_switch")
-    callback_handler = _state.get("callback")
-    audit_logger = _state.get("audit")
-    notifier = _state.get("notifier")
-
-    if not config:
-        return {"ok": False, "status": "error", "reason": "未初始化"}
-
-    # kill switch(二次检查,buy-signal 端点可能已在入口检查过)
-    if kill_switch and kill_switch.is_active():
-        return {"ok": False, "status": "forbidden", "reason": "kill switch 已激活"}
-
-    # C3 幂等检查
-    if store and intent.client_order_id:
-        existing = store.get_order_by_client_id(intent.client_order_id)
-        if existing:
-            return {
-                "ok": True, "order_id": existing.get("order_id"),
-                "client_order_id": intent.client_order_id,
-                "status": "duplicate", "reason": "幂等命中,不重复下单",
-            }
-
-    # 格式化代码
-    code_fmt = format_code(intent.code) if '.' not in intent.code else intent.code
-
-    # source=TDX 时,用 QMT 实时价覆盖信号源传的价格
-    actual_price = intent.price
-    if source == "TDX" and qmt and qmt.connected:
-        try:
-            quotes = qmt.get_realtime_quotes([code_fmt])
-            qmt_price = quotes.get(code_fmt, {}).get("lastPrice", 0)
-            if qmt_price and qmt_price > 0:
-                actual_price = float(qmt_price)
-                logger.info(f"TDX 信号价格覆盖: {intent.price} → QMT实时价 {actual_price}")
-        except Exception as e:
-            logger.warning(f"TDX 价格覆盖失败,用原始价格: {e}")
-
-    # 拉行情+持仓+资产(给 RiskGate 用)
-    asset = None
-    positions = None
-    quote = None
-    if qmt and qmt.connected:
-        try:
-            asset = qmt.query_asset()
-        except Exception:
-            pass
-        try:
-            positions = store.get_positions(managed_only=True) if store else []
-        except Exception:
-            pass
-        try:
-            quotes = qmt.get_realtime_quotes([code_fmt])
-            quote = quotes.get(code_fmt) if quotes else None
-        except Exception:
-            pass
-
-    # RiskGate 闸门(含闸门10)
-    if risk_gate:
-        passed, gates, reason = risk_gate.check(intent, asset, positions, quote)
-        if not passed:
-            if audit_logger:
-                audit_logger.gate_reject(code_fmt, intent.direction, reason)
-            return {
-                "ok": False, "client_order_id": intent.client_order_id,
-                "code": code_fmt, "status": "risk_rejected", "reason": reason,
-                "gates": gates,
-            }
-        if audit_logger:
-            audit_logger.gate_pass(code_fmt, intent.direction,
-                                   str([g for g in gates if g.get("passed")]))
-
-    # ClearanceLock(支持 lock_wait_sec 参数)
-    lock_acquired = False
-    if clearance_lock:
-        lock_acquired = clearance_lock.acquire_with_wait(
-            code_fmt, timeout_sec=lock_wait_sec
-        )
-        if not lock_acquired:
-            reason_msg = f"{code_fmt} 清仓锁冲突,等待{lock_wait_sec}s未获取"
-            if source == "TDX":
-                # buy-signal 批量模式:跳过+告警,不阻塞其他信号
-                logger.warning(f"信号跳过: {reason_msg}")
-                if notifier:
-                    try:
-                        notifier.send(f"⚠ 信号跳过: {reason_msg}")
-                    except Exception:
-                        pass
-                return {
-                    "ok": False, "client_order_id": intent.client_order_id,
-                    "code": code_fmt, "status": "locked", "reason": reason_msg,
-                }
-            return {
-                "ok": False, "client_order_id": intent.client_order_id,
-                "code": code_fmt, "status": "locked", "reason": reason_msg,
-            }
-
-    try:
-        # 下单(不等 callback,只等 seq 返回 — 漏洞D修复)
-        if runtime_state and runtime_state.is_dry_run():
-            if not callback_handler:
-                return {"ok": False, "status": "error", "reason": "callback_handler 未初始化"}
-            order_id = callback_handler.mock_order_async_response(
-                intent.client_order_id, code_fmt, intent.direction,
-                intent.volume, actual_price, intent.price_type,
-                intent.strategy_name, intent.reason,
-            )
-        else:
-            if not qmt or not qmt.connected:
-                return {"ok": False, "status": "error", "reason": "QMT 未连接"}
-            order_type = ORDER_TYPE_BUY if intent.direction == "buy" else ORDER_TYPE_SELL
-            seq = qmt.order_stock_async(
-                code_fmt, order_type, intent.volume,
-                intent.price_type, actual_price,
-                intent.strategy_name, intent.reason,
-            )
-            order_id = seq  # 实际 order_id 由 callback 回报
-
-            # C1:买入成功后冻在途预扣
-            if intent.direction == "buy" and seq > 0 and risk_gate:
-                risk_gate.freeze_pending_buy(code_fmt, intent.volume)
-
-        # 写入 live_orders
-        if store:
-            from datetime import datetime as dt
-            now = dt.now()
-            terminal = "TDX" if source == "TDX" else intent.terminal
-            store.sync_terminal_write("order", {
-                "order_id": order_id or 0,
-                "client_order_id": intent.client_order_id,
-                "code": code_fmt,
-                "direction": intent.direction,
-                "volume": intent.volume,
-                "price": actual_price,
-                "price_type": intent.price_type,
-                "status": 50,  # 已报
-                "status_msg": "已提交",
-                "seq": order_id or 0,
-                "mode": runtime_state.mode if runtime_state else config.mode,
-                "strategy_name": intent.strategy_name,
-                "order_remark": intent.reason,
-                "terminal": terminal,
-                "created_at": now,
-                "updated_at": now,
-            })
-
-        if audit_logger:
-            audit_logger.order_placed(code_fmt, order_id,
-                                       runtime_state.mode if runtime_state else config.mode, {
-                "direction": intent.direction, "volume": intent.volume,
-                "price": actual_price, "price_type": intent.price_type,
-                "source": source,
-            })
-
-        logger.info(f"下单成功 {code_fmt} {intent.direction} {intent.volume}@{actual_price}"
-                    f" oid={order_id} mode={runtime_state.mode if runtime_state else config.mode} source={source}")
-
-        return {
-            "ok": True, "order_id": order_id,
-            "client_order_id": intent.client_order_id,
-            "code": code_fmt,
-            "status": "submitted", "reason": "",
-            "mode": runtime_state.mode if runtime_state else config.mode, "source": source,
-        }
-
-    except Exception as e:
-        logger.error(f"下单异常 {intent.code}: {e}")
-        if clearance_lock and lock_acquired:
-            clearance_lock.release(code_fmt)
-        return {"ok": False, "status": "error", "reason": f"下单异常: {e}"}
+    from .order_executor import OrderExecutor
+    executor: OrderExecutor = _state.get("executor")
+    if not executor:
+        return {"ok": False, "status": "error", "reason": "OrderExecutor 未初始化"}
+    return executor.execute(intent, source=source, lock_wait_sec=lock_wait_sec)
 
 
 # ===== 信号桥接端点(v1.2.2 §5.2) =====
