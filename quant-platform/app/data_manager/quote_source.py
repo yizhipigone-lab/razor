@@ -378,8 +378,8 @@ class TdxAdapter:
 
 class ParquetAdapter:
     """Parquet 历史收盘价兜底(无昨收 → last_close=NaN,守 CLAUDE.md:26)。
-    本 adapter 不用 close 冒充昨收;qmt.py:222 的旧 Parquet 冒充路径待 Phase 3
-    委托 qmt_gateway 后随之废除。
+    本 adapter 不用 close 冒充昨收。历史:2026-07 候选① 已把所有调 qmt.get_realtime_quotes
+    的旧 Parquet 冒充路径替换为本 adapter(见 commit 69e1632),此处仅保留首遍文档。
     """
 
     name = "parquet"
