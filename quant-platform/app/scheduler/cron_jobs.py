@@ -6,6 +6,7 @@ from core.logger import get_logger
 from core.sync_logger import info as sync_info, ok as sync_ok, warn as sync_warn, error as sync_error
 from app.data_manager.tushare_sync import tushare_sync_manager
 from app.data_manager.parquet_pipeline import parquet_pipeline
+from app.scheduler.safe_task import TaskRunner
 
 log = get_logger("CronScheduler")
 
@@ -13,6 +14,15 @@ class DataPipelineScheduler:
     def __init__(self):
         self._scheduler = AsyncIOScheduler()
         self._job_id = "daily_tushare_sync"
+        # 候选④:每个简单 cron 任务配独立 TaskRunner,统一 try/except + exc_info
+        # 复杂任务(多级 fallback 如 sync_index_daily Tushare→QMT→akshare)仍保持原样
+        self._runner = {
+            "catch_up_daily": TaskRunner("cron.catch_up_daily"),
+            "monitor_full_scan": TaskRunner("cron.monitor_full_scan"),
+            "sync_concepts_daily": TaskRunner("cron.sync_concepts_daily"),
+            "recalc_hotness": TaskRunner("cron.recalc_hotness"),
+            "finalize_hotness": TaskRunner("cron.finalize_hotness"),
+        }
         
     def start(self):
         if not self._scheduler.running:
@@ -171,22 +181,20 @@ class DataPipelineScheduler:
         """
         import asyncio as _asyncio
         await _asyncio.sleep(30)  # 30秒：等服务完全就绪后再补执行
-        try:
+        # 候选④:候选④:try/except 委托 TaskRunner(sleep + 条件 + run_sim_trader_daily 整体)
+        async def _do():
             from datetime import datetime, date
             now = datetime.now()
             today = date.today()
             if now.hour < 14 or (now.hour == 14 and now.minute < 52):
                 return  # 还没到14:52，等cron正常触发
-
             from app.api.sim_trader import get_trading_dates
             trading_dates = get_trading_dates()
             if today not in trading_dates:
                 return  # 非交易日
-
             log.info(f"CronScheduler | [启动补执行] 已过14:52，立即执行尾盘交易: {today}")
             await self.run_sim_trader_daily()
-        except Exception as e:
-            log.warning(f"CronScheduler | [启动补执行] 失败: {e}")
+        await self._runner["catch_up_daily"].run_async(_do)
 
     def reload_config(self):
         """配置被修改后重新挂载任务"""
@@ -198,14 +206,14 @@ class DataPipelineScheduler:
         run_full_scan() 含 HTTP 行情请求，是同步阻塞操作，
         必须在线程池中执行，否则会卡死事件循环导致所有 API 无响应。
         """
-        try:
+        # 候选④:try/except 委托 TaskRunner
+        async def _do():
             from app.api.sim_trader import get_engine
             engine = get_engine()
             if engine.monitor_enabled:
                 loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, engine.monitor.run_full_scan)
-        except Exception as e:
-            log.warning(f"CronScheduler | [监控扫描] 异常: {e}")
+        await self._runner["monitor_full_scan"].run_async(_do)
 
     async def sync_index_daily(self):
         """盘后自动更新指数日线数据（Tushare优先，与个股数据源一致）"""
@@ -359,36 +367,39 @@ class DataPipelineScheduler:
     async def sync_concepts_daily(self):
         """每日概念数据同步"""
         log.info("CronScheduler | [概念同步] 开始同步 Tushare 概念数据...")
-        try:
+        # 候选④:try/except 委托 TaskRunner,带前置日志 + 实际同步 + 完成日志
+        async def _do():
             from app.hot_sector.concept_sync import concept_syncer
             loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(None, concept_syncer.sync_all)
             log.info(f"CronScheduler | [概念同步] 完成: {result.get('total_concepts', 0)} 概念, "
                      f"{result.get('total_mappings', 0)} 映射")
-        except Exception as e:
-            log.error(f"CronScheduler | [概念同步] 失败: {e}", exc_info=True)
+            return result
+        await self._runner["sync_concepts_daily"].run_async(_do)
 
     async def recalc_hotness(self):
         """盘中板块热度定时重算"""
         log.info("CronScheduler | [热度计算] 开始刷新板块热度...")
-        try:
+        # 候选④:委托 TaskRunner
+        async def _do():
             from app.hot_sector.engine import hot_sector_engine
             loop = asyncio.get_running_loop()
             summary = await loop.run_in_executor(None, hot_sector_engine.refresh_hotness)
             log.info(f"CronScheduler | [热度计算] 完成: {summary}")
-        except Exception as e:
-            log.error(f"CronScheduler | [热度计算] 失败: {e}", exc_info=True)
+            return summary
+        await self._runner["recalc_hotness"].run_async(_do)
 
     async def finalize_hotness(self):
         """收盘终版热度快照+清缓存"""
         log.info("CronScheduler | [热度终版] 开始执行收盘快照...")
-        try:
+        # 候选④:委托 TaskRunner
+        async def _do():
             from app.hot_sector.engine import hot_sector_engine
             loop = asyncio.get_running_loop()
             summary = await loop.run_in_executor(None, hot_sector_engine.refresh_hotness)
             log.info(f"CronScheduler | [热度终版] 完成: {summary}")
-        except Exception as e:
-            log.error(f"CronScheduler | [热度终版] 失败: {e}", exc_info=True)
+            return summary
+        await self._runner["finalize_hotness"].run_async(_do)
 
     async def run_sim_trader_daily(self):
         """每日 14:52 执行模拟盘尾盘交易"""

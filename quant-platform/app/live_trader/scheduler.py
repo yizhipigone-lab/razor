@@ -15,6 +15,8 @@ from typing import Optional
 
 from core.logger import get_logger
 
+from app.scheduler.safe_task import TaskRunner
+
 logger = get_logger("live_trader.scheduler")
 
 
@@ -44,6 +46,16 @@ class LiveScheduler:
 
         # 持仓行情刷新间隔(固定 3s,与 QMT 客户端推送频率一致)
         self._quotes_refresh_interval: float = 3.0
+
+        # 候选④:每个 _run_* 方法配独立 TaskRunner,统一 try/except + exc_info logging
+        self._runner = {
+            "exit_scan": TaskRunner("live.exit_scan"),
+            "asset_backup": TaskRunner("live.asset_backup"),
+            "quotes_refresh": TaskRunner("live.quotes_refresh"),
+            "eod_archive": TaskRunner("live.eod_archive"),
+            "signal_heartbeat": TaskRunner("live.signal_heartbeat"),
+            "reconcile": TaskRunner("live.reconcile"),
+        }
 
     def start(self) -> None:
         """启动调度任务"""
@@ -161,12 +173,10 @@ class LiveScheduler:
             return
         if self.kill_switch and self.kill_switch.is_active():
             return
-        try:
-            actions = self.exit_monitor.scan_once()
-            if actions:
-                logger.info(f"离场扫描:执行 {len(actions)} 笔卖出")
-        except Exception as e:
-            logger.error(f"离场扫描异常: {e}")
+        # 候选④:try/except + log 委托给 TaskRunner(避免重复样板)
+        actions = self._runner["exit_scan"].run_sync(self.exit_monitor.scan_once)
+        if actions:
+            logger.info(f"离场扫描:执行 {len(actions)} 笔卖出")
         self._last_scan_time = time.time()
 
     def _run_asset_backup(self) -> None:
@@ -177,12 +187,10 @@ class LiveScheduler:
             return
         if not self.store:
             return
-        try:
-            asset_data = self.qmt.query_asset()
-            if asset_data:
-                self.store.backup_asset(asset_data)
-        except Exception as e:
-            logger.error(f"资产备份异常: {e}")
+        # 候选④:委托 TaskRunner
+        self._runner["asset_backup"].run_sync(
+            lambda: self.store.backup_asset(self.qmt.query_asset())
+        )
         self._last_asset_backup_time = time.time()
 
     def _run_quotes_refresh(self) -> None:
@@ -204,11 +212,11 @@ class LiveScheduler:
             return
         if not self.store:
             return
-        try:
+        # 候选④:内部 lambda 含前置守卫 + QMT 拉取 + 持久化,委托 TaskRunner 统一异常处理
+        def _do_refresh():
             positions = self.store.get_positions()
             if not positions:
                 return
-            # 本地代码格式与 QMT 保持一致(已带 .SH/.SZ 后缀,get_realtime_quotes 内部会再 format_code 兜底)
             codes = [p.get("code", "") for p in positions if p.get("code")]
             if not codes:
                 return
@@ -218,8 +226,7 @@ class LiveScheduler:
             updated = self.store.refresh_quotes(quotes)
             if updated > 0:
                 logger.debug(f"持仓行情刷新: {updated} 条")
-        except Exception as e:
-            logger.error(f"持仓行情刷新异常: {e}")
+        self._runner["quotes_refresh"].run_sync(_do_refresh)
         self._last_quotes_refresh_time = time.time()
 
     def _run_reconcile(self, current_time: str) -> None:
@@ -228,22 +235,19 @@ class LiveScheduler:
             task_key = f"reconcile_{rt}"
             if current_time >= rt and task_key not in self._executed_today:
                 if self.reconciler:
-                    try:
-                        result = self.reconciler.reconcile()
+                    # 候选④:委托 TaskRunner
+                    result = self._runner["reconcile"].run_sync(self.reconciler.reconcile)
+                    if result:
                         logger.info(f"对账({rt}): {result.get('summary', 'done')}")
-                    except Exception as e:
-                        logger.error(f"对账异常({rt}): {e}")
                 self._executed_today.add(task_key)
 
     def _run_eod_archive(self) -> None:
         """EOD 归档(15:01,§6)"""
         if not self.store:
             return
-        try:
-            self.store.eod_archive(qmt_wrapper=self.qmt)
-            logger.info("EOD 归档完成")
-        except Exception as e:
-            logger.error(f"EOD 归档异常: {e}")
+        # 候选④:委托 TaskRunner
+        self._runner["eod_archive"].run_sync(lambda: self.store.eod_archive(qmt_wrapper=self.qmt))
+        logger.info("EOD 归档完成")
 
     def _check_signal_heartbeat(self) -> None:
         """14:55 信号心跳看门狗(v1.2.2 §5.2 + §10.6)
@@ -255,7 +259,8 @@ class LiveScheduler:
         """
         if not self.store:
             return
-        try:
+        # 候选④:心跳读 + 分支告警委托 TaskRunner(异常吞掉,不阻塞主循环)
+        def _do_check():
             hb = self.store.get_latest_heartbeat("docker_tdx")
             if hb is None:
                 msg = "14:55 看门狗:当日无信号心跳(可能 API 服务端选股未执行或网络不通)"
@@ -273,5 +278,4 @@ class LiveScheduler:
                 logger.info(f"14:55 看门狗:信号心跳正常 status={hb.get('scan_status')} count={hb.get('signal_count', 0)}")
             else:
                 logger.info(f"14:55 看门狗:信号心跳 status={hb.get('scan_status')} count={hb.get('signal_count', 0)}")
-        except Exception as e:
-            logger.error(f"信号心跳看门狗异常: {e}")
+        self._runner["signal_heartbeat"].run_sync(_do_check)
