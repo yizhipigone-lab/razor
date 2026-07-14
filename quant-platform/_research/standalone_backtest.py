@@ -70,7 +70,10 @@ def load_default_params() -> dict:
         "tp1_fill_pct": 0.03,  # VERA 对齐
         "priority_mode": "trailing_first",  # TP > trail > hard_stop
         "realistic_stop_fill": "stop",
-        "commission_pct": 0.0001,
+        "commission_pct": 0.00025,  # 双边佣金(实际 A 股 ~万 2.5)
+        "slippage_pct": 0.0005,        # 每笔滑点 0.05%/side(中小盘常见)
+        "stamp_tax_pct": 0.001,         # 印花税 仅卖出 0.1%
+        "max_position_cash": None,       # 单笔持仓上限($);None=不限制(随 cash 复利)
     }
 
 
@@ -325,8 +328,18 @@ def load_tdx_quanqq_cache(start: date, end: date) -> tuple:
     cache_files = list(TDX_CACHE_DIR.glob("*.parquet"))
     if not cache_files:
         return {}, []
-    fp = max(cache_files, key=lambda p: p.stat().st_mtime)
-    print(f"      读 TDX cache: {fp.name} ({fp.stat().st_size/1e6:.1f}MB) ...")
+    # 优先选含 QUANTQQ 信号 (signal_var=ZP) 的 cache,其次选最新
+    def _is_quanqq(p):
+        try:
+            d = pd.read_parquet(p, columns=["signal_var"])
+            return (d["signal_var"] == "ZP").any()
+        except Exception:
+            return False
+    quanqq_caches = [p for p in cache_files if _is_quanqq(p)]
+    if not quanqq_caches:
+        quanqq_caches = cache_files  # fallback
+    fp = max(quanqq_caches, key=lambda p: p.stat().st_mtime)
+    print(f"      读 TDX cache: {fp.name} ({fp.stat().st_size/1e6:.1f}MB) — ZP-aware pick ...")
     df = pd.read_parquet(fp)
     sv = df["signal_value"]
     if sv.dtype == object:
@@ -388,10 +401,13 @@ def run_backtest(
     capital: float = 1_000_000,
     max_positions: int = 5,
     params: Optional[dict] = None,
+    params_overrides: Optional[dict] = None,
     progress_cb: Optional[Callable] = None,
 ) -> dict:
     if params is None:
         params = load_default_params()
+    if params_overrides:
+        params.update(params_overrides)
     print(f"═══ 独立回测 v2 (系统实际参数) ═══")
     print(f"区间: {start} → {end} (~{(end-start).days} 日)")
     print(f"资金: CNY{capital:,.0f} | 同时持仓: {max_positions}")
@@ -484,7 +500,10 @@ def run_backtest(
                     continue
                 exit_price = sig.sell_price
                 proceeds = sold_shares * exit_price
-                cost = proceeds * params["commission_pct"] + sold_shares * pos.cost_per_share * params["commission_pct"]
+                # 卖出侧成本:佣金 + 滑点 + 印花税(仅卖出)
+                sell_cost_ratio = (params["commission_pct"] + params["slippage_pct"]
+                                   + params["stamp_tax_pct"])
+                cost = proceeds * sell_cost_ratio
                 cash += proceeds - cost
                 # 算这次卖出的收益(相对入场价)
                 entry_invested = pos.entry_shares * pos.entry_price
@@ -527,11 +546,16 @@ def run_backtest(
             entry_price = float(df.iloc[i]["close"]) if pd.notna(df.iloc[i]["close"]) else 0
             if entry_price <= 0:
                 continue
+            # 单笔上限 — 防止复利把单笔推到不切实际
             position_size = cash / max_positions
+            if params.get("max_position_cash") is not None:
+                position_size = min(position_size, params["max_position_cash"])
             entry_shares = int(position_size / entry_price / 100) * 100
             if entry_shares < 100:
                 continue
-            cost = entry_shares * entry_price * (1 + params["commission_pct"])
+            # 买入侧成本:price + 佣金 + 滑点
+            buy_cost_ratio = params["commission_pct"] + params["slippage_pct"]
+            cost = entry_shares * entry_price * (1 + buy_cost_ratio)
             if cost > cash:
                 continue
             cash -= cost
@@ -539,7 +563,7 @@ def run_backtest(
                 code=code, entry_date=today, entry_price=entry_price,
                 shares=entry_shares, entry_shares=entry_shares,
                 peak_price=entry_price,
-                cost_per_share=entry_price * (1 + params["commission_pct"]),
+                cost_per_share=entry_price * (1 + buy_cost_ratio),
                 tp_triggered=set(),
             )
 
@@ -658,13 +682,29 @@ def main():
     parser.add_argument("--end", default=date.today().isoformat())
     parser.add_argument("--capital", type=float, default=1_000_000)
     parser.add_argument("--max-positions", type=int, default=5)
+    parser.add_argument("--max-position-cash", type=float, default=200000,
+                        help="单笔持仓现金上限($);默认 20 万防止复利")
+    parser.add_argument("--slippage", type=float, default=0.0005,
+                        help="每笔滑点(per side,默认 0.05%%)")
+    parser.add_argument("--stamp-tax", type=float, default=0.001,
+                        help="印花税(仅卖,默认 0.1%%)")
+    parser.add_argument("--commission", type=float, default=0.00025,
+                        help="双边佣金率(默认 0.025%%)")
     args = parser.parse_args()
     t0 = time.time()
+    # 把 CLI 参数注入到 load_default_params 之上(覆盖默认)
+    params_overrides = {
+        "commission_pct": args.commission,
+        "slippage_pct": args.slippage,
+        "stamp_tax_pct": args.stamp_tax,
+        "max_position_cash": args.max_position_cash if args.max_position_cash > 0 else None,
+    }
     report = run_backtest(
         start=date.fromisoformat(args.start),
         end=date.fromisoformat(args.end),
         capital=args.capital,
         max_positions=args.max_positions,
+        params_overrides=params_overrides,
     )
     print(f"\n回测耗时: {time.time() - t0:.1f}s")
     print_report(report)
