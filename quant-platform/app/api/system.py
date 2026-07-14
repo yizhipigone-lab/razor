@@ -74,18 +74,22 @@ ENV_FILE = Path(__file__).parent.parent.parent / ".env"
 
 @router.get("/api/settings/env-keys")
 async def get_env_keys():
-    """读取 .env 中的 API Key（不暴露完整密钥）"""
+    """读取 .env 中的 API Key（只返回掩码 + 是否已配置，绝不暴露完整密钥）"""
+    # 安全修复(2026-07-15 全项目审计 C1): 旧版返回完整明文 key, 任何能访问服务者可直接拿到。
+    # 现改为只返回 masked 掩码 + "configured" 布尔标志, 前端 UX 不变(知道是否已配置)。
     keys = {"tushare_key": "", "deepseek_key": "", "masked": {}}
     if ENV_FILE.exists():
         for line in ENV_FILE.read_text("utf-8").strip().split("\n"):
             if "=" in line and not line.startswith("#"):
                 k, v = line.strip().split("=", 1)
                 if k == "TUSHARE_KEY":
-                    keys["tushare_key"] = v
-                    keys["masked"]["tushare_key"] = v[:6] + "****" + v[-4:] if len(v) > 12 else v
+                    masked = v[:6] + "****" + v[-4:] if len(v) > 12 else "****"
+                    keys["tushare_key"] = "configured" if v else ""
+                    keys["masked"]["tushare_key"] = masked
                 elif k == "DEEPSEEK_API_KEY":
-                    keys["deepseek_key"] = v
-                    keys["masked"]["deepseek_key"] = v[:6] + "****" + v[-4:] if len(v) > 12 else v
+                    masked = v[:6] + "****" + v[-4:] if len(v) > 12 else "****"
+                    keys["deepseek_key"] = "configured" if v else ""
+                    keys["masked"]["deepseek_key"] = masked
     return keys
 
 

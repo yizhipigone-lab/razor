@@ -44,3 +44,7 @@ Thumbs.db
 *.swp
 output_backup_*/
 data/parquet/daily_backup_*/
+
+# 敏感配置不入 git(2026-07-15 全项目审计 C1): 含飞书 webhook/账号ID/buy_signal_token
+config/app_setting.json
+*.bak
