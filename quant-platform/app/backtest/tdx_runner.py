@@ -800,7 +800,14 @@ def _run_daily_backtest(sig_result: dict, params: dict, start: date, end: date,
                 continue
             if px <= 0:
                 continue
-            if eng.buy(d_obj, code, px):
+            # 2026-07-15 HIGH-3: 计算 prev_close - 用前一个交易日的 close 作为涨停判断基准
+            prev_close_for_buy = None
+            if prev_day is not None:
+                _prev_snap = prices_by_date.get(str(prev_day), {})
+                _prev_bar = _prev_snap.get(code, {})
+                if isinstance(_prev_bar, dict):
+                    prev_close_for_buy = _prev_bar.get("close")
+            if eng.buy(d_obj, code, px, prev_close=prev_close_for_buy):
                 pass
 
         eng.record(d_obj, snap)

@@ -93,12 +93,20 @@ class FastEngine:
             pv += p.remaining * px
         return self.cash + pv
 
-    def buy(self, d, code, px):
+    def buy(self, d, code, px, prev_close=None):
+        """d 当前日, code 股票, px 当前价, prev_close 昨日真实收盘价
+
+        2026-07-15 HIGH-3: 涨停过滤必须用真实 prev_close,不再 prev_close=px。
+        缺前收 → 显式 raise (对齐原 strict_runner "缺数据 raise"),
+        不再静默失效 → 根除 '永远 can_buy_ok=True' 的 bug。
+        """
         if code in self.positions: return None
-        # L28 修复: 统一成交执行层 - 涨停过滤
-        # simple_runner 没有 prev_close 历史,简化处理:prev_close = px (无涨停判断)
-        # 严格过滤由 engine 承担(原 strict_runner 已废弃移除)
-        prev_close = px
+        if prev_close is None or prev_close <= 0:
+            raise ValueError(
+                f"simple_runner.buy 缺真实 prev_close(code={code} d={d}); "
+                "需从 closes 取前一个交易日,不要传 px 充当 prev_close"
+            )
+        # can_buy(code, prev_close, today_high) 3 位参数 - 用当前价作 today_high
         can_buy_ok, _ = can_buy(code, prev_close, px)
         if not can_buy_ok:
             return None
@@ -727,18 +735,23 @@ def run_backtest(params: dict, progress_cb: Optional[Callable] = None,
             })
         paused = eng.pause is not None and d <= eng.pause
         if d in sbd and not paused:
+            # 2026-07-15 HIGH-3: 计算当前日之前一个交易日的 prev_close
+            _sorted_prev_days = sorted(pd for pd in closes.keys() if pd < d)
+            _last_prev_day = _sorted_prev_days[-1] if _sorted_prev_days else None
             for code, px in sbd[d]:
                 if eng.cash < min(eng.max_pos(), params.get('min_buy_amt', 5000)):
                     break
                 if any(t.code == code and (d - t.entry_date).days <= cooldown for t in eng.trades):
                     continue
-                if eng.buy(d, code, px):
+                prev_close = closes[_last_prev_day].get(code) if _last_prev_day and _last_prev_day in closes else None
+                if eng.buy(d, code, px, prev_close=prev_close):
                     day_info['bought'].append({
                         'code': code, 'name': stock_names.get(code, '') if stock_names else '',
                         'price': round(float(px), 2),
                     })
-                    if code not in prev_snap and d in closes and code in closes[d]:
-                        prev_snap[code] = {'close': closes[d][code]}
+                    # 同步 prev_snap 给 sell_phase 用 (用前一个交易日,不是当天)
+                    if code not in prev_snap and _last_prev_day and _last_prev_day in closes and code in closes[_last_prev_day]:
+                        prev_snap[code] = {'close': closes[_last_prev_day][code]}
         n_pos = eng.pos_n()
         pos_counts.append(n_pos)
         if n_pos > max_positions_held:
