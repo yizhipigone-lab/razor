@@ -214,26 +214,11 @@ class ExitMonitor:
             return 1
 
     def _load_risk_params(self) -> dict:
-        """v2(决策2): 从 risk 段读止盈止损参数(对齐模拟盘 intraday_monitor)"""
-        from core.settings import settings
+        """v5.5(2026-07-14):统一走 risk_params.load_risk_params,与 sim_trader 共享,杜绝 4 套默认值漂移"""
+        from app.config.risk_params import load_risk_params as _load_risk_params
+        import dataclasses
+        return dataclasses.asdict(_load_risk_params())
 
-        def _cfg(key, default):
-            val = settings.get("risk", key)
-            return val if val is not None else default
-
-        return {
-            "hard_stop": _cfg("hard_stop_loss_pct", -6.0) / 100.0,
-            "take_profit_tiers": _cfg("take_profit_tiers", [{"profit_pct": 0.03, "sell_ratio": 0.30}]),
-            "trail_activate": _cfg("trailing_stop_activate_pct", 5.0) / 100.0,
-            "trail_dd": _cfg("trailing_stop_drawdown_pct", 2.0) / 100.0,
-            "time_exit_days": _cfg("time_exit_days", 7),
-            "time_exit_profit": _cfg("time_exit_min_profit_pct", 3.0) / 100.0,
-            "time_force_days": _cfg("time_exit_force_days", 12),
-            "first_day_exit_min_profit": _cfg("first_day_exit_min_profit", 0.0),
-            "first_day_exit_days": _cfg("first_day_exit_days", 1),
-            "use_atr_trail": _cfg("use_atr_stop", False),
-            "atr_trail_multiplier": _cfg("atr_stop_multiplier", 1.0),
-        }
 
     def _execute_sell(self, action: Dict) -> None:
         """执行卖出(真实下单 + 清仓锁 + 跌停判断)"""
@@ -285,91 +270,81 @@ class ExitMonitor:
         if sell_volume <= 0:
             return
 
-        # 清仓锁 acquire(C1 买入侧也加锁,这里卖出侧)
-        if self.clearance_lock and not self.clearance_lock.acquire(code):
-            logger.info(f"{code} 清仓锁占用,跳过")
-            return
+        # 候选③:卖单下单委托给 OrderExecutor
+        # cancel_inflight=True(撤在途)+risk_positions_only=True(只查 positions)/
+        # persist_live_orders=False(保留旧不写表行为)+on_order_submitted=TP 标记
+        import hashlib
+        client_order_id = hashlib.md5(
+            f"exit|{code}|{date.today()}|{int(time.time())}".encode()
+        ).hexdigest()[:16]
+
+        # 价格类型
+        if force_market:
+            # 14:57 后强制市价(未跌停才到这里)
+            from app.utils.xtquant_compat import PRICE_TYPE_PEER_FIRST
+            price_type = PRICE_TYPE_PEER_FIRST
+            price = 0.0
+        else:
+            from app.utils.xtquant_compat import PRICE_TYPE_FIX
+            price_type = PRICE_TYPE_FIX
+            price = last_price if last_price > 0 else float(pos.get("avg_cost", 0))
+
+        from .schemas import OrderIntent
+        intent = OrderIntent(
+            code=code, direction="sell", volume=sell_volume,
+            price=price, price_type=price_type,
+            strategy_name="exit_monitor", terminal="SYS",
+            client_order_id=client_order_id,
+            reason=action.get("note", ""),
+        )
+
+        def _tp_mark(order_id, _intent):
+            """v2(A3/H2):TP 档位乐观标记 — 仅下单成功且 trigger=TP 才标,
+            防废单误标永不重试。委托 OrderExecutor.on_order_submitted 触发。
+            """
+            trigger = action.get("trigger", "")
+            if not trigger.startswith("TP") or not self.store:
+                return
+            try:
+                idx = int(trigger[2:]) - 1  # TP1→0, TP2→1
+                import json as _json
+                _pos = self.store.get_position(code)
+                _existing = set()
+                if _pos and _pos.get("tp_triggered"):
+                    _existing = set(int(x) for x in _json.loads(_pos["tp_triggered"]))
+                _existing.add(idx)  # int(非str),exit_rules 用 int idx 检查 triggered_tiers
+                self.store.update_tp_triggered(code, _json.dumps(sorted(_existing, key=int)))
+            except Exception as _e:
+                logger.error(f"update_tp_triggered 失败 {code}: {_e}")
 
         try:
-            # 撤在途单(ack 轮询)
-            self._cancel_inflight(code)
-
-            # 价格类型
-            if force_market:
-                # 14:57 后强制市价(未跌停才到这里)
-                from app.utils.xtquant_compat import PRICE_TYPE_PEER_FIRST
-                price_type = PRICE_TYPE_PEER_FIRST
-                price = 0.0
-            else:
-                from app.utils.xtquant_compat import PRICE_TYPE_FIX
-                price_type = PRICE_TYPE_FIX
-                price = last_price if last_price > 0 else float(pos.get("avg_cost", 0))
-
-            # RiskGate 检查(sell)
-            from .schemas import OrderIntent
-            intent = OrderIntent(
-                code=code, direction="sell", volume=sell_volume,
-                price=price, price_type=price_type,
-                strategy_name="exit_monitor", terminal="SYS",
-                reason=action.get("note", ""),
+            order_executor = getattr(self, "order_executor", None)
+            if order_executor is None:
+                # 兜底:未注入 OrderExecutor 时报需启动(单测/未走 lifespan)
+                logger.error(f"{code} order_executor 未注入,跳过卖出")
+                return
+            result = order_executor.execute(
+                intent, source="EXIT", lock_wait_sec=0,
+                cancel_inflight=True,
+                risk_positions_only=True,
+                persist_live_orders=False,
+                on_order_submitted=_tp_mark,
             )
-            if self.risk_gate:
-                passed, gates, reason = self.risk_gate.check(
-                    intent, positions=self.store.get_positions(managed_only=True) if self.store else []
-                )
-                if not passed:
-                    logger.info(f"{code} 卖出被风控拒绝: {reason}")
-                    if self.audit:
-                        self.audit.gate_reject(code, "sell", reason)
-                    return
-
-            # 下单
-            import hashlib
-            client_order_id = hashlib.md5(
-                f"exit|{code}|{date.today()}|{int(time.time())}".encode()
-            ).hexdigest()[:16]
-
-            if self.runtime_state and self.runtime_state.is_dry_run():
-                # mock 下单
-                order_id = self.callback_handler.mock_order_async_response(
-                    client_order_id, code, "sell", sell_volume, price, price_type,
-                    "exit_monitor", action.get("note", "")
-                )
-            else:
-                from app.utils.xtquant_compat import ORDER_TYPE_SELL
-                seq = self.qmt.order_stock_async(
-                    code, ORDER_TYPE_SELL, sell_volume, price_type, price,
-                    "exit_monitor", action.get("note", "")
-                )
-                order_id = seq  # 实际 order_id 由 callback 返回
-
-            if self.audit:
-                self.audit.order_placed(code, order_id,
-                                        self.runtime_state.mode if self.runtime_state else self.config.mode,
-                                        {"action": action, "sell_volume": sell_volume})
-            logger.info(f"卖出下单 {code} {sell_volume}股@{price} pt={price_type} oid={order_id}")
-
-            # v2(A3/H2): TP 档位乐观标记(防重复触发);仅下单成功(order_id>0)才标,防废单误标永不重试
-            trigger = action.get("trigger", "")
-            if trigger.startswith("TP") and self.store and order_id and order_id > 0:
-                try:
-                    idx = int(trigger[2:]) - 1  # TP1→0, TP2→1
-                    import json as _json
-                    _pos = self.store.get_position(code)
-                    _existing = set()
-                    if _pos and _pos.get("tp_triggered"):
-                        _existing = set(int(x) for x in _json.loads(_pos["tp_triggered"]))
-                    _existing.add(idx)  # int(非str),exit_rules 用 int idx 检查 triggered_tiers
-                    self.store.update_tp_triggered(code, _json.dumps(sorted(_existing, key=int)))
-                except Exception as _e:
-                    logger.error(f"update_tp_triggered 失败 {code}: {_e}")
-            elif trigger.startswith("TP") and (not order_id or order_id <= 0):
-                logger.warning(f"{code} TP 标记跳过:下单未成功 order_id={order_id}(下次扫描重试)")
-
+            ok = result.get("ok")
+            status = result.get("status")
+            oid = result.get("order_id")
+            logger.info(
+                f"卖出下单 {code} {sell_volume}股@{price} pt={price_type}"
+                f" ok={ok} status={status} oid={oid}"
+            )
+            if status == "locked":
+                logger.info(f"{code} 清仓锁占用,跳过")
+                return
+            if status == "risk_rejected":
+                logger.info(f"{code} 卖出被风控拒绝: {result.get('reason')}")
+                return
         except Exception as e:
             logger.error(f"卖出执行异常 {code}: {e}")
-            if self.clearance_lock:
-                self.clearance_lock.release(code)
             raise
 
     def _calc_sell_volume(self, code: str, can_use: int, sell_pct: float) -> int:
@@ -387,18 +362,3 @@ class ExitMonitor:
             # v2(审计L6):部分卖取整为0(仓位不足100股),告警,下次扫描重试
             logger.warning(f"{code} 部分卖 sell_pct={sell_pct:.0f}% can_use={can_use} 取整为0,跳过(仓位不足100股)")
         return vol
-
-    def _cancel_inflight(self, code: str) -> None:
-        """撤在途单(批量查询,§19.5 M1)"""
-        if not self.qmt:
-            return
-        try:
-            orders = self.qmt.query_orders(cancelable_only=True)
-            for o in orders:
-                if o.get("code", "").split(".")[0] == code.split(".")[0]:
-                    oid = o.get("order_id")
-                    if oid:
-                        self.qmt.cancel_order(oid)
-                        logger.info(f"撤在途单 {code} oid={oid}")
-        except Exception as e:
-            logger.warning(f"撤在途单失败 {code}: {e}")

@@ -1,46 +1,40 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 from core.logger import get_logger
-from core.settings import settings, calc_buy_volume
-from core.gateway import get_gateway
+from core.settings import settings
 from database.duckdb_manager import db
 log = get_logger('API-Trade')
 router = APIRouter()
+
+# ─── /api/trade/buy 与 /api/trade/sell 已废弃(2026-07-14) ─────────
+# 真实下单唯一入口:live_trader:8001 /live/order(qmt_wrapper 直连 xtquant)
+# sim_trader 永远不真下单,前端"手工买入/卖出"按钮保留但点击会返"已迁移"提示
+# 前端不需改:fetch 这些 URL 仍能返回 JSON,只是 status=error(用户明确要求不改前端)
+# 见 docs/审计报告/项目质量审计_2026-07-13_全项目.md H4 决定
+
 
 @router.get("/api/positions")
 async def get_positions():
     df = db.get_open_positions()
     return df.to_dict(orient="records")
 
+
 class BuyRequest(BaseModel):
     code: str
     price: float
     reason: str = "手工买入"
 
+
 @router.post("/api/trade/buy")
 async def manual_buy(body: BuyRequest):
-    if not settings.auto_trade_enabled:
-        return {"status": "error", "message": "自动交易未开启（auto_trade.enabled=false）"}
-    volume = calc_buy_volume(body.price)
-    if volume <= 0:
-        return {"status": "error", "message": f"股价 {body.price} 超出单笔限额 {settings.max_buy_amount}"}
-    gw = get_gateway()
-    try:
-        success = gw.buy(body.code, body.price, volume, reason=body.reason)
-    except Exception as e:
-        log.error(f"网关买入失败，未记录持仓: {e}")
-        return {"status": "error", "message": f"网关下单失败: {e}"}
-    if not success:
-        log.warning(f"网关买入返回失败: {body.code}")
-        return {"status": "error", "message": "网关返回失败，未记录持仓"}
-    pos_id = db.open_position(
-        code=body.code, name=body.code,
-        price=body.price, volume=volume,
-        source="manual"
-    )
-    db.record_trade(pos_id, body.code, body.code, "BUY", body.price, volume, "manual", body.reason)
-    log.info(f"[手工买入] {body.code} 价格={body.price:.2f} 数量={volume} 原因={body.reason}")
-    return {"status": "ok", "code": body.code, "volume": volume, "amount": body.price * volume}
+    """已废弃(2026-07-14):模拟盘不再真下单。请在 live_trader 面板手工下单。"""
+    log.warning(f"[已废弃端点] /api/trade/buy {body.code} - 已迁移到 live_trader /live/order")
+    return {
+        "status": "error",
+        "message": "该端点已废弃:模拟盘不再真下单。请使用 live_trader 面板(8001 端口)的'手工下单'功能。",
+        "migrated_to": "/live/order (live_trader:8001)",
+    }
+
 
 class SellRequest(BaseModel):
     position_id: int
@@ -49,23 +43,16 @@ class SellRequest(BaseModel):
     volume: int
     reason: str = "手工卖出"
 
+
 @router.post("/api/trade/sell")
 async def manual_sell(body: SellRequest):
-    if not settings.auto_trade_enabled:
-        return {"status": "error", "message": "自动交易未开启（auto_trade.enabled=false）"}
-    gw = get_gateway()
-    try:
-        success = gw.sell(body.code, body.price, body.volume, reason=body.reason)
-    except Exception as e:
-        log.error(f"网关卖出失败，未记录交易: {e}")
-        return {"status": "error", "message": f"网关卖出失败: {e}"}
-    if not success:
-        log.warning(f"网关卖出返回失败: {body.code}")
-        return {"status": "error", "message": "网关返回失败，未记录交易"}
-    db.record_trade(body.position_id, body.code, body.code, "SELL", body.price, body.volume, "manual", body.reason)
-    db.reduce_position(body.position_id, body.volume)
-    log.info(f"[手工卖出] {body.code} 价格={body.price:.2f} 数量={body.volume} 原因={body.reason}")
-    return {"status": "ok"}
+    """已废弃(2026-07-14):同 manual_buy。"""
+    log.warning(f"[已废弃端点] /api/trade/sell {body.code} - 已迁移到 live_trader /live/order")
+    return {
+        "status": "error",
+        "message": "该端点已废弃:模拟盘不再真下单。请使用 live_trader 面板(8001 端口)的'手工下单'功能。",
+        "migrated_to": "/live/order (live_trader:8001)",
+    }
 
 # ─── 交易记录 API ──────────────────────────────────────────────
 @router.get("/api/trades")

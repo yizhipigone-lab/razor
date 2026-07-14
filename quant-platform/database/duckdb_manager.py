@@ -9,6 +9,7 @@ DuckDB + Parquet 数据持久化管理器
 
 import threading
 import atexit
+import json
 import duckdb
 import pandas as pd
 import time
@@ -21,6 +22,18 @@ from core.settings import settings
 from app.data_manager.indicators import enrich_with_indicators
 
 log = get_logger("DuckDB")
+
+
+def _parse_subscores(raw):
+    """把 ai_reports.subscores 列（JSON 串 / dict / None）解析回 dict，失败返回 None"""
+    if not raw:
+        return None
+    if isinstance(raw, dict):
+        return raw
+    try:
+        return json.loads(raw)
+    except Exception:
+        return None
 
 
 def _apply_qfq_by_code(df: pd.DataFrame, date_col: str) -> pd.DataFrame:
@@ -239,6 +252,12 @@ class DatabaseManager:
             max_id = c.execute("SELECT COALESCE(MAX(id), 0) FROM ai_reports").fetchone()[0]
             c.execute("DROP SEQUENCE IF EXISTS seq_ai_report CASCADE")
             c.execute(f"CREATE SEQUENCE seq_ai_report START {max_id + 1}")
+            # P3-5: 结构化评分列（兼容旧库：列已存在则跳过）
+            for _col, _typ in [("score", "INTEGER"), ("summary", "VARCHAR"), ("subscores", "VARCHAR")]:
+                try:
+                    c.execute(f"ALTER TABLE ai_reports ADD COLUMN {_col} {_typ}")
+                except Exception:
+                    pass
             
             # 4. 自选股
             c.execute("""
@@ -726,14 +745,19 @@ class DatabaseManager:
 
     # ========== AI 分析报告持久化 ==========
     
-    def save_ai_report(self, code: str, name: str, content: str) -> int:
-        """保存单份分析报告到数据库，返回报告ID"""
+    def save_ai_report(self, code: str, name: str, content: str,
+                       summary: Optional[str] = None,
+                       score: Optional[int] = None,
+                       subscores: Optional[dict] = None) -> int:
+        """保存单份分析报告到数据库（含结构化评分/摘要/分项），返回报告ID"""
         try:
             # 剥离代码后缀以保持数据库存储一致性
             clean_code = str(code).split('.')[0]
+            subscores_json = json.dumps(subscores, ensure_ascii=False) if subscores else None
             result = self.conn.execute(
-                "INSERT INTO ai_reports (id, code, name, content) VALUES (nextval('seq_ai_report'), ?, ?, ?) RETURNING id",
-                [clean_code, name, content]
+                "INSERT INTO ai_reports (id, code, name, content, summary, score, subscores) "
+                "VALUES (nextval('seq_ai_report'), ?, ?, ?, ?, ?, ?) RETURNING id",
+                [clean_code, name, content, summary, score, subscores_json]
             ).fetchone()
             self.conn.commit()
             return result[0] if result else -1
@@ -745,12 +769,13 @@ class DatabaseManager:
                 self.conn.execute("DROP SEQUENCE IF EXISTS seq_ai_report")
                 self.conn.execute(f"CREATE SEQUENCE seq_ai_report START {max_id + 1}")
                 result = self.conn.execute(
-                    "INSERT INTO ai_reports (id, code, name, content) VALUES (nextval('seq_ai_report'), ?, ?, ?) RETURNING id",
-                    [clean_code, name, content]
+                    "INSERT INTO ai_reports (id, code, name, content, summary, score, subscores) "
+                    "VALUES (nextval('seq_ai_report'), ?, ?, ?, ?, ?, ?) RETURNING id",
+                    [clean_code, name, content, summary, score, subscores_json]
                 ).fetchone()
                 self.conn.commit()
                 return result[0]
-            except:
+            except Exception:
                 log.error("AI 报告自动修复重试失败")
                 return -1
 
@@ -769,8 +794,8 @@ class DatabaseManager:
             total = self.conn.execute(count_query, params).fetchone()[0]
             
             query = f"""
-                SELECT id, code, name, created_at
-                FROM ai_reports 
+                SELECT id, code, name, created_at, score, summary, subscores
+                FROM ai_reports
                 {where_clause}
                 ORDER BY created_at DESC
                 LIMIT ? OFFSET ?
@@ -782,25 +807,31 @@ class DatabaseManager:
             if 'created_at' in df.columns:
                 df['created_at'] = df['created_at'].astype(str)
                 
+            records = df.to_dict(orient="records")
+            for rec in records:
+                rec["subscores"] = _parse_subscores(rec.get("subscores"))
             return {
                 "total": total,
-                "data": df.to_dict(orient="records")
+                "data": records
             }
         except Exception as e:
             log.error(f"Get AI reports failed: {e}")
             return {"total": 0, "data": []}
 
     def get_ai_report_by_id(self, report_id: int) -> dict:
-        """根据ID获取报告正文"""
+        """根据ID获取报告正文（含结构化评分/摘要/分项）"""
         try:
             row = self.conn.execute(
-                "SELECT id, code, name, content, created_at FROM ai_reports WHERE id = ?",
+                "SELECT id, code, name, content, created_at, score, summary, subscores "
+                "FROM ai_reports WHERE id = ?",
                 [report_id]
             ).fetchone()
             if not row: return None
             return {
-                "id": row[0], "code": row[1], "name": row[2], 
-                "content": row[3], "created_at": str(row[4])
+                "id": row[0], "code": row[1], "name": row[2],
+                "content": row[3], "created_at": str(row[4]),
+                "score": row[5], "summary": row[6],
+                "subscores": _parse_subscores(row[7]),
             }
         except Exception as e:
             log.error(f"Get AI report {report_id} failed: {e}")

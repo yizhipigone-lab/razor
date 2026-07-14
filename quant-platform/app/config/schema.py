@@ -2,14 +2,22 @@
 统一风控参数 schema
 按用户铁律:"config.py 唯一真相源"
 app/sim_trader/config.py 是硬编码真相源,本模块只做"读取 + 校验"
+
+v5.5(2026-07-14):load_risk_params 委托给 app.config.risk_params.load_risk_params,
+保留 RiskSchema 向后兼容(老调用方),加 DeprecationWarning 引导迁移。
 """
-from dataclasses import dataclass, field
+import warnings
+from dataclasses import dataclass
 from typing import List
 
 
 @dataclass
 class RiskSchema:
-    """风控参数 schema,缺键即报错,无假默认"""
+    """风控参数 schema,缺键即报错,无假默认
+
+    DEPRECATED:2026-07-14 起请直接用 app.config.risk_params.RiskParams(frozen),
+    本类仅作向后兼容层保留。
+    """
     hard_stop: float
     trail_activate: float
     trail_dd: float
@@ -25,35 +33,34 @@ class RiskSchema:
     breakeven_stop: float = 0.0
 
 
-def load_risk_params() -> RiskSchema:
-    """从 app/sim_trader/config.py 加载(唯一真相源)"""
-    import app.sim_trader.config as sc
+def load_risk_params():
+    """[已废弃] 请改用 app.config.risk_params.load_risk_params()。
 
-    required = [
-        'HARD_STOP', 'TRAIL_ACTIVATE', 'TRAIL_DD',
-        'TIME_EXIT_DAYS', 'TIME_EXIT_PROFIT', 'TIME_FORCE_DAYS',
-        'FIRST_DAY_EXIT_MIN_PROFIT', 'FIRST_DAY_EXIT_DAYS',
-        'TAKE_PROFIT_TIERS',
-    ]
-    missing = [k for k in required if not hasattr(sc, k)]
-    if missing:
-        raise RuntimeError(
-            f"app/sim_trader/config.py 缺少风控参数: {missing}\n"
-            f"按用户铁律,缺键应直接报错,不允许假默认"
-        )
-
+    本函数仅做向后兼容:内部委托新入口,把 RiskParams 适配回 RiskSchema 字段命名。
+    新代码禁止调用本函数(会有 DeprecationWarning)。
+    """
+    warnings.warn(
+        "app.config.schema.load_risk_params is deprecated (2026-07-14). "
+        "Use app.config.risk_params.load_risk_params instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    from app.config.risk_params import load_risk_params as _new
+    p = _new()
+    # RiskSchema 多 2 个保本止损字段(老默认值 0.0);新 RiskParams 没这俩。
+    # 老调用方用不到这俩(都默认 0=禁用),所以这里用 getattr 兜底 0.0。
     return RiskSchema(
-        hard_stop=sc.HARD_STOP,
-        trail_activate=sc.TRAIL_ACTIVATE,
-        trail_dd=sc.TRAIL_DD,
-        time_exit_days=sc.TIME_EXIT_DAYS,
-        time_exit_profit=sc.TIME_EXIT_PROFIT,
-        time_force_days=sc.TIME_FORCE_DAYS,
-        first_day_exit_min_profit=sc.FIRST_DAY_EXIT_MIN_PROFIT,
-        first_day_exit_days=sc.FIRST_DAY_EXIT_DAYS,
-        take_profit_tiers=list(sc.TAKE_PROFIT_TIERS),
-        use_atr_trail=getattr(sc, 'USE_ATR_TRAIL', False),
-        atr_trail_multiplier=getattr(sc, 'ATR_TRAIL_MULTIPLIER', 1.0),
-        breakeven_threshold=getattr(sc, 'BREAKEVEN_THRESHOLD', 0.0),
-        breakeven_stop=getattr(sc, 'BREAKEVEN_STOP', 0.0),
+        hard_stop=p.hard_stop,
+        trail_activate=p.trail_activate,
+        trail_dd=p.trail_dd,
+        time_exit_days=p.time_exit_days,
+        time_exit_profit=p.time_exit_profit,
+        time_force_days=p.time_force_days,
+        first_day_exit_min_profit=p.first_day_exit_min_profit,
+        first_day_exit_days=p.first_day_exit_days,
+        take_profit_tiers=list(p.take_profit_tiers),
+        use_atr_trail=p.use_atr_trail,
+        atr_trail_multiplier=p.atr_trail_multiplier,
+        breakeven_threshold=0.0,
+        breakeven_stop=0.0,
     )

@@ -40,7 +40,7 @@ def _is_signal_value(value_str) -> bool:
 
 from core.logger import get_logger
 from app.backtest.simple_runner import FastEngine, Position, Trade, load_index_data
-from app.backtest.execution import can_buy, can_sell_today, calc_buy_cost, calc_sell_revenue
+from app.backtest.execution import can_buy, can_sell_today, calc_buy_cost, calc_sell_revenue, realized_pnl
 
 log = get_logger("TdxBT")
 
@@ -106,9 +106,10 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
             progress_cb(0, 5, f"使用日线回测 (公式: {_formula_name or 'settings'})...")
         sig_result = bridge.execute_screen_range(
             end_time=end_time, kline_count=kline_count,
-            start_time=formula_start, formula_name=_formula_name)
+            start_time=formula_start, formula_name=_formula_name,
+            progress_cb=progress_cb, stop_event=stop_event)
         if sig_result.get("status") != "ok":
-            return {"status": "error", "message": sig_result.get("message", "TDX 信号获取失败")}
+            return _empty_result(params, 0, sig_result.get("message", "TDX 信号获取失败"))
         return _run_daily_backtest(
             sig_result, params, start, end, progress_cb, stop_event, stock_names or {})
     # 日内精度: 5m 或 1m
@@ -128,6 +129,7 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
             signal_start=start_time_str,
             period=period,
             formula_name=_formula_name,
+            progress_cb=progress_cb, stop_event=stop_event,
         )
         if sig_result.get("status") == "ok":
             bars_intra = sig_result.get("bars_intraday", sig_result.get("bars_intra", []))
@@ -149,7 +151,8 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
             sig_result = bridge.execute_screen_range_intraday(
                 end_time=end_time, kline_count=kline_count,
                 start_time=formula_start, signal_start=start_time_str,
-                period="5m", formula_name=_formula_name)
+                period="5m", formula_name=_formula_name,
+                progress_cb=progress_cb, stop_event=stop_event)
             if sig_result.get("status") == "ok":
                 bars_5m = sig_result.get("bars_intraday", sig_result.get("bars_5m", []))
                 valid_bars = [b for b in (bars_5m or []) if b.get("close", 0) > 0]
@@ -172,9 +175,10 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
             kline_count=kline_count,
             start_time=formula_start,
             formula_name=_formula_name,
+            progress_cb=progress_cb, stop_event=stop_event,
         )
         if sig_result.get("status") != "ok":
-            return {"status": "error", "message": sig_result.get("message", "TDX 信号获取失败")}
+            return _empty_result(params, 0, sig_result.get("message", "TDX 信号获取失败"))
         return _run_daily_backtest(
             sig_result, params, start, end, progress_cb,
             stop_event, stock_names or {},
@@ -497,21 +501,18 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
                             sell_shares = min(sell_shares, pos.shares)
                             if sell_shares <= 0:
                                 sell_shares = pos.shares
-                            # 任务一: 卖出扣成本。tdx 有资金守恒断言(:630)，必须用含费成本基(pos.cost)，
-                            # profit=净卖额-含费成本基, 保证 init+Σprofit == cash+pos_value
-                            _sr = calc_sell_revenue(sell_px, sell_shares)
-                            _cost_basis = pos.cost * (sell_shares / pos.shares) if pos.shares else 0.0
-                            profit = _sr['total'] - _cost_basis
-                            ret = (profit / _cost_basis * 100) if _cost_basis else 0.0
-                            cash += _sr['total']
+                            # CARD1:等价改写(已净) → realized_pnl(cost_basis=按比例摊分)
+                            _cb = pos.cost * (sell_shares / pos.shares) if pos.shares else 0.0
+                            _rp = realized_pnl(pos.entry_price, sell_px, sell_shares, cost_basis=_cb)
+                            cash += _rp['sell_revenue']
                             if sell_shares >= pos.shares:
                                 pos.active = False
                             else:
-                                pos.cost -= _cost_basis  # 摊减已卖成本基，保证后续档位 ratio 正确
+                                pos.cost -= _cb  # 摊减已卖成本基，保证后续档位 ratio 正确
                                 pos.shares -= sell_shares
                             trades_all.append(Trade(
                                 code_num, pos.entry_date, d, entry, sell_px,
-                                sell_shares, round(ret, 2), round(profit, 0), reason,
+                                sell_shares, round(_rp['ret_pct'], 2), round(_rp['pnl'], 0), reason,
                                 hold_days,
                             ))
                             sell_reasons[reason] += 1
@@ -545,20 +546,18 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
                     sell_shares = min(sell_shares, pos.shares)
                     if sell_shares <= 0:
                         sell_shares = pos.shares
-                    # 任务一: 卖出扣成本(含费成本基, 满足资金守恒断言)
-                    _sr = calc_sell_revenue(sell_px, sell_shares)
-                    _cost_basis = pos.cost * (sell_shares / pos.shares) if pos.shares else 0.0
-                    profit = _sr['total'] - _cost_basis
-                    ret = (profit / _cost_basis * 100) if _cost_basis else 0.0
-                    cash += _sr['total']
+                    # CARD1:等价改写(已净) → realized_pnl(cost_basis=按比例摊分)
+                    _cb = pos.cost * (sell_shares / pos.shares) if pos.shares else 0.0
+                    _rp = realized_pnl(pos.entry_price, sell_px, sell_shares, cost_basis=_cb)
+                    cash += _rp['sell_revenue']
                     if sell_shares >= pos.shares:
                         pos.active = False
                     else:
-                        pos.cost -= _cost_basis
+                        pos.cost -= _cb
                         pos.shares -= sell_shares
                     trades_all.append(Trade(
                         code_num, pos.entry_date, d, pos.entry_price, sell_px,
-                        sell_shares, round(ret, 2), round(profit, 0), reason,
+                        sell_shares, round(_rp['ret_pct'], 2), round(_rp['pnl'], 0), reason,
                         hold_days,
                     ))
                     sell_reasons[reason] += 1
@@ -584,31 +583,12 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
             # 更新 prev_day,供下一天买入时取前收
             prev_day = d
 
-        # ── 最终清仓 ──────────────────────────────────
-        for code, p in list(positions.items()):
-            if not p.active:
-                continue
-            if code in stocks_with_intraday:
-                code_bars = [b for b in bars_intra if b["code"] == code]
-                px = code_bars[-1]["close"] if code_bars else p.entry_price
-            else:
-                last_snap = prices_by_date.get(str(sorted_dates[-1]), {})
-                px = last_snap.get(code, {}).get("close", p.entry_price)
-            # 任务一: 期末清仓扣成本(含费成本基, 满足资金守恒断言)
-            _sr = calc_sell_revenue(px, p.shares)
-            profit = _sr['total'] - p.cost
-            ret = (profit / p.cost * 100) if p.cost else 0.0
-            cash += _sr['total']
-            p.active = False
-            last_date = date.fromisoformat(sorted_dates[-1]) if sorted_dates else end
-            trades_all.append(Trade(
-                code, p.entry_date, last_date, p.entry_price, px,
-                p.shares, round(ret, 2), round(profit, 0), "FE",
-                (last_date - p.entry_date).days,
-            ))
-            sell_reasons["FE"] += 1
+        # 注: 原"最终清仓"循环已删除 —— 回测结束时不再强制卖出持仓
+        # 持仓按市值计入 final_equity(下面 equity_curve 的 pos_value)
+        # 修复 FE 误标记: 之前 calc_sell_revenue(0, ...) 算 profit=-cost 接近 0, 标 FE 误导
+        # 持仓未平仓部分保留在 positions 字典, 由 equity_curve 末尾 mark-to-market
 
-        # 补充净值终值 (L27: 用 close 而非 entry_price 计算持仓市值)
+        # 补充净值终值 (持仓按市值计入)
         active_positions = [pp for pp in positions.values() if pp.active]
         pos_value = 0
         for p in active_positions:
@@ -624,11 +604,12 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
             "cash": round(cash, 2), "pos": len(active_positions),
         })
 
-        # ── 不变式断言 ──────────────────────────────
+        # ── 不变式断言(仅在全部平仓时检查)──────────────
+        # 持仓未平仓时 pos_value 含未实现 P&L, 不在 trade profit 中, 等式不再成立
         total_trade_profit = sum(t.profit for t in trades_all)
         expected_equity = params["initial_capital"] + total_trade_profit
         final_snapshot_equity = cash + pos_value
-        if abs(final_snapshot_equity - expected_equity) > 2.0:
+        if not active_positions and abs(final_snapshot_equity - expected_equity) > 2.0:
             log.error(
                 f"混合回测资金不一致！equity={final_snapshot_equity:.2f} "
                 f"expected={expected_equity:.2f} diff={final_snapshot_equity - expected_equity:.2f} "
@@ -761,20 +742,32 @@ def _run_daily_backtest(sig_result: dict, params: dict, start: date, end: date,
                     pass
 
     if progress_cb:
-        progress_cb(1, 4, f"逐日回放 ({len(prices_by_date)}个交易日)...")
+        progress_cb(0, len(prices_by_date), f"逐日回放 ({len(prices_by_date)}个交易日)...")
 
     if stop_event and stop_event.is_set():
         return {"status": "stopped"}
 
     td_list = sorted(date.fromisoformat(d) for d in prices_by_date.keys())
 
+    # 预建 {日期: [当天有信号的 code 列表]} 反向索引，主循环 O(1) 取当天信号
+    # 替代原"每天遍历全部 sig_by_code"的 O(天×股) 扫描（5421只×2383天≈1290万次→24980次）
+    pending_buys = defaultdict(list)
+    for code, sigs in sig_by_code.items():
+        for dt_str, zp in sigs.items():
+            if _is_signal_value(zp):
+                pending_buys[dt_str].append(code)
+
     eng = FastEngine(td_list, params)
     prev_snap = None
     total_buy_signals = 0
+    _PROGRESS_EVERY = 50  # 逐日回放进度节流：每 50 天推一次，避免刷爆 WebSocket
 
-    for d_obj in td_list:
+    for d_idx, d_obj in enumerate(td_list):
         if stop_event and stop_event.is_set():
             return {"status": "stopped"}
+        # 节流推送逐日回放进度（主循环最长段，按天推让用户看到连续进度）
+        if progress_cb and (d_idx % _PROGRESS_EVERY == 0 or d_idx == len(td_list) - 1):
+            progress_cb(d_idx, len(td_list), f"逐日回放 {d_idx}/{len(td_list)} 天")
 
         d_str = str(d_obj)
         snap = prices_by_date.get(d_str, {})
@@ -795,10 +788,7 @@ def _run_daily_backtest(sig_result: dict, params: dict, start: date, end: date,
         # 动态仓位：按当前净值比例
         eng.position_size = eng.eq(snap) * params["position_ratio"]
 
-        signals_today = sorted(
-            code for code, sigs in sig_by_code.items()
-            if _is_signal_value(sigs.get(d_str))
-        )
+        signals_today = sorted(pending_buys.get(d_str, []))
         total_buy_signals += len(signals_today)
         for code in signals_today:
             bar = snap.get(code)
@@ -816,21 +806,10 @@ def _run_daily_backtest(sig_result: dict, params: dict, start: date, end: date,
         eng.record(d_obj, snap)
         prev_snap = snap
 
-    # 最终清仓
-    for code, p in list(eng.positions.items()):
-        if not p.active or p.remaining <= 0:
-            continue
-        last_date = td_list[-1] if td_list else date.today()
-        last_snap = prices_by_date.get(str(last_date), {})
-        bar = last_snap.get(code)
-        try:
-            px = float(bar["close"]) if isinstance(bar, dict) else float(bar) if bar else p.entry_price
-        except (ValueError, TypeError, KeyError):
-            px = p.entry_price
-        t = eng.sell(p, px, "FE", None, last_date)
-        if t:
-            t.hold = eng._td(p.entry_date, last_date)
-            eng.trades.append(t)
+    # 注: 原"最终清仓"循环已删除 —— 回测结束时不再强制卖出持仓
+    # 持仓按市值计入 final_equity(_build_result 里的 equity_curve mark-to-market)
+    # 修复 FE 误标记: 之前用 entry_price fallback 算 profit=-300508 的 22 笔 7-13/7-10 trades 是 bug
+    # 持仓未平仓部分保留在 eng.positions, _build_result 通过 mark-to-market 算 final_equity
 
     # 指数
     indices = {}
@@ -843,7 +822,7 @@ def _run_daily_backtest(sig_result: dict, params: dict, start: date, end: date,
                            total_buy_signals, start, end, indices)
     result["summary"]["data_source"] = "daily"
     if progress_cb:
-        progress_cb(3, 4, "日线回测完成")
+        progress_cb(len(td_list), len(td_list), "日线回测完成")
     return result
 
 

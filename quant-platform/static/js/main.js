@@ -55,8 +55,13 @@ function _sendQuoteSubscribe() {
     var c = tr.getAttribute('data-code');
     if (c) codes.push(c);
   });
-  // 持仓
+  // 持仓(模拟盘)
   document.querySelectorAll('#sim-pos-tbody tr.pos-row').forEach(function(tr) {
+    var c = tr.getAttribute('data-code');
+    if (c) codes.push(c);
+  });
+  // 持仓(实盘 A2:复用订阅通道到实盘)
+  document.querySelectorAll('#live-positions-tbody tr.lt-pos-row').forEach(function(tr) {
     var c = tr.getAttribute('data-code');
     if (c) codes.push(c);
   });
@@ -676,6 +681,8 @@ async function loadSimMonitor() {
     if (r.status === 'ok') {
       document.getElementById('sim-mon-val').textContent = r.monitor_enabled ? '开启' : '关闭';
       document.getElementById('sim-mon-mode-val').textContent = r.monitor_mode === 'intraday' ? '盘中执行' : '仅告警';
+      const dot = document.getElementById('sim-monitor-status');
+      if (dot) dot.style.background = r.monitor_enabled ? 'var(--green)' : 'var(--text3)';
     }
   } catch(e) { console.error("loadSimMonitor error", e); }
 }
@@ -699,6 +706,8 @@ async function saveSimMonitor() {
     if (msg) { msg.textContent = r.status === 'ok' ? '已保存' : '失败'; msg.style.color = r.status === 'ok' ? 'var(--green)' : 'var(--red)'; }
     document.getElementById('sim-mon-val').textContent = body.monitor_enabled ? '开启' : '关闭';
     document.getElementById('sim-mon-mode-val').textContent = body.monitor_mode === 'intraday' ? '盘中执行' : '仅告警';
+    const dot = document.getElementById('sim-monitor-status');
+    if (dot) dot.style.background = body.monitor_enabled ? 'var(--green)' : 'var(--text3)';
     document.getElementById('sim-monitor-display').style.display = 'block';
     document.getElementById('sim-monitor-edit').style.display = 'none';
     document.getElementById('btn-sim-save-monitor').style.display = 'none';
@@ -715,12 +724,6 @@ async function loadSimSwitches() {
       document.getElementById('sim-sell-val').textContent = r.auto_sell ? '开' : '关';
       document.getElementById('sim-scan-val').textContent = r.auto_scan ? '开' : '关';
       document.getElementById('sim-buy-val').textContent = r.auto_buy ? '开' : '关';
-      const lsVal = document.getElementById('sim-live-signal-val');
-      if (lsVal) {
-        const mode = r.live_signal_mode || 'off';
-        lsVal.textContent = mode === 'sim_and_live' ? '模拟+实盘' : '关';
-        lsVal.style.color = mode === 'sim_and_live' ? 'var(--red)' : 'var(--text1)';
-      }
     }
   } catch(e) { console.error("loadSimSwitches error", e); }
 }
@@ -736,11 +739,6 @@ function editSimSwitches() {
   document.getElementById('sim-edit-sell').value = document.getElementById('sim-sell-val').textContent === '开' ? 'true' : 'false';
   document.getElementById('sim-edit-scan').value = document.getElementById('sim-scan-val').textContent === '开' ? 'true' : 'false';
   document.getElementById('sim-edit-buy').value = document.getElementById('sim-buy-val').textContent === '开' ? 'true' : 'false';
-  const lsEdit = document.getElementById('sim-edit-live-signal');
-  if (lsEdit) {
-    const lsVal = document.getElementById('sim-live-signal-val');
-    lsEdit.value = (lsVal && lsVal.textContent !== '关') ? 'sim_and_live' : 'off';
-  }
 }
 
 async function saveSimSwitches() {
@@ -748,7 +746,6 @@ async function saveSimSwitches() {
     auto_sell: document.getElementById('sim-edit-sell').value === 'true',
     auto_scan: document.getElementById('sim-edit-scan').value === 'true',
     auto_buy: document.getElementById('sim-edit-buy').value === 'true',
-    live_signal_mode: (document.getElementById('sim-edit-live-signal') || {}).value || 'off',
   };
   try {
     const r = await fetch('/api/settings/sim-switches', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) }).then(r => r.json());
@@ -758,11 +755,6 @@ async function saveSimSwitches() {
     document.getElementById('sim-sell-val').textContent = body.auto_sell ? '开' : '关';
     document.getElementById('sim-scan-val').textContent = body.auto_scan ? '开' : '关';
     document.getElementById('sim-buy-val').textContent = body.auto_buy ? '开' : '关';
-    const lsVal = document.getElementById('sim-live-signal-val');
-    if (lsVal) {
-      lsVal.textContent = body.live_signal_mode === 'sim_and_live' ? '模拟+实盘' : '关';
-      lsVal.style.color = body.live_signal_mode === 'sim_and_live' ? 'var(--red)' : 'var(--text1)';
-    }
     // hide edit
     document.getElementById('sim-switches-display').style.display = 'flex';
     document.getElementById('sim-switches-edit').style.display = 'none';
@@ -995,6 +987,7 @@ async function saveSettings() {
     await Promise.resolve(saveRiskSettings());
     await Promise.resolve(saveDataSettings());
     await Promise.resolve(saveGatewaySettings());
+    await Promise.resolve(saveBuyAmtSettings());
     if (msg) { msg.style.display = 'inline'; msg.textContent = '✓ 配置已持久化保存'; msg.style.color = 'var(--green)'; }
     addLog('ok', '全局设置已保存（搜索空间/风控/数据/网关）');
   } catch (e) {
@@ -1124,6 +1117,25 @@ function saveGatewaySettings() {
     }
   };
   var msg = document.getElementById('save-gateway-msg');
+  return fetch('/api/settings', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({data: data})
+  }).then(function(r) { return r.json(); }).then(function(res) {
+    if (msg) { msg.textContent = res.message || '已保存'; msg.style.color = 'var(--green)'; }
+    return res;
+  }).catch(function() {
+    if (msg) { msg.textContent = '保存失败'; msg.style.color = 'var(--red)'; }
+  });
+}
+function saveBuyAmtSettings() {
+  var minV = parseFloat((document.getElementById('set-buy-min') || {}).value);
+  var maxV = parseFloat((document.getElementById('set-buy-max') || {}).value);
+  var msg = document.getElementById('save-buy-msg');
+  if (isNaN(minV) || isNaN(maxV) || minV < 0 || maxV < 0 || minV > maxV) {
+    if (msg) { msg.textContent = '请检查金额(0≤最小≤最大)'; msg.style.color = 'var(--red)'; }
+    return Promise.resolve();
+  }
+  var data = { trading: { min_buy_amount: minV, max_buy_amount: maxV } };
   return fetch('/api/settings', {
     method: 'POST', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({data: data})
@@ -1816,8 +1828,14 @@ function switchTab(name) {
   if (name === 'ai-backtest') { loadBacktestCapitalDefaults(); initAIBacktest(); }
   if (name === 'radar') loadHotSectorData();
   if (name === 'sim-trader') { loadSimTraderStatus(); initLogDates(); loadSimLogs(); loadSimRiskParams(); loadSimSwitches(); loadSimMonitor(); loadSimStrategy(); loadSimTrades(); renderSimEquityChart(); renderSimCalendar(); renderSimStockAnalysis(); }
-  if (name === 'live-trader') { loadLiveAll(); }
+  if (name === 'live-trader') { loadLiveAll(); if (window.resizeLiveEquityChart) window.resizeLiveEquityChart(); }
   if (name === 'tqsdk') { initTqsdkTab(); }
+  // 告警中心(v6.0)
+  if (name === 'alerts') {
+    if (typeof startAlertsPolling === 'function') startAlertsPolling();
+  } else {
+    if (typeof stopAlertsPolling === 'function') stopAlertsPolling();
+  }
 }
 
 // ─── AI 回测 JS ────────────────────────────────────────────
@@ -1944,7 +1962,7 @@ function startQuotePolling() {
 async function pollLiveQuotes() {
   try {
     var codes = [];
-    document.querySelectorAll('#watchlist-tbody tr.wl-row, #sim-pos-tbody tr.pos-row').forEach(function(tr) {
+    document.querySelectorAll('#watchlist-tbody tr.wl-row, #sim-pos-tbody tr.pos-row, #live-positions-tbody tr.lt-pos-row').forEach(function(tr) {
       var c = tr.getAttribute('data-code');
       if (c) codes.push(c);
     });
@@ -1983,6 +2001,8 @@ async function pollLiveQuotes() {
         pctEl.style.color = q.change_pct >= 0 ? '#ef232a' : '#14b143';
       }
     });
+    // A4: ws 断开兜底时也刷新实盘持仓现价/浮盈/市值(用上面 window._lastQuotes)
+    if (typeof applyLiveQuotes === 'function') applyLiveQuotes();
     // 更新总净值和持仓盈亏汇总
     var totalMv = 0; var totalPnl = 0; var totalCost = 0;
     document.querySelectorAll('#sim-pos-tbody tr.pos-row').forEach(function(tr) {
@@ -2606,6 +2626,19 @@ function handleWS(msg) {
     toggleTaskButtons('backtest', false);
     // 自动刷新回测历史列表
     setTimeout(() => loadBacktestHistory(), 800);
+  } else if (msg.type === 'backtest_progress') {
+    // 后端 backtest.py:780 推送，context='simple_bt' 来自 simple-bt 回测
+    if (msg.context === 'simple_bt') {
+      showProgress('simple-bt', msg.msg || '回测中...');
+      if (msg.step != null && msg.total) {
+        updateProgressFill('simple-bt', msg.step, msg.total);
+      }
+      // 输出带阶段百分比的系统日志（双反馈：进度条 + 日志面板）
+      if (msg.msg) {
+        const phase = (msg.total && msg.total > 0) ? `[${Math.round(msg.step / msg.total * 100)}%]` : `[${msg.step}/${msg.total}]`;
+        addLog('info', '[回测] ' + phase + ' ' + msg.msg);
+      }
+    }
   } else if (msg.type === 'simple_bt_done') {
     _lastSimpleBtResult = { summary: msg.summary, equity: msg.equity, trades: msg.trades, indices: msg.indices, dailyTrades: msg.daily_trades, resultId: msg.result_id };
     renderSimpleBtResults(msg.summary, msg.equity, msg.trades, msg.indices);
@@ -2621,15 +2654,9 @@ function handleWS(msg) {
       const reasons = Object.entries(s.exit_reasons).sort((a,b) => b[1]-a[1]).slice(0, 5).map(([k,v]) => `${k}:${v}`).join(', ');
       addLog('info', `[退出原因] ${reasons}`);
     }
-    hideProgress('simple-bt');
-    document.getElementById('btn-simple-bt-run').disabled = false;
-    showProgress('simple-bt', msg.msg);
-    updateProgressFill('simple-bt', msg.step, msg.total);
-    // 同时输出到系统日志（带级别 + 阶段百分比）
-    if (msg.msg) {
-      const phase = (msg.total && msg.total > 0) ? `[${Math.round(msg.step/msg.total*100)}%]` : `[${msg.step}/${msg.total}]`;
-      addLog('info', '[回测] ' + phase + ' ' + msg.msg);
-    }
+    _resetSimpleBtButtons();
+  } else if (msg.type === 'simple_bt_stopped') {
+    _resetSimpleBtButtons();
   } else if (msg.type === 'done') {
     addLog('ok', getMsg(msg));
     hideProgress('dl');
@@ -2744,6 +2771,8 @@ function handleWS(msg) {
     processRows(document.querySelectorAll('.radar-stock-link'));
     processPosRows(document.querySelectorAll('#sim-pos-tbody tr.pos-row'));
     processPosRows(document.querySelectorAll('#sim-trade-tbody tr.pos-row'));
+    // A4: 实盘持仓复用 market_quotes 通道实时刷新现价/浮盈/市值/KPI
+    if (typeof applyLiveQuotes === 'function') applyLiveQuotes();
   } else if (msg.type === 'portfolio_snapshot') {
     // 服务端 10s 计算的实时投资组合快照
     window._portfolioSeen = true;
@@ -2775,6 +2804,34 @@ function handleWS(msg) {
         }
         if (mvEl) mvEl.textContent = Math.round(ps.market_value).toLocaleString();
       });
+    }
+  } else if (msg.type === 'live_trader_snapshot') {
+    // B3: 实盘快照(主服务 10s 推送:持仓/资产/委托/成交);仅实盘 tab active 时处理
+    const ltPanel = document.getElementById('tab-live-trader');
+    if (!ltPanel || !ltPanel.classList.contains('active')) return;
+    const d = msg.data || {};
+    // 资产(含 A5 现金/冻结缓存) + 委托/成交
+    if (d.asset && typeof _renderLiveAsset === 'function') _renderLiveAsset(d.asset);
+    if (d.orders && typeof _renderLiveOrders === 'function') _renderLiveOrders(d.orders);
+    if (d.deals && typeof _renderLiveDeals === 'function') _renderLiveDeals(d.deals);
+    // 持仓:仅结构变化(code 增删/volume 变)才重渲染,否则让 applyLiveQuotes 继续管现价
+    if (d.positions && typeof _renderLivePositions === 'function') {
+      const newPos = {};
+      d.positions.forEach(function(p) { if (p.code) newPos[p.code] = Number(p.volume) || 0; });
+      const rows = document.querySelectorAll('#live-positions-tbody tr.lt-pos-row');
+      let structChanged = rows.length !== d.positions.length;
+      if (!structChanged) {
+        for (const tr of rows) {
+          const bare = tr.getAttribute('data-code');
+          let matched = null;
+          for (const k in newPos) { if (k.split('.')[0] === bare) { matched = k; break; } }
+          if (!matched || newPos[matched] !== Number(tr.getAttribute('data-vol') || 0)) { structChanged = true; break; }
+          if (matched) delete newPos[matched];
+        }
+      }
+      if (structChanged) {
+        _renderLivePositions(d.positions);  // 内部会调 applyLiveQuotes 刷现价
+      }
     }
   }
 }
@@ -2874,9 +2931,8 @@ function updatePositionRow(tr, info, entryPrice, shares) {
     if (mv2El) {
         mv2El.textContent = Math.round(price * shares).toLocaleString();
     }
-    // 今日盈亏（基于今日基准价 data-basepx: 当日买入=买入价, 过夜=昨收）
-    const basePx = parseFloat(tr.getAttribute('data-basepx') || 0)
-                   || parseFloat(info.lastClose || info.preClose || info.last_close || 0);
+    // 今日盈亏（CARD4 后端算基准 + 实时价前端乘: data-basepx 严格来自后端 today_base）
+    const basePx = parseFloat(tr.getAttribute('data-basepx') || 0);
     // 实时涨跌：始终以昨收价为基准（市场概念，与个人买入价无关）
     const prevClose = parseFloat(info.lastClose || info.preClose || info.last_close || 0);
     const tpEl = tr.querySelector('.today-pnl');
@@ -4348,8 +4404,8 @@ async function loadSettings() {
     const c = data.cron || {};
     const dd = data.data || {};
 
-    setVal('set-auto-max', t.max_buy_amount || a.max_amount_per_stock);
-    setVal('set-lot-size', t.order_lot_size);
+    setVal('set-buy-min', t.min_buy_amount);
+    setVal('set-buy-max', t.max_buy_amount);
     setVal('set-trail-act', r.trailing_stop_activate_pct);
     setVal('set-trail-dd', r.trailing_stop_drawdown_pct);
     setVal('set-stop', r.hard_stop_loss_pct);
@@ -4780,7 +4836,15 @@ async function runSimpleBacktest() {
 
   document.getElementById('simple-bt-result').style.display = 'none';
   showProgress('simple-bt', '正在启动回测...');
-  document.getElementById('btn-simple-bt-run').disabled = true;
+  // 切按钮 + 禁用配置按钮(避免回测中改配置)
+  const runBtn = document.getElementById('btn-simple-bt-run');
+  const stopBtn = document.getElementById('btn-simple-bt-stop');
+  if (runBtn) runBtn.style.display = 'none';
+  if (stopBtn) { stopBtn.style.display = 'inline-block'; stopBtn.disabled = false; stopBtn.textContent = '⏹ 停止回测'; }
+  ['btn-simple-bt-save', 'btn-simple-bt-reset', 'btn-simple-bt-load-sys'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = true;
+  });
 
   try {
     await fetch('/api/backtest/run-simple', {
@@ -4789,9 +4853,32 @@ async function runSimpleBacktest() {
     });
   } catch (e) {
     addLog('error', '启动回测失败: ' + e.message);
-    hideProgress('simple-bt');
-    document.getElementById('btn-simple-bt-run').disabled = false;
+    _resetSimpleBtButtons();
   }
+}
+
+async function stopSimpleBacktest() {
+  const stopBtn = document.getElementById('btn-simple-bt-stop');
+  if (stopBtn) { stopBtn.disabled = true; stopBtn.textContent = '⏳ 发送中...'; }
+  try {
+    await fetch('/api/backtest/run-simple/stop', { method: 'POST' });
+    addLog('warning', '🛑 简化回测停止指令已发送');
+  } catch (e) {
+    addLog('error', '发送停止指令失败: ' + e.message);
+    _resetSimpleBtButtons();
+  }
+}
+
+function _resetSimpleBtButtons() {
+  const runBtn = document.getElementById('btn-simple-bt-run');
+  const stopBtn = document.getElementById('btn-simple-bt-stop');
+  if (runBtn) { runBtn.style.display = 'inline-block'; runBtn.disabled = false; }
+  if (stopBtn) { stopBtn.style.display = 'none'; stopBtn.disabled = false; stopBtn.textContent = '⏹ 停止回测'; }
+  ['btn-simple-bt-save', 'btn-simple-bt-reset', 'btn-simple-bt-load-sys'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = false;
+  });
+  hideProgress('simple-bt');
 }
 
 function showProgress(ctx, msg) {

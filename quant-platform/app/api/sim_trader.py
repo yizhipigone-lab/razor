@@ -139,8 +139,6 @@ async def save_sim_switches(body: dict):
             sc.MONITOR_MODE = str(body['monitor_mode'])
         if 'strategy_name' in body:
             sc.STRATEGY_NAME = str(body['strategy_name'])
-        if 'live_signal_mode' in body:
-            sc.LIVE_SIGNAL_MODE = str(body['live_signal_mode'])
         # 同步更新已创建的引擎和监控器实例
         if _engine is not None:
             from app.sim_trader.engine import SimTraderEngine
@@ -157,11 +155,10 @@ async def save_sim_switches(body: dict):
         sim['monitor_enabled'] = sc.MONITOR_ENABLED
         sim['monitor_mode'] = sc.MONITOR_MODE
         sim['strategy_name'] = sc.STRATEGY_NAME
-        sim['live_signal_mode'] = sc.LIVE_SIGNAL_MODE
         settings._data['sim_trader'] = sim
         settings.save()
 
-        log.info(f"执行开关已更新并持久化: SELL={sc.AUTO_SELL} SCAN={sc.AUTO_SCAN} BUY={sc.AUTO_BUY} MON={sc.MONITOR_ENABLED}/{sc.MONITOR_MODE} STRAT={sc.STRATEGY_NAME} LIVE_SIGNAL={sc.LIVE_SIGNAL_MODE}")
+        log.info(f"执行开关已更新并持久化: SELL={sc.AUTO_SELL} SCAN={sc.AUTO_SCAN} BUY={sc.AUTO_BUY} MON={sc.MONITOR_ENABLED}/{sc.MONITOR_MODE} STRAT={sc.STRATEGY_NAME}")
         return {"status": "ok", "message": "已保存"}
     except Exception as e:
         log.error(f"保存执行开关失败: {e}")
@@ -235,15 +232,11 @@ async def sim_trader_status():
     positions = []
     for p in engine.active_positions():
         cur_price = snapshot.get(p.code, {}).get('close', p.entry_price)
-        # 今日盈亏口径: 当日买入用买入价基准, 过夜持仓用昨收价基准
+        # CARD4: 今日盈亏规则收归 Position.today_pnl(单一真相源,含 None 哨兵)
         prev_close = prev_close_map.get(p.code, 0)
         bought_today = (p.entry_date == today)
-        base_px = p.entry_price if bought_today else prev_close
-        rem = p.remaining_shares if getattr(p, 'remaining_shares', 0) else p.shares
-        if base_px and base_px > 0:
-            today_pnl = round(rem * (cur_price - base_px), 0)
-        else:
-            today_pnl = None
+        base_px = p.entry_price if bought_today else prev_close     # 保留供 today_base 字段
+        today_pnl = p.today_pnl(cur_price, prev_close, today)
         # 当日涨跌幅：始终以昨收价为基准（市场概念，与个人买入价无关）
         if prev_close and prev_close > 0:
             day_chg_pct = round((cur_price / prev_close - 1) * 100, 2)
@@ -288,15 +281,7 @@ async def sim_trader_status():
         'auto_sell': engine.auto_sell,
         'auto_scan': engine.auto_scan,
         'auto_buy': engine.auto_buy,
-        'live_signal_mode': _get_live_signal_mode(),
     }
-
-def _get_live_signal_mode() -> str:
-    try:
-        from app.sim_trader.config import LIVE_SIGNAL_MODE
-        return LIVE_SIGNAL_MODE
-    except Exception:
-        return 'off'
 
 
 @router.post("/api/sim-trader/execute")
@@ -371,23 +356,6 @@ async def sim_trader_execute():
                                     continue
                                 if engine.execute_buy(today, code_num, px, strategy_name=f'手动-{STRATEGY_NAME}'):
                                     buy_count += 1
-
-                        # 手动触发也转发信号(一致性,§5.3)
-                        if matched:
-                            try:
-                                from app.sim_trader.config import LIVE_SIGNAL_MODE
-                                if LIVE_SIGNAL_MODE == "sim_and_live":
-                                    sig_list = []
-                                    for code in matched:
-                                        cn = code.split('.')[0] if '.' in code else code
-                                        px2 = snapshot.get(cn, {}).get('close', 0)
-                                        if px2 > 0:
-                                            sig_list.append((cn, px2))
-                                    if sig_list:
-                                        from app.scheduler.cron_jobs import pipeline_scheduler
-                                        pipeline_scheduler._forward_signals_to_live_trader(sig_list, today)
-                            except Exception as e:
-                                log.warning(f'手动触发信号转发失败: {e}')
                 except Exception as e:
                     log.warning(f'{formula_name}选股失败: {e}')
 
@@ -456,12 +424,10 @@ async def sim_trader_trades(page: int = 1, limit: int = 50):
             ret = (cur_px / p.entry_price - 1) * 100
             # 今日盈亏口径: 当日买入的用买入价基准(现价-买入价), 过夜持仓用昨收价基准(现价-昨收)
             rem_shares = p.remaining_shares if getattr(p, 'remaining_shares', 0) else p.shares
+            # CARD4: 今日盈亏规则收归 Position.today_pnl(单一真相源,含 None 哨兵)
             bought_today = (p.entry_date == today)
-            base_px = p.entry_price if bought_today else prev_close
-            if base_px and base_px > 0:
-                today_pnl = round(rem_shares * (cur_px - base_px), 0)
-            else:
-                today_pnl = None
+            base_px = p.entry_price if bought_today else prev_close     # 保留供 today_base 字段
+            today_pnl = p.today_pnl(cur_px, prev_close, today)
             # 当日涨跌幅：始终以昨收价为基准（市场概念，与个人买入价无关）
             if prev_close and prev_close > 0:
                 day_chg_pct = round((cur_px / prev_close - 1) * 100, 2)
@@ -696,67 +662,6 @@ async def sim_trader_set_config(data: dict):
     return {"status": "ok", "message": f"策略已切换为 {new_name}", "current_strategy": new_name}
 
 
-@router.get("/api/sim-trader/monitor")
-async def sim_trader_monitor_status():
-    """获取自动执行开关状态"""
-    from app.sim_trader.config import AUTO_SELL, AUTO_SCAN, AUTO_BUY, MONITOR_ENABLED, MONITOR_MODE, BROKER_ENABLED
-    engine = get_engine()
-    return {
-        "status": "ok",
-        "auto_sell": AUTO_SELL,
-        "auto_scan": AUTO_SCAN,
-        "auto_buy": AUTO_BUY,
-        "broker_enabled": BROKER_ENABLED,
-        "monitor_enabled": engine.monitor_enabled if engine else False,
-        "monitor_mode": engine.monitor.mode if engine and engine.monitor else MONITOR_MODE,
-    }
-
-
-@router.post("/api/sim-trader/monitor")
-async def sim_trader_monitor_control(data: dict):
-    """设置自动执行开关和盘中监控"""
-    import app.sim_trader.config as _cfg
-    if "auto_sell" in data:
-        _cfg.AUTO_SELL = bool(data["auto_sell"])
-    if "auto_scan" in data:
-        _cfg.AUTO_SCAN = bool(data["auto_scan"])
-    if "auto_buy" in data:
-        _cfg.AUTO_BUY = bool(data["auto_buy"])
-    if "broker_enabled" in data:
-        _cfg.BROKER_ENABLED = bool(data["broker_enabled"])
-
-    # 盘中监控控制
-    engine = get_engine()
-    if engine and engine.monitor:
-        if "monitor_enabled" in data:
-            if bool(data["monitor_enabled"]):
-                if "monitor_mode" in data:
-                    engine.monitor.mode = data["monitor_mode"]
-                    _cfg.MONITOR_MODE = data["monitor_mode"]
-                engine.monitor.start()
-            else:
-                engine.monitor.stop()
-        elif "monitor_mode" in data:
-            engine.monitor.mode = data["monitor_mode"]
-            _cfg.MONITOR_MODE = data["monitor_mode"]
-
-    log.info(f"开关: 卖出={'执行' if _cfg.AUTO_SELL else '告警'} "
-             f"选股={'开' if _cfg.AUTO_SCAN else '关'} "
-             f"买入={'执行' if _cfg.AUTO_BUY else '不买'} "
-             f"券商={'开' if _cfg.BROKER_ENABLED else '关'} "
-             f"监控={'开' if (engine and engine.monitor_enabled) else '关'}"
-             f"({engine.monitor.mode if engine and engine.monitor else _cfg.MONITOR_MODE})")
-    return {
-        "status": "ok",
-        "auto_sell": _cfg.AUTO_SELL,
-        "auto_scan": _cfg.AUTO_SCAN,
-        "auto_buy": _cfg.AUTO_BUY,
-        "broker_enabled": _cfg.BROKER_ENABLED,
-        "monitor_enabled": engine.monitor_enabled if engine else False,
-        "monitor_mode": engine.monitor.mode if engine and engine.monitor else _cfg.MONITOR_MODE,
-    }
-
-
 @router.post("/api/quotes/live")
 async def get_live_quotes(body: dict):
     """批量获取实时行情（自选股+持仓轮询用）"""
@@ -774,7 +679,7 @@ async def get_live_quotes(body: dict):
         for _, row in df.iterrows():
             code = str(row.get("code", ""))
             price = float(row.get("price", 0))
-            if not code or price <= 0:
+            if not code or not (price > 0):  # NaN/<=0 跳过(委托 quote_source 后缺价行 price=NaN)
                 continue
             last_close = float(row.get("last_close", 0))
             result[code] = {

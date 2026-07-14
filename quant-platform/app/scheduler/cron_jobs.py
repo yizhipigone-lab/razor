@@ -6,6 +6,7 @@ from core.logger import get_logger
 from core.sync_logger import info as sync_info, ok as sync_ok, warn as sync_warn, error as sync_error
 from app.data_manager.tushare_sync import tushare_sync_manager
 from app.data_manager.parquet_pipeline import parquet_pipeline
+from app.scheduler.safe_task import TaskRunner
 
 log = get_logger("CronScheduler")
 
@@ -13,6 +14,15 @@ class DataPipelineScheduler:
     def __init__(self):
         self._scheduler = AsyncIOScheduler()
         self._job_id = "daily_tushare_sync"
+        # 候选④:每个简单 cron 任务配独立 TaskRunner,统一 try/except + exc_info
+        # 复杂任务(多级 fallback 如 sync_index_daily Tushare→QMT→akshare)仍保持原样
+        self._runner = {
+            "catch_up_daily": TaskRunner("cron.catch_up_daily"),
+            "monitor_full_scan": TaskRunner("cron.monitor_full_scan"),
+            "sync_concepts_daily": TaskRunner("cron.sync_concepts_daily"),
+            "recalc_hotness": TaskRunner("cron.recalc_hotness"),
+            "finalize_hotness": TaskRunner("cron.finalize_hotness"),
+        }
         
     def start(self):
         if not self._scheduler.running:
@@ -163,39 +173,47 @@ class DataPipelineScheduler:
         loop.create_task(self._catch_up_daily())
 
     async def _catch_up_daily(self):
-        """启动时检查：如果当前是交易日且已过14:52，补执行尾盘交易"""
+        """启动时检查：如果当前是交易日且已过14:52，补执行尾盘交易
+
+        注意：run_sim_trader_daily() 含大量同步IO，即使部分已用
+        run_in_executor，整体仍可能耗时较长导致启动后服务卡顿。
+        因此将延迟从1秒改为30秒，给服务更多初始化时间。
+        """
         import asyncio as _asyncio
-        await _asyncio.sleep(1)  # 等 1 秒让系统初始化完成
-        try:
+        await _asyncio.sleep(30)  # 30秒：等服务完全就绪后再补执行
+        # 候选④:候选④:try/except 委托 TaskRunner(sleep + 条件 + run_sim_trader_daily 整体)
+        async def _do():
             from datetime import datetime, date
             now = datetime.now()
             today = date.today()
             if now.hour < 14 or (now.hour == 14 and now.minute < 52):
                 return  # 还没到14:52，等cron正常触发
-
             from app.api.sim_trader import get_trading_dates
             trading_dates = get_trading_dates()
             if today not in trading_dates:
                 return  # 非交易日
-
             log.info(f"CronScheduler | [启动补执行] 已过14:52，立即执行尾盘交易: {today}")
             await self.run_sim_trader_daily()
-        except Exception as e:
-            log.warning(f"CronScheduler | [启动补执行] 失败: {e}")
+        await self._runner["catch_up_daily"].run_async(_do)
 
     def reload_config(self):
         """配置被修改后重新挂载任务"""
         self._schedule_jobs()
 
     async def monitor_full_scan(self):
-        """盘中监控全量扫描（无 QMT tick 时的兜底方案）"""
-        try:
+        """盘中监控全量扫描（无 QMT tick 时的兜底方案）
+
+        run_full_scan() 含 HTTP 行情请求，是同步阻塞操作，
+        必须在线程池中执行，否则会卡死事件循环导致所有 API 无响应。
+        """
+        # 候选④:try/except 委托 TaskRunner
+        async def _do():
             from app.api.sim_trader import get_engine
             engine = get_engine()
             if engine.monitor_enabled:
-                engine.monitor.run_full_scan()
-        except Exception as e:
-            log.warning(f"CronScheduler | [监控扫描] 异常: {e}")
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, engine.monitor.run_full_scan)
+        await self._runner["monitor_full_scan"].run_async(_do)
 
     async def sync_index_daily(self):
         """盘后自动更新指数日线数据（Tushare优先，与个股数据源一致）"""
@@ -349,36 +367,39 @@ class DataPipelineScheduler:
     async def sync_concepts_daily(self):
         """每日概念数据同步"""
         log.info("CronScheduler | [概念同步] 开始同步 Tushare 概念数据...")
-        try:
+        # 候选④:try/except 委托 TaskRunner,带前置日志 + 实际同步 + 完成日志
+        async def _do():
             from app.hot_sector.concept_sync import concept_syncer
             loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(None, concept_syncer.sync_all)
             log.info(f"CronScheduler | [概念同步] 完成: {result.get('total_concepts', 0)} 概念, "
                      f"{result.get('total_mappings', 0)} 映射")
-        except Exception as e:
-            log.error(f"CronScheduler | [概念同步] 失败: {e}", exc_info=True)
+            return result
+        await self._runner["sync_concepts_daily"].run_async(_do)
 
     async def recalc_hotness(self):
         """盘中板块热度定时重算"""
         log.info("CronScheduler | [热度计算] 开始刷新板块热度...")
-        try:
+        # 候选④:委托 TaskRunner
+        async def _do():
             from app.hot_sector.engine import hot_sector_engine
             loop = asyncio.get_running_loop()
             summary = await loop.run_in_executor(None, hot_sector_engine.refresh_hotness)
             log.info(f"CronScheduler | [热度计算] 完成: {summary}")
-        except Exception as e:
-            log.error(f"CronScheduler | [热度计算] 失败: {e}", exc_info=True)
+            return summary
+        await self._runner["recalc_hotness"].run_async(_do)
 
     async def finalize_hotness(self):
         """收盘终版热度快照+清缓存"""
         log.info("CronScheduler | [热度终版] 开始执行收盘快照...")
-        try:
+        # 候选④:委托 TaskRunner
+        async def _do():
             from app.hot_sector.engine import hot_sector_engine
             loop = asyncio.get_running_loop()
             summary = await loop.run_in_executor(None, hot_sector_engine.refresh_hotness)
             log.info(f"CronScheduler | [热度终版] 完成: {summary}")
-        except Exception as e:
-            log.error(f"CronScheduler | [热度终版] 失败: {e}", exc_info=True)
+            return summary
+        await self._runner["finalize_hotness"].run_async(_do)
 
     async def run_sim_trader_daily(self):
         """每日 14:52 执行模拟盘尾盘交易"""
@@ -409,21 +430,30 @@ class DataPipelineScheduler:
                 log.info(f"CronScheduler | [模拟盘] {today} 非交易日，跳过")
                 return
 
-            bars = load_all_bars()
-            bars, snapshot = augment_bars_with_realtime(bars, today)
+            # load_all_bars / augment_bars_with_realtime 是同步重 IO，
+            # 放入线程池避免阻塞事件循环（卡死所有 API 请求）
+            loop = asyncio.get_running_loop()
+            bars = await loop.run_in_executor(None, load_all_bars)
+            bars, snapshot = await loop.run_in_executor(
+                None, augment_bars_with_realtime, bars, today
+            )
 
             # ── 选股：通过 TDX 桥接获取当前配置的公式信号 ──
             signals = []
             if engine.auto_scan:
                 try:
                     from app.tqsdk.bridge import TdxBridge, _get_formula_name
-                    formula_name = _get_formula_name()
-                    bridge = TdxBridge()
-                    sig_result = bridge.execute_screen(
-                        end_time=today.strftime('%Y%m%d'),
-                        lookback_days=500,
-                        formula_name=formula_name,
-                    )
+
+                    def _do_tdx_screen():
+                        formula_name = _get_formula_name()
+                        bridge = TdxBridge()
+                        return bridge.execute_screen(
+                            end_time=today.strftime('%Y%m%d'),
+                            lookback_days=500,
+                            formula_name=formula_name,
+                        ), formula_name
+
+                    sig_result, formula_name = await loop.run_in_executor(None, _do_tdx_screen)
                     if sig_result.get('status') == 'ok':
                         matched = sig_result.get('matched', [])
                         log.info(f'CronScheduler | [模拟盘] {formula_name}选股: {len(matched)}只')
@@ -450,7 +480,7 @@ class DataPipelineScheduler:
             # ── 卖出 ──
             sell_count = 0
             if engine.auto_sell:
-                engine.sell_phase(today, snapshot, trading_dates)
+                await loop.run_in_executor(None, engine.sell_phase, today, snapshot, trading_dates)
                 sell_count = len([t for t in engine._today_trades if t.exit_date == today])
             else:
                 sell_list = engine.check_stops(today, snapshot, trading_dates, readonly=True)
@@ -483,22 +513,8 @@ class DataPipelineScheduler:
                     'buy_count': len(signals),
                 })
 
-            # ── 实盘信号转发(v1.2.2 §5.3) ──
-            if signals:
-                try:
-                    from app.sim_trader.config import LIVE_SIGNAL_MODE
-                    if LIVE_SIGNAL_MODE == "sim_and_live":
-                        # 暂停检查(§2:暂停期间不转发)
-                        paused = engine.pause_until is not None and today <= engine.pause_until
-                        if not paused:
-                            self._forward_signals_to_live_trader(signals, today)
-                        else:
-                            log.info(f"CronScheduler | [信号转发] 模拟盘暂停中,跳过转发")
-                except Exception as e:
-                    log.error(f"CronScheduler | [信号转发] 异常: {e}", exc_info=True)
-
             # ── 净值快照：始终执行，保证曲线不断档 ──
-            engine.record(today, snapshot)
+            await loop.run_in_executor(None, engine.record, today, snapshot)
             eq = engine.total_equity(snapshot)
 
             sync_broadcast({
@@ -515,252 +531,9 @@ class DataPipelineScheduler:
             log.info(f"CronScheduler | [模拟盘] 完成: 卖出{sell_count}笔 买入{buy_count}笔 "
                      f"净值{eq:,.0f} 持仓{engine.position_count}")
 
-            # 15:00 后清理过期信号状态(§5.4 TTL)
-            self._cleanup_signal_state()
-
         except Exception as e:
             log.error(f"CronScheduler | [模拟盘] 执行失败: {e}", exc_info=True)
 
-    # ===== 信号转发(v1.2.2 §5.3 + §5.4 + §10.4 + §10.7) =====
-
-    _state_lock = __import__("threading").Lock()
-
-    def _forward_signals_to_live_trader(self, signals: list, today) -> None:
-        """转发买入信号到 Windows 实盘
-
-        流程:探活(1s) → 构造请求 → POST /live/buy-signal → 解析响应 → 更新状态机
-        总超时 ≤8s(探活1s + 请求7s),超过放弃+告警。
-        """
-        import requests
-        import json
-        import os
-        from datetime import datetime as dt
-        from app.utils.xtquant_compat import format_code
-
-        # 状态机文件路径(§10.4 合并)
-        state_dir = "data/live_trader"
-        os.makedirs(state_dir, exist_ok=True)
-        state_path = os.path.join(state_dir, "signal_state.json")
-
-        # Windows 端地址(默认 127.0.0.1 适用于本机部署; Docker 环境请设置 LIVE_TRADER_URL)
-        live_url = os.environ.get("LIVE_TRADER_URL", "http://127.0.0.1:8001")
-
-        # Token
-        from core.settings import settings
-        signal_token = settings.get("live_trader", "buy_signal_token", default="")
-
-        # 转发前时点检查(§10.8 + §4.7 对齐):≥14:59 才存 pending 不发
-        # (14:55-14:59 仍转发,让 Windows 端三档价格策略生效)
-        now_str = dt.now().strftime("%H:%M")
-        if now_str >= "14:59":
-            reason = f"今日信号已过期({now_str} ≥ 14:59),存入 pending 不转发"
-            log.warning(f"CronScheduler | [信号转发] {reason}")
-            self._update_signal_state(state_path, today, signals, "skipped", reason)
-            return
-
-        # 探活(1s 超时)
-        try:
-            resp = requests.get(f"{live_url}/live/health", timeout=1)
-            if resp.status_code != 200:
-                raise Exception(f"health 返回 {resp.status_code}")
-        except Exception as e:
-            reason = f"探活失败: {e}"
-            log.error(f"CronScheduler | [信号转发] {reason}")
-            self._update_signal_state(state_path, today, signals, "failed", reason)
-            return
-
-        # 构造请求(策略名从 settings 动态读取,Plan B)
-        from app.tqsdk.bridge import _get_formula_name
-        formula_name = _get_formula_name()
-        signal_items = []
-        for code, price in signals:
-            code_fmt = format_code(code) if '.' not in code else code
-            signal_items.append({
-                "code": code_fmt,
-                "price": float(price),
-                "ts": dt.now().strftime("%H:%M:%S"),
-            })
-
-        payload = {
-            "signals": signal_items,
-            "strategy": formula_name,
-            "source": "TDX",
-        }
-        headers = {
-            "Content-Type": "application/json",
-        }
-        if signal_token:
-            headers["Authorization"] = f"Bearer {signal_token}"
-
-        # 发送(7s 超时,含1次重试)
-        try:
-            resp = requests.post(
-                f"{live_url}/live/buy-signal",
-                json=payload,
-                headers=headers,
-                timeout=7,
-            )
-        except requests.exceptions.RequestException as e:
-            # 重试1次
-            log.warning(f"CronScheduler | [信号转发] 首次失败,重试: {e}")
-            try:
-                resp = requests.post(
-                    f"{live_url}/live/buy-signal",
-                    json=payload,
-                    headers=headers,
-                    timeout=3,
-                )
-            except requests.exceptions.RequestException as e2:
-                reason = f"重试也失败: {e2}"
-                log.error(f"CronScheduler | [信号转发] {reason}")
-                self._update_signal_state(state_path, today, signals, "failed", reason)
-                return
-
-        # 解析响应(漏洞C修复)
-        if resp.status_code == 401:
-            reason = "鉴权失败:token 不匹配"
-            log.error(f"CronScheduler | [信号转发] {reason}")
-            self._update_signal_state(state_path, today, signals, "failed", reason)
-            return
-
-        # 非 200 状态码(403/503/500 等)直接归类为服务端错误
-        if resp.status_code != 200:
-            try:
-                body = resp.text[:500]
-            except Exception:
-                body = ""
-            reason = f"live_trader 返回 HTTP {resp.status_code}: {body}"
-            log.error(f"CronScheduler | [信号转发] {reason}")
-            self._update_signal_state(state_path, today, signals, "failed", reason)
-            return
-
-        try:
-            result = resp.json()
-        except Exception:
-            reason = f"响应解析失败: status={resp.status_code}"
-            log.error(f"CronScheduler | [信号转发] {reason}")
-            self._update_signal_state(state_path, today, signals, "failed", reason)
-            return
-
-        # 更新状态机:根据 accepted/rejected 标记每个信号状态
-        accepted = result.get("accepted", [])
-        rejected = result.get("rejected", [])
-        details = result.get("details", [])
-
-        for sig_item, code_fmt in zip(signal_items, [s["code"] for s in signal_items]):
-            if code_fmt in accepted:
-                sig_item["_status"] = "acked"
-            elif code_fmt in rejected:
-                sig_item["_status"] = "rejected"
-                # 找到拒绝原因
-                for d in details:
-                    if d.get("code") == code_fmt:
-                        sig_item["_reject_reason"] = d.get("reason", "")
-                        break
-            else:
-                sig_item["_status"] = "unknown"
-
-        scan_status = "ok" if accepted else "all_rejected"
-        self._update_signal_state(state_path, today, signals, scan_status,
-                                  extra={"accepted": accepted, "rejected": rejected,
-                                         "details": details})
-
-        log.info(f"CronScheduler | [信号转发] 完成: accepted={accepted} rejected={rejected}")
-
-    def _update_signal_state(self, path: str, today, signals: list,
-                              scan_status: str, reason: str = "",
-                              extra: dict = None) -> None:
-        """更新信号状态机(原子写,§10.4 + §10.7)"""
-        import json
-        import os
-        from datetime import datetime as dt
-        from app.utils.xtquant_compat import format_code
-
-        today_key = str(today)
-        now_str = dt.now().strftime("%H:%M:%S")
-
-        # 读取现有状态
-        state = {}
-        try:
-            if os.path.exists(path):
-                with open(path, "r", encoding="utf-8") as f:
-                    state = json.load(f)
-        except (json.JSONDecodeError, Exception):
-            state = {}
-
-        # 构建当日状态
-        signal_entries = []
-        for item in signals:
-            if isinstance(item, tuple):
-                code, price = item
-                code_fmt = format_code(code) if '.' not in code else code
-                signal_entries.append({
-                    "code": code_fmt,
-                    "price": float(price),
-                    "ts": now_str,
-                    "status": scan_status,
-                    "result": {"reject_reason": reason} if reason else {},
-                })
-            elif isinstance(item, dict):
-                entry = {
-                    "code": item.get("code", ""),
-                    "price": item.get("price", 0),
-                    "ts": item.get("ts", now_str),
-                    "status": item.get("_status", scan_status),
-                    "result": {},
-                }
-                if item.get("_reject_reason"):
-                    entry["result"]["reject_reason"] = item["_reject_reason"]
-                signal_entries.append(entry)
-
-        day_state = {
-            "signals": signal_entries,
-            "last_heartbeat_at": now_str,
-            "scan_status": scan_status,
-        }
-        if reason:
-            day_state["last_error"] = reason
-        if extra:
-            day_state.update(extra)
-
-        state[today_key] = day_state
-
-        # 原子写(tmp + os.replace)
-        with self._state_lock:
-            tmp_path = path + ".tmp"
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(state, f, ensure_ascii=False, default=str, indent=2)
-            os.replace(tmp_path, path)
-
-    def _cleanup_signal_state(self) -> None:
-        """15:00 清理过期信号状态(§5.4 TTL:当日 15:00 后补发无意义)
-
-        保留当日数据(审计可查),删除 3 天前的记录。
-        """
-        import json, os
-        from datetime import date as date_type, timedelta
-
-        state_path = os.path.join("data", "live_trader", "signal_state.json")
-        if not os.path.exists(state_path):
-            return
-
-        try:
-            with open(state_path, "r", encoding="utf-8") as f:
-                state = json.load(f)
-
-            cutoff = str(date_type.today() - timedelta(days=3))
-            old_keys = [k for k in state if k < cutoff]
-            if old_keys:
-                for k in old_keys:
-                    del state[k]
-                with self._state_lock:
-                    tmp_path = state_path + ".tmp"
-                    with open(tmp_path, "w", encoding="utf-8") as f:
-                        json.dump(state, f, ensure_ascii=False, default=str, indent=2)
-                    os.replace(tmp_path, state_path)
-                log.info(f"CronScheduler | [信号状态] 清理 {len(old_keys)} 天过期记录")
-        except (json.JSONDecodeError, Exception) as e:
-            log.warning(f"CronScheduler | [信号状态] 清理失败: {e}")
 
 
 # 全局单例
@@ -792,3 +565,4 @@ if __name__ == "__main__":
         loop.run_forever()
     finally:
         log.info("TaskWorker | 已退出。")
+

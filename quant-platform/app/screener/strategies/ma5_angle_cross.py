@@ -12,12 +12,7 @@ def generate_signals(df: pd.DataFrame,
         return pd.DataFrame()
     df = df.copy()
 
-    # ── ST/退市/北交所过滤 ────────────────────────
-    if 'name' in df.columns:
-        df = df[~df['name'].str.contains('ST|退', na=False, case=False)]
-    if 'code' in df.columns:
-        df = df[~df['code'].astype(str).str.startswith('8')]
-
+    # 候选⑤:ST/退市/北交所过滤已移到 base.preprocess
     g = df.groupby('code', group_keys=False)
 
     # ── 均线 ──────────────────────────────────────
@@ -72,3 +67,10 @@ def generate_signals(df: pd.DataFrame,
     signals = signals[['code', 'date', 'close', 'buy_signal']].copy()
     signals['date'] = pd.to_datetime(signals['date']).dt.date
     return signals
+
+
+# 候选⑤:保留原行为 — 无涨停过滤 + 北交所只 '8' 起头(不是 base 默认的 '^[84]\\d{5}')
+PARAMS = {
+    "skip_limit_up": False,
+    "filter_bj_pattern": r"^8",
+}

@@ -199,5 +199,108 @@ def test_probe_no_trigger(worker):
     assert hit_var is None
 
 
+# === _to_tdx_codes 北交所兼容测试 (T-05) ===
+
+def test_to_tdx_codes_sh(worker):
+    """6开头 → .SH"""
+    assert worker._to_tdx_codes(["600000"])[0] == "600000.SH"
+
+
+def test_to_tdx_codes_sz(worker):
+    """0/3开头 → .SZ"""
+    assert worker._to_tdx_codes(["000001"])[0] == "000001.SZ"
+    assert worker._to_tdx_codes(["300001"])[0] == "300001.SZ"
+
+
+def test_to_tdx_codes_bj(worker):
+    """8/4开头 → .BJ (北交所，修复前会被错误标成.SZ)"""
+    assert worker._to_tdx_codes(["830789"])[0] == "830789.BJ"
+    assert worker._to_tdx_codes(["430047"])[0] == "430047.BJ"
+
+
+def test_to_tdx_codes_strips_suffix(worker):
+    """已带后缀的代码先去后缀再加正确后缀"""
+    assert worker._to_tdx_codes(["600000.SH"])[0] == "600000.SH"
+    assert worker._to_tdx_codes(["830789.BJ"])[0] == "830789.BJ"
+
+
+# === 真实 TDX 返回结构端到端测试 (T-12) ===
+# 基于 worker 实际输出的 JSON 结构构造 fixture，验证解析链路完整性
+
+def test_do_screen_parse_real_structure_zp(worker):
+    """真实结构：ZP变量，多日数据，只命中 end_time 当天"""
+    fake_result = {
+        "605289.SH": {
+            "ZP": [
+                {"Date": "20260620", "Value": "0"},
+                {"Date": "20260621", "Value": "0"},
+                {"Date": "20260622", "Value": "0"},
+                {"Date": "20260623", "Value": "1"},
+                {"Date": "20260624", "Value": "0"},
+                {"Date": "20260625", "Value": "0"},
+                {"Date": "20260626", "Value": "1"},
+            ]
+        },
+        "ErrorId": "0",
+    }
+    # 只返回 20260626 当天命中
+    matched = worker._do_screen_parse(fake_result, "20260626")
+    assert "605289.SH" in matched
+    # 20260623 不应命中（日期不匹配）
+    matched_23 = worker._do_screen_parse(fake_result, "20260623")
+    assert "605289.SH" in matched_23
+
+
+def test_do_range_check_signal_multi_var_picks_first_hit(worker):
+    """真实结构：多个变量名时，取首个有信号的变量"""
+    fake_result = {
+        "605289.SH": {
+            "ErrorId": "0",
+            "ZP": [{"Date": "20260101", "Value": "0"}],
+            "ZT": [
+                {"Date": "20260101", "Value": "0"},
+                {"Date": "20260102", "Value": "100"},
+            ],
+        }
+    }
+    has_signal, hit_var, dates, values = worker._do_range_check_signal(fake_result["605289.SH"], "605289.SH")
+    assert has_signal is True
+    assert hit_var == "ZT"  # ZP无信号，命中ZT
+    assert len(dates) == 2
+    assert values[1] == "100"
+
+
+def test_do_range_check_signal_negative_value_is_signal(worker):
+    """负数非零也算信号（兼容某些公式返回-1）"""
+    fake_result = {
+        "605289.SH": {
+            "ZP": [
+                {"Date": "20260101", "Value": "0"},
+                {"Date": "20260102", "Value": "-1"},
+            ]
+        }
+    }
+    has_signal, hit_var, dates, values = worker._do_range_check_signal(fake_result["605289.SH"], "605289.SH")
+    assert has_signal is True
+    assert values[1] == "-1"
+
+
+def test_do_screen_parse_skips_errorid_entry(worker):
+    """ErrorId 顶层字段不应被当成股票代码"""
+    fake_result = {
+        "ErrorId": "0",
+        "605289.SH": {"ZP": [{"Date": "20260627", "Value": "1"}]},
+    }
+    matched = worker._do_screen_parse(fake_result, "20260627")
+    assert "605289.SH" in matched
+    assert "ErrorId" not in matched
+
+
+def test_do_screen_parse_empty_result(worker):
+    """空结果不崩溃"""
+    assert worker._do_screen_parse({}, "20260627") == []
+    assert worker._do_screen_parse({"ErrorId": "0"}, "20260627") == []
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

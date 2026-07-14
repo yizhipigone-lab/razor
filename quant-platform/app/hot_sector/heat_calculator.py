@@ -151,6 +151,11 @@ class HeatCalculator:
 
         # 1. 计算所有概念热度
         concepts = db.get_distinct_concepts()
+        if not concepts:
+            log.warning(
+                "概念热度为 0：concept_stocks 表为空！"
+                "请检查 Tushare 概念同步是否成功（cron 09:00 或手动触发 /api/hot-sector/sync-concepts）"
+            )
         concept_results = []
         for i, concept in enumerate(concepts):
             heat = self.calc_concept_heat(concept, bars_dict)

@@ -8,15 +8,15 @@ services:
       - redis
     restart: always
 
-  # 直接用本地已有的镜像，不构建
-  trendradar:
-    image: p9-trendradar:latest
-    restart: always
+  # [2026-07-11 已停用] trendradar 源码目录已清理，本地镜像 p9-trendradar:latest 不存在
+  # trendradar:
+  #   image: p9-trendradar:latest
+  #   restart: always
 
-  # 直接用本地已有的镜像，不构建
-  trendradar-mcp:
-    image: p9-trendradar-mcp:latest
-    restart: always
+  # [2026-07-11 已停用] trendradar-mcp 同上
+  # trendradar-mcp:
+  #   image: p9-trendradar-mcp:latest
+  #   restart: always
 
   # 数据库工具，不动
   redis:

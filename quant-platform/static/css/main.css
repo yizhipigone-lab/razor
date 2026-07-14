@@ -46,6 +46,9 @@
   --line-hi: var(--border-hi);/* 强调分割 */
   /* ── 背景氛围：极轻琥珀光晕（不再是死黑） ── */
   --bg-glow: radial-gradient(1200px 560px at 72% -12%, rgba(240,180,41,0.07), transparent 60%);
+  /* ── 强调色透明派生（强调区背景/边框，统一替代散落 rgba(240,180,41,...)）── */
+  --accent-soft: rgba(240,180,41,0.10);
+  --accent-line: rgba(240,180,41,0.22);
   /* ── 字体：UI 用 Inter，数字用等宽 ── */
   --font-ui: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   --font-num: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
@@ -464,6 +467,23 @@ tr:hover td { background: var(--bg3); }
   /* — 复合 — */
   .nav-divider { border-left: 1px solid var(--border); margin-left: 5px; }
 
+/* ═══ 选股表单分组容器（替代内联 style 的折叠面板/限定区）═══ */
+.sc-group { margin: var(--gap) 0; border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px; background: var(--surface-1); }
+.sc-group--accent { background: var(--accent-soft); border-color: var(--accent-line); }
+.sc-group__head { cursor: pointer; font-weight: 600; display: flex; justify-content: space-between; align-items: center; color: var(--text); }
+.sc-group__title { display: flex; align-items: center; gap: 6px; color: var(--accent); font-weight: 600; margin-bottom: 10px; font-size: 13px; }
+.sc-group__title .sub { color: var(--text2); font-weight: 400; font-size: 11px; }
+.sc-group__hint { font-size: 11px; color: var(--text2); margin-top: 8px; display: flex; align-items: center; gap: 4px; }
+
+/* ═══ 选股表单重布局（卡片化分栏，替代单 card 堆叠）═══ */
+.sc-layout-2 { display: grid; grid-template-columns: 1fr; gap: var(--gap); }
+.sc-pool { background: var(--accent-soft); border-color: var(--accent-line); border-left: 3px solid var(--accent); }
+.sc-pool h3 { color: var(--accent); }
+.sc-actionbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--surface-1); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; margin-bottom: var(--gap); }
+.sc-actionbar .btn { padding: 8px 18px; font-size: 14px; }
+.sc-actionbar .progress-wrap { flex: 1; min-width: 200px; margin: 0; }
+@media (max-width: 1100px) { .sc-layout-2 { grid-template-columns: 1fr; } }
+
 /* ═══ 实盘交易界面 (.lt-*) ═══ */
 /* 状态徽章 pill */
 .lt-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 99px; font-size: 11px; font-weight: 500; background: var(--bg3); color: var(--text2); border: 1px solid var(--border); }
@@ -522,3 +542,27 @@ tr:hover td { background: var(--bg3); }
 .mt-2 { margin-top: 8px; }
 .flex-gap-c { display: flex; gap: 8px; align-items: center; }
 .lt-pre { max-height: 200px; overflow: auto; background: var(--bg); padding: 8px; border-radius: 4px; }
+
+/* ── 告警中心(v6.0) ─────────────────────────────────────────────── */
+#alerts-status-card.alerts-card--danger {
+  border: 2px solid var(--red);
+}
+.alerts-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.alerts-chips .chip {
+  cursor: pointer;
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  color: var(--text2);
+  background: transparent;
+}
+.alerts-chips .chip.active {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}

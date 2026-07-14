@@ -5,7 +5,9 @@
 """
 import asyncio
 import os
+import signal
 import socket
+import threading
 import time
 from contextlib import asynccontextmanager
 from datetime import date, datetime
@@ -58,6 +60,7 @@ async def lifespan(app: FastAPI):
     from .config import load_config
     from .store import LiveTraderStore
     from .notify import Notifier
+    from .notifications import NotificationStore
     from .kill_switch import KillSwitch
     from .clearance_lock import ClearanceLock
     from .qmt_wrapper import QmtWrapper
@@ -99,7 +102,13 @@ async def lifespan(app: FastAPI):
 
     # 初始化组件
     store = LiveTraderStore(config)
-    notifier = Notifier(config.wework_webhook, config.multi_channel_alert)
+    # 通知历史存储(独立 DuckDB, sync 写, Phase 1)
+    notif_store = NotificationStore(
+        os.path.join(os.path.dirname(config.db_path), "live_notifications.duckdb")
+    )
+    notifier = Notifier(config.wework_webhook, config.multi_channel_alert,
+                        feishu_webhook=config.feishu_webhook, channel=config.notify_channel,
+                        notif_store=notif_store)
     kill_switch = KillSwitch(config, store, notifier)
     clearance_lock = ClearanceLock(config)
     pnl_engine = PnlEngine(store)
@@ -107,9 +116,23 @@ async def lifespan(app: FastAPI):
 
     # 检查 kill switch 文件(上次崩溃可能留下)
     if kill_switch.is_active():
-        logger.warning("⚠ 启动时检测到 kill switch 已激活,需人工解除后才下单")
+        # 带上当初激活的真实信息(从残留文件加载), 否则笼统"检测到残留"让人不知为何被按下
+        _ks = kill_switch.status()
+        # 激活时间 ISO -> 友好格式, 解析失败回退原值
+        _at_raw = _ks.get('activated_at')
+        try:
+            from datetime import datetime as _dt
+            _at = _dt.fromisoformat(_at_raw).strftime('%Y-%m-%d %H:%M:%S') if _at_raw else '未知'
+        except Exception:
+            _at = _at_raw or '未知'
+        _detail = (f"当初原因:{_ks.get('reason') or '未知'} | "
+                   f"当初来源:{_ks.get('source') or '未知'} | "
+                   f"激活于:{_at}")
+        logger.warning(f"⚠ 启动检测到残留 kill switch ({_detail}), 需人工解除后才下单")
         if notifier:
-            notifier.kill_switch_activated("启动时检测到残留 kill switch", "startup_check")
+            # scheduler 激活的(非交易日)会在交易日 09:20 自动解除, 提示无需人工; 其他来源仍需人工
+            _hint = "交易日 09:20 自动解除, 无需人工" if _ks.get('source') == 'scheduler' else "需人工介入"
+            notifier.kill_switch_activated(f"启动检测到残留（{_detail}）", "startup_check", hint=_hint)
 
     qmt = QmtWrapper(config)
     callback = CallbackHandler(config, store, kill_switch, clearance_lock, pnl_engine, notifier, runtime_state)
@@ -186,15 +209,29 @@ async def lifespan(app: FastAPI):
             notifier.kill_switch_activated(f"QMT连接失败: {e}", "startup")
 
     _state.update({
-        "store": store, "notifier": notifier, "kill_switch": kill_switch,
+        "store": store, "notifier": notifier, "notif_store": notif_store,
+        "kill_switch": kill_switch,
         "clearance_lock": clearance_lock, "qmt": qmt, "callback": callback,
         "conn": conn, "risk_gate": risk_gate, "reconciler": reconciler,
         "exit_monitor": exit_monitor, "audit": audit, "pnl_engine": pnl_engine,
     })
 
+    # 候选③:OrderExecutor 深 module(3 路下单委托同一入口)
+    from .order_executor import OrderExecutor
+    executor = OrderExecutor(
+        config=config, runtime_state=runtime_state,
+        store=store, qmt=qmt, risk_gate=risk_gate,
+        clearance_lock=clearance_lock, kill_switch=kill_switch,
+        callback_handler=callback, audit=audit, notifier=notifier,
+    )
+    _state["executor"] = executor
+    # exit_monitor 也需要同实例(exit_monitor 内部 _execute_sell 要委托)
+    exit_monitor.order_executor = executor
+
     # 启动调度器(离场扫描 + 对账 + EOD 归档 + 非交易日检测)
     scheduler = LiveScheduler(
-        config, store, qmt, exit_monitor, reconciler, kill_switch, notifier, audit
+        config, store, qmt, exit_monitor, reconciler, kill_switch, notifier, audit,
+        runtime_state=runtime_state,
     )
     scheduler.start()
     _state["scheduler"] = scheduler
@@ -210,6 +247,9 @@ async def lifespan(app: FastAPI):
         qmt.stop()
         callback.stop()
         store.close()
+        _notif_store = _state.get("notif_store")
+        if _notif_store:
+            _notif_store.close()
         _kill_all_subprocesses()
         # 释放文件锁
         if "lock_fd" in _state:
@@ -426,9 +466,13 @@ async def asset():
     return qmt.query_asset()
 
 
+# 简称缓存: code -> name(xtdata.get_instrument_detail 返回,股票/ETF/指数全覆盖)
+# 只缓存非空结果,空结果不缓存(防 xtquant 抖动时永久踩死,下次轮询自动重试)
+_instrument_name_cache: dict = {}
+
 @app.get("/live/positions")
 async def positions():
-    """持仓查询(含 managed 标记 + today_buy_volume)"""
+    """持仓查询(含 managed 标记 + today_buy_volume + 简称)"""
     store = _state.get("store")
     if not store:
         raise HTTPException(503, "Store 未初始化")
@@ -446,6 +490,23 @@ async def positions():
         buy_map = {r[0]: int(r[1] or 0) for r in rows}
         for p in positions:
             p['today_buy_volume'] = buy_map.get(p.get('code'), 0)
+    # 补股票简称(stocks 基础表不含 ETF,改用 xtdata.get_instrument_detail 全覆盖)
+    qmt = _state.get("qmt")
+    for p in positions:
+        code = p.get('code', '')
+        if not code:
+            p['name'] = ''
+            continue
+        name = _instrument_name_cache.get(code)
+        if name is None and qmt:
+            try:
+                detail = qmt.get_instrument_detail(code) or {}
+                name = str(detail.get('InstrumentName') or '').strip()
+                if name:
+                    _instrument_name_cache[code] = name
+            except Exception:
+                name = ''
+        p['name'] = name or ''
     return positions
 
 
@@ -574,198 +635,122 @@ async def place_order(req: dict):
 
 
 def place_order_service(intent, source: str = "WEB", lock_wait_sec: int = 30) -> dict:
-    """下单核心逻辑(幂等→风控→清仓锁→下单→写DB)
+    """下单核心逻辑 — 委托给 OrderExecutor(候选③)。
 
-    供 /live/order 和 /live/buy-signal 共用。
+    供 /live/order(WEB)和 /live/buy-signal(TDX)共用。
 
     Args:
         intent: OrderIntent 下单意图
-        source: 下单来源 "WEB"/"TDX"/"SCHEDULER",决定价格策略和 terminal 标记
+        source: 下单来源 "WEB"/"TDX",决定价格策略和 terminal 标记
         lock_wait_sec: 清仓锁等待秒数(手动30s, buy-signal 5s)
 
     Returns:
         dict 下单结果 {"ok", "order_id", "client_order_id", "status", "reason", ...}
     """
-    from .schemas import OrderIntent
-    from app.utils.xtquant_compat import (
-        ORDER_TYPE_BUY, ORDER_TYPE_SELL, format_code,
-    )
+    from .order_executor import OrderExecutor
+    executor: OrderExecutor = _state.get("executor")
+    if not executor:
+        return {"ok": False, "status": "error", "reason": "OrderExecutor 未初始化"}
+    return executor.execute(intent, source=source, lock_wait_sec=lock_wait_sec)
+
+
+async def process_buy_signals(
+    signals: list,
+    strategy: str = "QUANTQQ",
+    source: str = "TDX",
+    lock_wait_sec: int = 5,
+):
+    """买入信号批量处理(共享内核)—— HTTP 端点 + scheduler 自给自足同源。
+
+    保留全部副作用(与原 buy_signal 内核一致):
+      - kill_switch 检查(active → 全拒,不抛)
+      - 时点 cutoff 检查(now >= buy_signal_cutoff → 全拒,不抛)
+      - 信号去重(format_code 统一 key,同 code 只留首条)
+      - 并发信号量 3 + _process_one_signal(幂等键 + 尾盘定价,零改动复用)
+      - 心跳 store.record_heartbeat("docker_tdx", count, scan_status)  ★必须保留★
+        (否则 14:55 看门狗 scheduler.py:_check_signal_heartbeat 误报"无信号心跳")
+    删除 HTTP 专属(鉴权 / BuySignalRequest 校验 / buy_enabled 检查 / HTTPException)。
+    绝不 raise,失败转 rejected。
+
+    Args:
+        signals: List[SignalItem](pydantic 模型,有 .code/.price)
+        strategy: 策略名(透传 _process_one_signal)
+        source: "TDX" 决定 _process_one_signal 的 terminal/定价
+        lock_wait_sec: 清仓锁等待(默认 5s,与原 buy_signal 一致)
+    Returns:
+        BuySignalResult(accepted/rejected/details)
+    """
+    from .schemas import BuySignalResult, SignalResult
+    from app.utils.xtquant_compat import format_code
 
     config = _state.get("config")
-    runtime_state = _state.get("runtime_state")  # v2(A6): 运行时 mode
     store = _state.get("store")
-    qmt = _state.get("qmt")
-    risk_gate = _state.get("risk_gate")
-    clearance_lock = _state.get("clearance_lock")
+
+    # 1. kill_switch(必须保留;HTTP 路径已在端点 raise 403,这里是 scheduler 路径 + 防御)
     kill_switch = _state.get("kill_switch")
-    callback_handler = _state.get("callback")
-    audit_logger = _state.get("audit")
-    notifier = _state.get("notifier")
-
-    if not config:
-        return {"ok": False, "status": "error", "reason": "未初始化"}
-
-    # kill switch(二次检查,buy-signal 端点可能已在入口检查过)
     if kill_switch and kill_switch.is_active():
-        return {"ok": False, "status": "forbidden", "reason": "kill switch 已激活"}
+        return BuySignalResult(
+            accepted=[], rejected=[s.code for s in signals],
+            details=[SignalResult(code=s.code, ok=False, status="forbidden",
+                                  reason="kill switch 已激活") for s in signals])
 
-    # C3 幂等检查
-    if store and intent.client_order_id:
-        existing = store.get_order_by_client_id(intent.client_order_id)
-        if existing:
-            return {
-                "ok": True, "order_id": existing.get("order_id"),
-                "client_order_id": intent.client_order_id,
-                "status": "duplicate", "reason": "幂等命中,不重复下单",
-            }
+    # 2. 时点 cutoff(必须保留,防尾盘过点乱下单)
+    now_str = datetime.now().strftime("%H:%M")
+    cutoff = config.buy_signal_cutoff if config else "14:59"
+    if now_str >= cutoff:
+        reason = f"尾盘已过({now_str} >= {cutoff}),信号丢弃"
+        logger.warning(reason)
+        return BuySignalResult(
+            accepted=[], rejected=[s.code for s in signals],
+            details=[SignalResult(code=s.code, ok=False, status="timeout", reason=reason)
+                     for s in signals])
 
-    # 格式化代码
-    code_fmt = format_code(intent.code) if '.' not in intent.code else intent.code
+    # 3. 信号去重(format_code 统一 key,同 code 只留首条)
+    seen_codes = set()
+    unique_signals = []
+    for s in signals:
+        code_key = format_code(s.code) if '.' not in s.code else s.code
+        if code_key not in seen_codes:
+            seen_codes.add(code_key)
+            unique_signals.append(s)
+    if len(unique_signals) < len(signals):
+        logger.info(f"信号去重: {len(signals)} -> {len(unique_signals)}")
 
-    # source=TDX 时,用 QMT 实时价覆盖信号源传的价格
-    actual_price = intent.price
-    if source == "TDX" and qmt and qmt.connected:
-        try:
-            quotes = qmt.get_realtime_quotes([code_fmt])
-            qmt_price = quotes.get(code_fmt, {}).get("lastPrice", 0)
-            if qmt_price and qmt_price > 0:
-                actual_price = float(qmt_price)
-                logger.info(f"TDX 信号价格覆盖: {intent.price} → QMT实时价 {actual_price}")
-        except Exception as e:
-            logger.warning(f"TDX 价格覆盖失败,用原始价格: {e}")
+    # 4. 并发处理(信号量3)+ _process_one_signal(零改动复用:幂等键+尾盘定价+下单)
+    semaphore = asyncio.Semaphore(3)
+    tasks = [_process_one_signal(s, semaphore, lock_wait_sec=lock_wait_sec,
+                                 strategy_name=strategy) for s in unique_signals]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    # 拉行情+持仓+资产(给 RiskGate 用)
-    asset = None
-    positions = None
-    quote = None
-    if qmt and qmt.connected:
-        try:
-            asset = qmt.query_asset()
-        except Exception:
-            pass
-        try:
-            positions = store.get_positions(managed_only=True) if store else []
-        except Exception:
-            pass
-        try:
-            quotes = qmt.get_realtime_quotes([code_fmt])
-            quote = quotes.get(code_fmt) if quotes else None
-        except Exception:
-            pass
-
-    # RiskGate 闸门(含闸门10)
-    if risk_gate:
-        passed, gates, reason = risk_gate.check(intent, asset, positions, quote)
-        if not passed:
-            if audit_logger:
-                audit_logger.gate_reject(code_fmt, intent.direction, reason)
-            return {
-                "ok": False, "client_order_id": intent.client_order_id,
-                "code": code_fmt, "status": "risk_rejected", "reason": reason,
-                "gates": gates,
-            }
-        if audit_logger:
-            audit_logger.gate_pass(code_fmt, intent.direction,
-                                   str([g for g in gates if g.get("passed")]))
-
-    # ClearanceLock(支持 lock_wait_sec 参数)
-    lock_acquired = False
-    if clearance_lock:
-        lock_acquired = clearance_lock.acquire_with_wait(
-            code_fmt, timeout_sec=lock_wait_sec
-        )
-        if not lock_acquired:
-            reason_msg = f"{code_fmt} 清仓锁冲突,等待{lock_wait_sec}s未获取"
-            if source == "TDX":
-                # buy-signal 批量模式:跳过+告警,不阻塞其他信号
-                logger.warning(f"信号跳过: {reason_msg}")
-                if notifier:
-                    try:
-                        notifier.send(f"⚠ 信号跳过: {reason_msg}")
-                    except Exception:
-                        pass
-                return {
-                    "ok": False, "client_order_id": intent.client_order_id,
-                    "code": code_fmt, "status": "locked", "reason": reason_msg,
-                }
-            return {
-                "ok": False, "client_order_id": intent.client_order_id,
-                "code": code_fmt, "status": "locked", "reason": reason_msg,
-            }
-
-    try:
-        # 下单(不等 callback,只等 seq 返回 — 漏洞D修复)
-        if runtime_state and runtime_state.is_dry_run():
-            if not callback_handler:
-                return {"ok": False, "status": "error", "reason": "callback_handler 未初始化"}
-            order_id = callback_handler.mock_order_async_response(
-                intent.client_order_id, code_fmt, intent.direction,
-                intent.volume, actual_price, intent.price_type,
-                intent.strategy_name, intent.reason,
-            )
+    # 5. 汇总
+    accepted, rejected, details = [], [], []
+    for i, r in enumerate(results):
+        if isinstance(r, Exception):
+            code = unique_signals[i].code
+            rejected.append(code)
+            details.append(SignalResult(code=code, ok=False, status="error", reason=str(r)))
         else:
-            if not qmt or not qmt.connected:
-                return {"ok": False, "status": "error", "reason": "QMT 未连接"}
-            order_type = ORDER_TYPE_BUY if intent.direction == "buy" else ORDER_TYPE_SELL
-            seq = qmt.order_stock_async(
-                code_fmt, order_type, intent.volume,
-                intent.price_type, actual_price,
-                intent.strategy_name, intent.reason,
-            )
-            order_id = seq  # 实际 order_id 由 callback 回报
+            code = r.get("code", unique_signals[i].code)
+            if r.get("ok"):
+                accepted.append(code)
+            else:
+                rejected.append(code)
+            details.append(SignalResult(
+                code=code, ok=r.get("ok", False), status=r.get("status", ""),
+                reason=r.get("reason", ""), order_id=r.get("order_id"),
+            ))
 
-            # C1:买入成功后冻在途预扣
-            if intent.direction == "buy" and seq > 0 and risk_gate:
-                risk_gate.freeze_pending_buy(code_fmt, intent.volume)
+    # 6. 心跳(必须保留,否则 14:55 看门狗误报)
+    if store:
+        try:
+            scan_status = "ok" if len(accepted) > 0 else (
+                "no_signal" if len(unique_signals) == 0 else "all_rejected")
+            store.record_heartbeat("docker_tdx", len(unique_signals), scan_status)
+        except Exception as e:
+            logger.warning(f"心跳记录失败: {e}")
 
-        # 写入 live_orders
-        if store:
-            from datetime import datetime as dt
-            now = dt.now()
-            terminal = "TDX" if source == "TDX" else intent.terminal
-            store.sync_terminal_write("order", {
-                "order_id": order_id or 0,
-                "client_order_id": intent.client_order_id,
-                "code": code_fmt,
-                "direction": intent.direction,
-                "volume": intent.volume,
-                "price": actual_price,
-                "price_type": intent.price_type,
-                "status": 50,  # 已报
-                "status_msg": "已提交",
-                "seq": order_id or 0,
-                "mode": runtime_state.mode if runtime_state else config.mode,
-                "strategy_name": intent.strategy_name,
-                "order_remark": intent.reason,
-                "terminal": terminal,
-                "created_at": now,
-                "updated_at": now,
-            })
-
-        if audit_logger:
-            audit_logger.order_placed(code_fmt, order_id,
-                                       runtime_state.mode if runtime_state else config.mode, {
-                "direction": intent.direction, "volume": intent.volume,
-                "price": actual_price, "price_type": intent.price_type,
-                "source": source,
-            })
-
-        logger.info(f"下单成功 {code_fmt} {intent.direction} {intent.volume}@{actual_price}"
-                    f" oid={order_id} mode={runtime_state.mode if runtime_state else config.mode} source={source}")
-
-        return {
-            "ok": True, "order_id": order_id,
-            "client_order_id": intent.client_order_id,
-            "code": code_fmt,
-            "status": "submitted", "reason": "",
-            "mode": runtime_state.mode if runtime_state else config.mode, "source": source,
-        }
-
-    except Exception as e:
-        logger.error(f"下单异常 {intent.code}: {e}")
-        if clearance_lock and lock_acquired:
-            clearance_lock.release(code_fmt)
-        return {"ok": False, "status": "error", "reason": f"下单异常: {e}"}
+    logger.info(f"buy-signal 处理完成: accepted={accepted} rejected={rejected}")
+    return BuySignalResult(accepted=accepted, rejected=rejected, details=details)
 
 
 # ===== 信号桥接端点(v1.2.2 §5.2) =====
@@ -801,8 +786,15 @@ async def _process_one_signal(signal, semaphore, lock_wait_sec: int = 5, strateg
             f"buy_signal|{code_fmt}|{date.today()}".encode()
         ).hexdigest()[:16]
 
-        # 计算买入量:buy_position_size 是软上限,闸门1是硬上限(漏洞F)
-        position_size = config.buy_position_size if config else 10000.0
+        # 计算买入量:本金×比例,卡在全局 [min_buy_amount, max_buy_amount] 之间
+        # buy_position_ratio 走 runtime_state 可变 holder(热更新);min/max 走 settings trading 段(全局,与模拟盘同源)
+        rs = _state.get("runtime_state")
+        ratio = rs.buy_position_ratio if rs else (config.buy_position_ratio if config else 0.05)
+        capital = config.live_capital if config else 0
+        from core.settings import settings as _settings
+        min_amt = float(_settings.get("trading", "min_buy_amount", default=5000))
+        max_amt = float(_settings.get("trading", "max_buy_amount", default=60000))
+        position_size = max(min_amt, min(ratio * capital, max_amt))
         price = signal.price  # service 内 TDX source 会用 QMT 实时价覆盖
 
         # 先用传入价格估算 volume(如果是0则用默认估算价)
@@ -865,11 +857,9 @@ async def buy_signal(req: dict, authorization: str = ""):
 
     v1.2.2:鉴权 + 去重 + 时点策略 + 并发信号量3 + 心跳
     """
-    from .schemas import BuySignalRequest, BuySignalResult, SignalResult
+    from .schemas import BuySignalRequest
 
     config = _state.get("config")
-    store = _state.get("store")
-    notifier = _state.get("notifier")
 
     if not config:
         raise HTTPException(503, "未初始化")
@@ -895,72 +885,12 @@ async def buy_signal(req: dict, authorization: str = ""):
     if kill_switch and kill_switch.is_active():
         raise HTTPException(403, "kill switch 已激活,禁止接收信号")
 
-    # 时点检查(漏洞E修复 + §10.8):超过 buy_signal_cutoff 拒收
-    now_str = datetime.now().strftime("%H:%M")
-    cutoff = config.buy_signal_cutoff
-    if now_str >= cutoff:
-        reason = f"尾盘已过({now_str} ≥ {cutoff}),信号丢弃"
-        logger.warning(reason)
-        return BuySignalResult(
-            accepted=[], rejected=[s.code for s in signal_req.signals],
-            details=[SignalResult(code=s.code, ok=False, status="timeout", reason=reason)
-                     for s in signal_req.signals]
-        )
-
-    # 漏洞A修复:信号去重(同 code 只保留第一条,用 format_code 统一 key)
-    from app.utils.xtquant_compat import format_code
-    seen_codes = set()
-    unique_signals = []
-    for s in signal_req.signals:
-        code_key = format_code(s.code) if '.' not in s.code else s.code
-        if code_key not in seen_codes:
-            seen_codes.add(code_key)
-            unique_signals.append(s)
-
-    if len(unique_signals) < len(signal_req.signals):
-        logger.info(f"信号去重: {len(signal_req.signals)} → {len(unique_signals)}")
-
-    # 并发处理:信号量3(§10.1)
-    # 策略名从请求 payload 传入(由 cron_jobs/sim_trader 动态填充)
+    # 业务内核委托共享函数(去重/cutoff/并发/心跳/幂等 全在 process_buy_signals)
+    # HTTP 端点与 scheduler 自给自足同源,保证副作用一致(尤其心跳,防 14:55 看门狗误报)
     _strategy = getattr(signal_req, 'strategy', 'QUANTQQ') or 'QUANTQQ'
-    semaphore = asyncio.Semaphore(3)
-    tasks = [_process_one_signal(s, semaphore, lock_wait_sec=5, strategy_name=_strategy) for s in unique_signals]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    # 汇总结果
-    accepted = []
-    rejected = []
-    details = []
-    for i, r in enumerate(results):
-        if isinstance(r, Exception):
-            code = unique_signals[i].code
-            rejected.append(code)
-            details.append(SignalResult(code=code, ok=False, status="error", reason=str(r)))
-        else:
-            code = r.get("code", unique_signals[i].code)
-            if r.get("ok"):
-                accepted.append(code)
-            else:
-                rejected.append(code)
-            details.append(SignalResult(
-                code=code,
-                ok=r.get("ok", False),
-                status=r.get("status", ""),
-                reason=r.get("reason", ""),
-                order_id=r.get("order_id"),
-            ))
-
-    # 心跳记录
-    if store:
-        try:
-            scan_status = "ok" if len(accepted) > 0 else ("no_signal" if len(unique_signals) == 0 else "all_rejected")
-            store.record_heartbeat("docker_tdx", len(unique_signals), scan_status)
-        except Exception as e:
-            logger.warning(f"心跳记录失败: {e}")
-
-    logger.info(f"buy-signal 处理完成: accepted={accepted} rejected={rejected}")
-
-    return BuySignalResult(accepted=accepted, rejected=rejected, details=details)
+    return await process_buy_signals(
+        signal_req.signals, strategy=_strategy, source=signal_req.source,
+    )
 
 
 @app.post("/live/cancel-by-source")
@@ -1035,6 +965,90 @@ async def health():
     return {"status": "ok", "ts": datetime.now().isoformat()}
 
 
+# ===== 通知历史 API(v6.0 Phase 1 + Phase 3) =====
+
+@app.get("/live/notifications")
+async def get_notifications(level: str = "", limit: int = 50):
+    """拉取通知历史
+
+    Args:
+        level: 可选过滤 INFO / WARN / CRITICAL
+        limit: 最大返回条数(默认 50，上限 200)
+    """
+    store = _state.get("notif_store")
+    if not store:
+        raise HTTPException(503, "通知存储未初始化")
+    lv = level if level in ("INFO", "WARN", "CRITICAL") else None
+    return store.recent(limit=min(limit, 200), level=lv)
+
+
+@app.get("/live/notifications/summary")
+async def get_notifications_summary():
+    """今日通知统计(各 level 计数)"""
+    store = _state.get("notif_store")
+    if not store:
+        raise HTTPException(503, "通知存储未初始化")
+    from datetime import date as _date
+    today_start = f"{_date.today().isoformat()}T00:00:00"
+    return store.count_by_level(since_iso=today_start)
+
+
+_last_test_notify = {"ts": 0.0, "_lock": threading.Lock()}
+
+
+@app.post("/live/notifications/test")
+async def test_notification(request: Request, body: dict | None = None):
+    """手动触发测试通知(仅本地,60 秒冷却)"""
+    if not _is_local(request):
+        raise HTTPException(403, "仅允许本地调用")
+    import time
+    now = time.time()
+    with _last_test_notify["_lock"]:
+        if now - _last_test_notify["ts"] < 60:
+            return {"sent": False, "msg": "请 60 秒后再试"}
+        _last_test_notify["ts"] = now
+    notifier = _state.get("notifier")
+    if not notifier:
+        raise HTTPException(503, "Notifier 未初始化")
+    level = (body or {}).get("level", "INFO")
+    if level not in ("INFO", "WARN", "CRITICAL"):
+        level = "INFO"
+    msg = f"测试通知({level}) @ {datetime.now().strftime('%H:%M:%S')}"
+    notifier.send(msg)
+    return {"sent": True, "msg": msg}
+
+
+@app.post("/shutdown")
+async def shutdown_service(request: Request):
+    """优雅关闭服务(仅 localhost)。
+
+    替代 stop.bat 的 taskkill /F(后者绕过 atexit、DuckDB 不 close)。
+    Windows 下 SIGINT 不能可靠触发 uvicorn lifespan shutdown(实测日志无"已关闭"),
+    故在此显式 store.close() 触发 live_trader.duckdb 的 WAL checkpoint, 不依赖 lifespan。
+    """
+    if not _is_local(request):
+        raise HTTPException(403, "仅允许本地调用")
+    logger.info("/shutdown 收到请求, 准备优雅关闭 (显式 store.close + SIGINT)...")
+
+    # 显式关 store: 停 flusher + 最后 flush + close 连接(= checkpoint WAL)
+    store = _state.get("store")
+    if store:
+        try:
+            store.close()
+        except Exception as e:
+            logger.warning(f"/shutdown store.close 异常: {e}")
+
+    def _trigger_exit():
+        time.sleep(0.5)
+        try:
+            os.kill(os.getpid(), signal.SIGINT)
+        except Exception as e:
+            logger.warning(f"/shutdown SIGINT 触发失败: {e}")
+
+    threading.Thread(target=_trigger_exit, daemon=True).start()
+    return {"status": "shutting down"}
+
+
 @app.get("/live/config/scan-interval")
 async def get_scan_interval():
     """获取当前离场扫描间隔(秒)"""
@@ -1045,8 +1059,10 @@ async def get_scan_interval():
 
 
 @app.put("/live/config/scan-interval")
-async def set_scan_interval(body: dict):
-    """设置离场扫描间隔(秒)。保存后立即生效,不阻塞。范围:10~300"""
+async def set_scan_interval(request: Request, body: dict):
+    """设置离场扫描间隔(秒,仅本地)。保存后立即生效,不阻塞。范围:10~300"""
+    if not _is_local(request):
+        raise HTTPException(403, "仅允许本地调用")
     scheduler = _state.get("scheduler")
     if not scheduler:
         raise HTTPException(503, "调度服务未启动")
@@ -1065,6 +1081,75 @@ async def set_scan_interval(body: dict):
     from core.settings import settings
     settings.set("live_trader", "exit_scan_interval_sec", seconds, save=True)
     return {"interval_sec": scheduler.get_scan_interval(), "saved": True}
+
+
+@app.get("/live/config/auto-buy-time")
+async def get_auto_buy_time():
+    """获取自动选股触发时点(HH:MM)"""
+    scheduler = _state.get("scheduler")
+    if not scheduler:
+        raise HTTPException(503, "调度服务未启动")
+    return {"auto_buy_time": scheduler.get_auto_buy_time()}
+
+
+@app.put("/live/config/auto-buy-time")
+async def set_auto_buy_time(request: Request, body: dict):
+    """设置自动选股触发时点(仅本地)。格式 HH:MM，保存后当日已触发则次日生效。"""
+    if not _is_local(request):
+        raise HTTPException(403, "仅允许本地调用")
+    scheduler = _state.get("scheduler")
+    if not scheduler:
+        raise HTTPException(503, "调度服务未启动")
+    t = body.get("auto_buy_time")
+    if not t:
+        raise HTTPException(400, "缺少 auto_buy_time 参数")
+    try:
+        scheduler.set_auto_buy_time(t)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    from core.settings import settings
+    settings.set("live_trader", "auto_buy_time", t, save=True)
+    audit = _state.get("audit")
+    if audit:
+        audit.log("auto_buy_time_changed", snapshot={"auto_buy_time": t})
+    logger.info(f"auto_buy_time 设置: {t}")
+    return {"auto_buy_time": scheduler.get_auto_buy_time(), "saved": True}
+
+
+@app.get("/live/config/buy-ratio")
+async def get_buy_ratio():
+    """获取单只占本金比例(实盘下单 = clamp(本金×比例, 全局min, 全局max))"""
+    rs = _state.get("runtime_state")
+    if not rs:
+        raise HTTPException(503, "未初始化")
+    return {"buy_position_ratio": rs.buy_position_ratio}
+
+
+@app.put("/live/config/buy-ratio")
+async def set_buy_ratio(request: Request, body: dict):
+    """设置单只占本金比例(仅本地)。内存立即生效 + 持久化到 live_trader.buy_position_ratio 顶层。范围:(0,1]"""
+    if not _is_local(request):
+        raise HTTPException(403, "仅允许本地调用")
+    rs = _state.get("runtime_state")
+    if not rs:
+        raise HTTPException(503, "未初始化")
+    ratio = body.get("buy_position_ratio")
+    if ratio is None:
+        raise HTTPException(400, "缺少 buy_position_ratio 参数")
+    try:
+        ratio = float(ratio)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "buy_position_ratio 必须为数字")
+    if not (0 < ratio <= 1):
+        raise HTTPException(400, "buy_position_ratio 范围:(0,1]")
+    old = rs.set_buy_position_ratio(ratio)                                  # 内存立即生效
+    from core.settings import settings
+    settings.set("live_trader", "buy_position_ratio", ratio, save=True)     # 落盘顶层(不进 runtime 段)
+    audit = _state.get("audit")
+    if audit:
+        audit.log("buy_ratio_changed", snapshot={"old": old, "new": ratio})
+    logger.info(f"buy_position_ratio: {old} -> {ratio}")
+    return {"buy_position_ratio": rs.buy_position_ratio, "saved": True}
 
 
 # ===== 运行时开关/模式切换(v2 §3.3/§3.4)=====
@@ -1095,11 +1180,12 @@ async def set_switches(request: Request, body: dict):
         raise HTTPException(503, "未初始化")
     buy = body.get("buy_enabled")
     sell = body.get("sell_enabled")
-    old = rs.set_switches(buy_enabled=buy, sell_enabled=sell)
+    auto_buy = body.get("auto_buy_enabled")
+    old = rs.set_switches(buy_enabled=buy, sell_enabled=sell, auto_buy_enabled=auto_buy)
     audit = _state.get("audit")
     if audit:
-        audit.log("switch_changed", snapshot={"old": old, "new": {"buy_enabled": buy, "sell_enabled": sell}})
-    logger.info(f"开关切换: {old} -> buy={buy} sell={sell}")
+        audit.log("switch_changed", snapshot={"old": old, "new": {"buy_enabled": buy, "sell_enabled": sell, "auto_buy_enabled": auto_buy}})
+    logger.info(f"开关切换: {old} -> buy={buy} sell={sell} auto_buy={auto_buy}")
     return rs.get_state()
 
 

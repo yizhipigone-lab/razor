@@ -87,6 +87,21 @@ export class MarketUpdater {
     window._lastQuotes = data;
     const now = Date.now();
 
+    // 检测空数据：行情源可能全部断开
+    if (!data || Object.keys(data).length === 0) {
+      console.warn('⚠️ 行情数据为空，行情源可能断开');
+      this._emptyCount = (this._emptyCount || 0) + 1;
+      if (this._emptyCount === 3) {
+        createNotification('warning', '📡 行情源连接失败，正在尝试重连...');
+      }
+      // 5秒后重新订阅（最多重试3轮，避免无限循环）
+      if (this._emptyCount <= 9) {
+        setTimeout(() => this.resubscribe(), 5000);
+      }
+      return;
+    }
+    this._emptyCount = 0;
+
     // 节流处理
     if (now - this.lastUpdateTime < this.updateThrottleInterval) {
       for (const [k, v] of Object.entries(data)) {

@@ -27,7 +27,6 @@ uvicorn>=0.20.0
 jinja2>=3.0.0
 python-multipart>=0.0.6
 websockets>=12.0
-python-socketio>=5.11.2
 aiohttp>=3.9.0
 
 # --- 任务调度 ---
@@ -59,3 +58,6 @@ langchain-openai
 # [已移除] PySide6     - Qt GUI，Docker 无法运行
 # [已移除] pyqtgraph   - Qt 图表，Docker 无法运行
 # [已移除] ta-lib-easy - 非标准包，TA-Lib 已在 Dockerfile 中单独处理
+# API 速率限制（报告生成等写接口）
+slowapi==0.1.10
+portalocker

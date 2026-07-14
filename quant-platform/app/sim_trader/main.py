@@ -16,7 +16,7 @@ from app.sim_trader.data_loader import (
     is_bull_market, get_daily_snapshot
 )
 from app.sim_trader.engine import SimTraderEngine
-from app.sim_trader.reporter import final_report
+from app.sim_trader.sim_trader_report import final_report
 from app.sim_trader.store import SimTraderStore
 
 

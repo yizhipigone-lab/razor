@@ -1,6 +1,8 @@
+import ast
 import importlib
 import importlib.util
 import inspect
+import re
 import sys
 from pathlib import Path
 from core.logger import get_logger
@@ -9,6 +11,25 @@ from database.duckdb_manager import db
 log = get_logger("StrategyFactory")
 
 STRATEGY_DIR = Path(__file__).parent.parent / "screener" / "strategies"
+
+# 策略名称安全字符：字母、数字、下划线、中文
+_NAME_RE = re.compile(r'^[\w一-鿿]+$')
+# 受保护文件，禁止物理删除
+_PROTECTED_FILES = {"__init__.py", "base.py"}
+
+
+def _validate_strategy_name(name: str) -> str:
+    """校验策略名称安全性，防止路径遍历。返回校验后的 name。"""
+    if not name or len(name) > 100:
+        raise ValueError(f"策略名称长度须在1-100之间: {name!r}")
+    if not _NAME_RE.match(name):
+        raise ValueError(f"策略名称包含非法字符(只允许字母/数字/下划线/中文): {name!r}")
+    # 解析后确认未逃逸 STRATEGY_DIR
+    target = (STRATEGY_DIR / f"{name}.py").resolve()
+    if not str(target).startswith(str(STRATEGY_DIR.resolve())):
+        raise ValueError(f"策略名称导致路径逃逸: {name!r}")
+    return name
+
 
 class StrategyFactory:
     """
@@ -19,11 +40,11 @@ class StrategyFactory:
         """扫描本地目录并将策略信息同步到数据库"""
         log.info("同步本地策略目录...")
         py_files = list(STRATEGY_DIR.glob("*.py"))
-        
+
         for p in py_files:
-            if p.name in ("__init__.py", "base.py"): 
+            if p.name in ("__init__.py", "base.py"):
                 continue
-                
+
             strategy_name = p.stem
             try:
                 # 动态加载并提取 Docstring
@@ -42,33 +63,57 @@ class StrategyFactory:
                 log.error(f"解析策略 {strategy_name} 失败: {e}")
 
     def extract_docstring(self, file_path: Path) -> str:
-        """动态加载模块并寻找 BaseStrategy 子类"""
-        module_name = f"app.screener.strategies.{file_path.stem}"
-        if module_name in sys.modules:
-            importlib.reload(sys.modules[module_name])
-            
-        spec = importlib.util.spec_from_file_location(module_name, file_path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        
-        # 寻找继承自 BaseStrategy 的类
-        from app.screener.strategies.base import BaseStrategy
-        for _, obj in inspect.getmembers(module):
-            if inspect.isclass(obj) and issubclass(obj, BaseStrategy) and obj is not BaseStrategy:
-                return obj.__doc__.strip() if obj.__doc__ else "已成功识别策略类（暂无描述）"
+        """仅通过 AST 提取 docstring，不执行策略代码（避免代码执行风险）。
+
+        优先返回 BaseStrategy 子类的 docstring；找不到则返回模块 docstring。
+        """
+        try:
+            source = file_path.read_text(encoding="utf-8")
+            tree = ast.parse(source)
+        except Exception as e:
+            log.warning(f"AST 解析失败 {file_path.name}: {e}")
+            return "解析失败（语法错误）"
+
+        # 先找模块级 docstring
+        module_doc = ast.get_docstring(tree)
+
+        # 找 BaseStrategy 子类的 docstring
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                # 检查基类名是否含 BaseStrategy
+                base_names = []
+                for b in node.bases:
+                    if isinstance(b, ast.Name):
+                        base_names.append(b.id)
+                    elif isinstance(b, ast.Attribute):
+                        base_names.append(b.attr)
+                if "BaseStrategy" in base_names:
+                    doc = ast.get_docstring(node)
+                    if doc:
+                        return doc.strip()
+                    return "已成功识别策略类（暂无描述）"
+        if module_doc:
+            return module_doc.strip()
         return "未发现有效策略类，请确保类继承了 BaseStrategy"
 
     def save_and_reload(self, name: str, code_content: str):
         """物理保存并刷新数据库"""
+        name = _validate_strategy_name(name)  # 防路径遍历
+        # 安全校验：保存前先过 AST 沙箱
+        from app.utils.ast_sandbox import validate_strategy_code
+        ok, msg = validate_strategy_code(code_content)
+        if not ok:
+            return {"status": "error", "message": f"安全校验未通过: {msg}"}
+
         file_path = STRATEGY_DIR / f"{name}.py"
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(code_content)
-        
+
         # 重新同步元数据
         desc = self.extract_docstring(file_path)
         db.upsert_strategy(
-            name=name, 
-            description=desc, 
+            name=name,
+            description=desc,
             code_path=str(file_path.relative_to(Path(__file__).parent.parent.parent)),
             code_content=code_content # 确保保存时也回填内容
         )
@@ -76,25 +121,35 @@ class StrategyFactory:
 
     def delete_local_strategy(self, name: str):
         """物理删除策略文件并清理数据库"""
+        name = _validate_strategy_name(name)  # 防路径遍历
+        if f"{name}.py" in _PROTECTED_FILES:
+            raise ValueError(f"受保护文件禁止删除: {name}.py")
         file_path = STRATEGY_DIR / f"{name}.py"
         if file_path.exists():
             file_path.unlink()
             log.info(f"物理删除策略文件: {file_path}")
-        
+
     def test_run(self, code_content: str, test_df=None):
-        """在零风险环境下测试策略代码是否可跑通（V4.0 全兼容识别版）"""
+        """在受限环境下测试策略代码是否可跑通（V4.0 全兼容识别版）"""
         import pandas as pd
         import numpy as np
-        
+
+        # 安全校验：exec 前先过 AST 沙箱（C-01 修复）
+        from app.utils.ast_sandbox import validate_strategy_code
+        ok, msg = validate_strategy_code(code_content)
+        if not ok:
+            return {"status": "error", "message": f"安全校验未通过: {msg}"}
+
         if test_df is None:
-            # 制造全兼容 Mock 数据
+            # 制造全兼容 Mock 数据（固定种子，保证可重现 — M-12 修复）
+            rng = np.random.RandomState(42)
             test_df = pd.DataFrame({
-                "close": np.random.randn(300).cumsum() + 10,
-                "open": np.random.randn(300).cumsum() + 10,
-                "high": np.random.randn(300).cumsum() + 11,
-                "low": np.random.randn(300).cumsum() + 9,
-                "volume": np.random.randint(100, 1000, size=300),
-                "vol": np.random.randint(100, 1000, size=300)
+                "close": rng.randn(300).cumsum() + 10,
+                "open": rng.randn(300).cumsum() + 10,
+                "high": rng.randn(300).cumsum() + 11,
+                "low": rng.randn(300).cumsum() + 9,
+                "volume": rng.randint(100, 1000, size=300),
+                "vol": rng.randint(100, 1000, size=300)
             })
             # 复制大写列名，防止大小写敏感策略报错
             test_df["Close"] = test_df["close"]
@@ -102,13 +157,23 @@ class StrategyFactory:
             test_df["High"] = test_df["high"]
             test_df["Low"] = test_df["low"]
             test_df["Volume"] = test_df["volume"]
-            
+
             test_df["date"] = pd.date_range("2024-01-01", periods=300)
-            test_df["code"] = "000001.SH" 
-            print(f"DEBUG: [test_run] Mock Data Ready, Bars: {len(test_df)}")
+            test_df["code"] = "000001.SH"
+            log.debug(f"[test_run] Mock Data Ready, Bars: {len(test_df)}")
 
         try:
-            local_vars = {"pd": pd, "np": np}
+            # 限制 __builtins__，降低 exec 风险（C-01 纵深防御）
+            safe_builtins = {
+                name: getattr(__builtins__, name, None) if hasattr(__builtins__, name)
+                else __builtins__.get(name) if isinstance(__builtins__, dict)
+                else None
+                for name in ("abs", "min", "max", "sum", "len", "range", "enumerate",
+                             "zip", "round", "int", "float", "str", "bool", "list",
+                             "dict", "set", "tuple", "sorted", "reversed", "map",
+                             "filter", "isinstance", "print")
+            }
+            local_vars = {"pd": pd, "np": np, "__builtins__": safe_builtins}
             exec(code_content, local_vars)
             
             result_df = pd.DataFrame()

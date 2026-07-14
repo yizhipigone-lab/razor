@@ -166,12 +166,19 @@ def sync_qmt_intraday(freq="5m", days=30, batch_size=60, start_date=None, end_da
                         old_df = pd.read_parquet(save_path)
                         if freq == "daily":
                             # 将 old_df 的 date 统一转义为 date obj 以免混合
-                            old_df[time_col] = pd.to_datetime(old_df[time_col]).dt.date
-                        df = pd.concat([old_df, df]).drop_duplicates(subset=[time_col])
+                            old_df[time_col] = pd.to_datetime(old_df[time_col], errors='coerce').dt.date
+                        else:
+                            # 分时：旧 parquet 的 datetime 可能是字符串，统一转 Timestamp
+                            # 否则 concat 后列里混 str+Timestamp，sort_values 会抛
+                            # "'<' not supported between instances of 'Timestamp' and 'str'"
+                            old_df[time_col] = pd.to_datetime(old_df[time_col], errors='coerce')
+                        df = pd.concat([old_df, df], ignore_index=True).drop_duplicates(subset=[time_col])
                     except Exception as merge_err:
                         log.warning(f"⚠️ {code_only} 合并旧数据失败，将覆写: {merge_err}")
 
-                df.sort_values(time_col).to_parquet(save_path, compression='snappy')
+                # 排序前兜底：丢弃因 coerce 产生的 NaT，避免类型回退成 object 触发比较异常
+                df = df.dropna(subset=[time_col]).sort_values(time_col).reset_index(drop=True)
+                df.to_parquet(save_path, compression='snappy')
                 written += 1
 
             # 每批次汇报写入情况，空批次也要报出来而不是静默

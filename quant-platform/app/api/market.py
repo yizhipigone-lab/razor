@@ -79,36 +79,51 @@ async def api_stock_search(q: str = ""):
 
     return results[:25]
 
-@router.get("/api/stocks")
-async def get_stocks(exchange: str = None, sector: str = None):
-    stocks = db.get_all_stocks()
-    if exchange:
-        stocks = stocks[stocks["exchange"] == exchange]
-    if sector:
-        stocks = stocks[stocks["sector"].str.contains(sector, na=False)]
-    return stocks.to_dict(orient="records")
-
 
 @router.get("/api/meta/stocks/search")
 async def search_stocks(query: str = ""):
+    """标的检索（支持代码前缀 / 名称包含 / 拼音首字母 / 别名 / 行业）。
+    复用 /api/stock/search 的强版匹配逻辑（含拼音+别名），并保留原 sector
+    兜底匹配，避免行业词（如"银行"）搜不到的回归。返回结构与字段约定不变：
+    {status, data:[{code,name,sector}]}，code 为 6 位裸代码。
+    """
     if not query:
         return {"status": "ok", "data": []}
-    wildcard = f"%{query}%"
-    sql = "SELECT code, name, sector FROM stocks WHERE code LIKE ? OR name LIKE ? OR sector LIKE ? LIMIT 50"
-    df = db.conn.execute(sql, [wildcard, wildcard, wildcard]).df()
-    return {"status": "ok", "data": df.fillna("").to_dict(orient="records")}
+    strong = await api_stock_search(query)  # 裸数组，code 形如 "300687.SZ"
+    seen = set()
+    data = []
+    for r in strong:
+        code6 = str(r.get("code", "")).split(".")[0]
+        if code6 in seen:
+            continue
+        seen.add(code6)
+        data.append({"code": code6, "name": r.get("name", ""), "sector": r.get("sector", "")})
 
-@router.get("/api/meta/stocks/name/{code}")
-async def get_stock_name(code: str):
-    """根据股票代码获取股票简称"""
-    code = code.replace(".SH", "").replace(".SZ", "").strip()
-    try:
-        result = db.conn.execute("SELECT name FROM stocks WHERE code = ?", [code]).fetchone()
-        name = result[0] if result else code
-        return {"status": "ok", "name": name}
-    except Exception as e:
-        log.error(f"Failed to get stock name for code {code}: {e}")
-        return {"status": "error", "name": code}
+    # sector 兜底：强版不搜行业词，这里补上原 LIKE 匹配，保证"银行"等行业词仍可用
+    if len(data) < 50:
+        try:
+            wildcard = f"%{query}%"
+            limit = 50 - len(data)
+            if seen:
+                placeholders = ",".join(["?"] * len(seen))
+                sql = (
+                    f"SELECT code, name, sector FROM stocks "
+                    f"WHERE sector LIKE ? AND code NOT IN ({placeholders}) LIMIT ?"
+                )
+                df = db.conn.execute(sql, [wildcard, *seen, limit]).df()
+            else:
+                sql = "SELECT code, name, sector FROM stocks WHERE sector LIKE ? LIMIT ?"
+                df = db.conn.execute(sql, [wildcard, limit]).df()
+            for _, row in df.iterrows():
+                data.append({
+                    "code": str(row["code"]).split(".")[0],
+                    "name": str(row["name"]),
+                    "sector": str(row["sector"] or ""),
+                })
+        except Exception as e:
+            log.warning(f"search_stocks sector fallback error: {e}")
+
+    return {"status": "ok", "data": data[:50]}
 
 @router.get("/api/meta/sectors/hierarchy")
 async def get_sector_hierarchy():
@@ -177,21 +192,6 @@ async def get_sector_hierarchy():
 
 
 
-@router.post("/api/internal/quotes_push")
-async def quotes_push_webhook(req: QuotesPushReq):
-    """接收外部 QMT Proxy 的极速推送行情数据包并群发"""
-    try:
-        await manager.broadcast({
-            "type": req.type,
-            "data": req.data
-        })
-        # 转发给事件引擎，驱动 IntradayMonitor 实时风控
-        event_engine.emit(EVENT_TICK, req.data)
-        return {"status": "ok"}
-    except Exception as e:
-        log.error(f"处理行情极速推送错误: {e}")
-        return {"status": "error"}
-
 # ─── 实时行情 API ─────────────────────────────────────────────
 @router.get("/api/market/quotes")
 async def get_quotes(codes: str = ""):
@@ -199,6 +199,10 @@ async def get_quotes(codes: str = ""):
     try:
         code_list = [c for c in codes.split(",") if c.strip()]
         df = get_realtime_quote(code_list) if code_list else pd.DataFrame()
+        if not df.empty:
+            # 委托 quote_source 后,DF 含 source='missing' 的缺价行(price=NaN)。
+            # 本接口对前端只返回有价的行(保留旧行为,避免前端渲染 NaN)。
+            df = df[df["price"] > 0]
         indices = get_index_realtime()
         return {
             "quotes": df.to_dict(orient="records") if not df.empty else [],

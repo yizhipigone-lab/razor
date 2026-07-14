@@ -52,6 +52,50 @@ def can_sell_today(entry_date: date, today: date) -> bool:
     return today > entry_date  # 严格大于
 
 
+def get_limit_down_pct(code: str) -> float:
+    """根据股票代码前缀返回跌停幅度(与涨停对称)
+
+    v5.4 新增:实盘 C2 跌停不可成交性判断需要。
+    主板 ±10%,创业板/科创 ±20%,北证 ±30%。
+    """
+    return get_limit_up_pct(code)
+
+
+def is_limit_down(code: str, last_price: float, prev_close: float, tolerance: float = 0.005) -> bool:
+    """判断当前是否已跌停(C2:跌停时市价清仓无意义,跳过)
+
+    Args:
+        code: 股票代码
+        last_price: 最新价
+        prev_close: 昨收价
+        tolerance: 容差(0.5%,向下接近跌停价视为已跌停)
+
+    Returns:
+        True=已跌停,应跳过强平
+    """
+    if prev_close <= 0 or last_price <= 0:
+        return False
+    down_pct = get_limit_down_pct(code)
+    limit_down_price = prev_close * (1 - down_pct)
+    # 最新价 <= 跌停价*(1+容差) 视为已跌停
+    return last_price <= limit_down_price * (1 + tolerance)
+
+
+def is_suspended_or_locked(code: str, last_price: float, prev_close: float,
+                            today_open: float, today_high: float, today_low: float) -> bool:
+    """判断停牌/一字板(C2:这类票市价清仓无意义)
+
+    一字板:开盘=最高=最低=昨收±涨停/跌停(全天锁死)
+    停牌:无最新价或开高低全为0
+    """
+    if last_price <= 0 or today_open <= 0:
+        return True  # 停牌
+    # 一字板:振幅几乎为0且接近涨跌停
+    if today_high > 0 and today_low > 0 and today_high == today_low:
+        return True
+    return False
+
+
 # 默认成本配置（settings 缺失时的 fallback）
 DEFAULT_COST_CFG = {
     'commission_rate': 0.00025,   # 万2.5
@@ -102,3 +146,34 @@ def calc_sell_revenue(price: float, shares: int, cfg: dict = None) -> dict:
         'slippage': slippage,
         'total': gross - commission - stamp_tax - slippage,
     }
+
+
+def realized_pnl(entry_price: float, exit_price: float, shares: int,
+                 cfg: dict = None, cost_basis: float = None) -> dict:
+    """CARD1 新增:单笔已实现净盈亏(扣佣金+印花+滑点,买入含费)。
+
+    复用 calc_buy_cost / calc_sell_revenue(单一真相源),保证全引擎口径一致。
+
+    Args:
+        entry_price: 买入价;仅当 cost_basis is None 时用于重算含费买入成本。
+        exit_price:  卖出价。
+        shares:      本次卖出股数(部分卖出传本次股数,不是 pos.shares)。
+        cfg:         成本配置(缺省读 get_cost_cfg)。
+        cost_basis:  预计算的"本批 shares"含费买入成本基。
+                     部分卖出场景必传 = pos.cost * (sell_shares / pos.shares),
+                     避免每笔部分卖出重复触发 min_commission(5元最低)
+                     破坏 Σprofit 资金守恒。
+                     传 None 则按 entry_price 全额重算 calc_buy_cost(适合一次性全平)。
+
+    Returns:
+        {'cost_basis','sell_revenue','pnl','ret_pct'}
+        pnl     = sell_revenue - cost_basis                 (元,金额)
+        ret_pct = (pnl / cost_basis * 100) if cb>0 else 0   (百分比, 与 Trade.ret 同口径)
+    """
+    if shares <= 0:
+        return {'cost_basis': 0.0, 'sell_revenue': 0.0, 'pnl': 0.0, 'ret_pct': 0.0}
+    cb = cost_basis if cost_basis is not None else calc_buy_cost(entry_price, shares, cfg)['total']
+    sell = calc_sell_revenue(exit_price, shares, cfg)['total']
+    pnl = sell - cb
+    ret_pct = (pnl / cb * 100) if cb > 0 else 0.0
+    return {'cost_basis': cb, 'sell_revenue': sell, 'pnl': pnl, 'ret_pct': ret_pct}

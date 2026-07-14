@@ -1,0 +1,229 @@
+审计报告：业务开展及成果报告_实盘配置优化与注释纠正_20260702
+审计日期: 2026-07-02
+审计对象: docs/业务开展及成果报告_实盘配置优化与注释纠正_20260702.md 及其对应的 5 个 commit
+审计方法: 代码级逐行验证 + 数据流追踪 + 边界条件测试 + 文档一致性校验
+审计范围: 功能设计、数据流、逻辑漏洞、安全边界、报告真实性
+
+一、总体评定
+维度	评级	说明
+报告真实性	⭐⭐⭐ (3/5)	声称的改动基本存在，但重大功能性变更被隐藏在"注释纠正"commit中
+数据流设计	⭐⭐⭐⭐ (4/5)	策略名链路完整，_get_formula_name 三级防护可靠，但有理论竞态
+代码质量	⭐⭐⭐⭐ (4/5)	整体工整，向后兼容设计到位，但 redis_manager 语义不一致
+安全与边界	⭐⭐⭐⭐ (4/5)	三重校验到位，无硬编码密钥，但端口硬切换无回退
+测试覆盖	⭐ (1/5)	零新增测试——两个新功能、三个 BUG 修复均无测试
+文档准确性	⭐⭐⭐ (3/5)	README 存在事实性错误，报告遗漏关键变更
+总评: 🟡 有条件通过 — 存在 2 项 CRITICAL 级别问题必须整改
+
+二、🔴 CRITICAL 级别发现
+CRITICAL-1: c17a0ed commit 存在大量未报告的功能性变更
+报告声称该 commit 是"23处注释纠正 + 4处默认值修复"（+298/-88行），但实际包含至少 5 项重大功能性变更，完全未在报告中提及：
+
+#	变更	报告声称	实际是什么	风险
+1	_cleanup_dryrun_residue 完整重写	未提及	安全模型反转：旧逻辑"删除持仓+通知"，新逻辑"永不删除+激活 Kill Switch 停止交易"。QMT 3次重试取并集逻辑。这是对 2026-07-02 生产事故的直接修复	🔴 HIGH
+2	redis_manager.py 新增 180+ 行内存缓存降级层	"删除 Docker 模式描述"	全新架构层：MemoryCacheFallback 类（线程安全TTL缓存）、6个缓存降级方法、Redis连接生命周期重写（60s冷却、socket探活）、lazy init 替换 eager init	🔴 HIGH
+3	data_sync.py 端口 8081→8001 + 路径 /api/→/live/	F3: 默认值修复	API 端点迁移：从废弃的 qmt_proxy:8081 迁移到 live_trader:8001，硬切换无回退	🟠 MEDIUM-HIGH
+4	qmt_index_sync.py 健康检查 /balance→/health	F4: 默认值修复	端点行为变更：余额查询接口改为健康检查接口	🟠 MEDIUM
+5	qmt.py 新增 LIVE_TRADER_HOST 环境变量	F2: 默认值修复	新增配置入口：引入新的主键环境变量，优先于 QMT_PROXY_HOST	🟡 LOW-MEDIUM
+影响分析：
+
+第1项（dryrun残留清理重写）是安全关键代码——直接影响实盘启动时是否自动删除持仓。旧逻辑在 QMT 查询抖动时会误删真实持仓；新逻辑保守但会触发 Kill Switch 导致交易完全停止。这个变更必须在报告中明确说明。
+第2项（Redis降级层）改变了整个应用的数据缓存行为——所有依赖 Redis 的功能（热度计算、信号发布等）在 Redis 不可用时会静默降级到进程内缓存，多 worker 间数据将不一致。
+第3-5项是基础设施迁移，硬切换意味着任何还依赖旧端口/路径的环境会立刻出错。
+审计结论: 报告对该 commit 的描述严重失实。23处注释纠正+4处默认值修复只占该 commit 变更的约 30%。剩余 70% 是未披露的功能性变更，包含两项安全关键改动。
+
+CRITICAL-2: 零测试覆盖
+变更类型	应有测试	实际测试
+策略名全链路动态化 (A1-A8)	单元测试：_get_formula_name() 三级优先级 + 各调用点参数传递 + 边界值	❌ 无
+离场扫描间隔可配置	单元测试：set_scan_interval() 边界值 + API 端点测试 + 持久化验证	❌ 无
+F1 信号转发连接修复	集成测试：URL 默认值验证 + 环境变量覆盖	❌ 无
+asyncio import 修复	语法验证（已有 py_compile）	⚠️ 仅语法级
+_cleanup_dryrun_residue 重写	单元测试：dry-run 模式清理 + live 模式不删除 + QMT 重试逻辑	❌ 无
+Redis 降级层	单元测试：MemoryCacheFallback TTL + 并发安全 + 方法一致性	❌ 无
+审计结论: 6 项功能/BUG 修复 + 2 项架构变更，零新增测试。报告第五章"质量保障"声称"语法验证"和"向后兼容验证"，但这些都是静态检查，不是运行时测试。按照行业 80% 覆盖率标准，当前覆盖率接近 0%。
+
+三、🟠 HIGH 级别发现
+HIGH-1: Redis 降级层存在语义不一致
+问题	说明
+hset TTL 硬编码 86400s	Redis 原生 HSET 无 TTL，内存缓存的 hset 固定 24h 过期。语义不对等
+keys() 用 fnmatch 匹配	Redis KEYS 支持 */?/[]，fnmatch 支持范围更广（如 [a-z]），结果可能不一致
+redis_client 从 eager 改 lazy	旧代码 redis_client = redis_manager.get_client()（import 时连接），新代码 redis_client = None。任何直接 from core.redis_manager import redis_client 后使用它的代码会 AttributeError
+publish_signal 静默吞错	旧代码 log.error，新代码 log.debug——信号发布失败从"告警"降为"静默"，可能导致行情推送丢失不被察觉
+HIGH-2: 实盘残留清理的安全模型反转未被充分评估
+旧逻辑：发现残留 → 删除 → 通知
+新逻辑：发现残留 → 不删除 → 激活 Kill Switch → 停止所有交易
+
+这是正确的安全方向（防止误删真实持仓），但极端场景下：如果 QMT 连续 3 次返回空结果（xtquant 缓存问题），而本地有真实持仓，Kill Switch 会自动激活，交易系统完全停止。需要有：
+
+Kill Switch 自动恢复机制（如 5 分钟后自动解除）
+或者 QMT 查询重试次数可配置
+或者管理员通知+手动恢复的工作流
+HIGH-3: 端口/路径迁移是硬切换
+data_sync.py 和 qmt_index_sync.py 从 qmt_proxy:8081/api/ 迁移到 live_trader:8001/live/，没有回退路径。如果 8001 端口上的 /live/sync/intra 或 /live/sync/index_daily 端点不存在或行为不同，同步请求会静默失败。
+
+四、🟡 MEDIUM 级别发现
+MEDIUM-1: README 事实性错误
+问题	详情
+风控闸门数量	README 写"9闸门风控"，前端 UI 显示 9 个闸门，但 main.py:585 注释引用"闸门10"——可能是第 10 个闸门已加入但文档未更新
+回测引擎数量	功能表列出 3 种回测引擎（日线/TDX/严格），但注意事项写"4种回测引擎不可比"——表格和说明自相矛盾
+前端 QUANTQQ 硬编码	README 未提及前端 7 处 QUANTQQ 硬编码（2 处 index.html + 5 处 main.js），报告 YAGNI 清单说"6处"（实际 7 处，少计了 1 处）
+MEDIUM-2: 策略名链路理论竞态
+报告第六章已识别但未充分缓解：同一个 cron tick 内，_get_formula_name() 在选股入口（约 line 419）和信号转发（约 line 573）各调用一次。如果用户在这两次调用之间改了公式名，选股用新名、信号转发用更新的名，导致同一批次选股和信号转发的策略名不一致。
+
+实际风险极低（两次调用间隔 <1s），但作为审计项应记录。
+
+MEDIUM-3: 扫描间隔边界值在计划书和实现间不一致
+来源	下界	上界
+实施计划书 v2.1	1s	300s
+实施计划书 v3.0	10s	300s
+报告正文	10s	300s
+实际代码 main.py	10s	300s
+实际代码 scheduler.py	10s	300s
+前端 HTML	10s	300s
+代码实现一致（均为 10-300s），但计划书 v2.1 遗留了 1s 的痕迹。不是当前 BUG，但文档链路不一致。
+
+MEDIUM-4: _get_formula_name() 的双重调用模式
+cron_jobs.py 中 _get_formula_name() 被调用了两次：选股入口一次（line ~419），信号转发一次（line ~573）。这两次调用各自独立 import + 调用，而非共享结果。
+
+更好的做法：在 cron tick 开始时读取一次 formula_name，后续复用同一变量，避免理论竞态。
+
+五、🟢 LOW 级别发现
+LOW-1: docker_tdx source key 保留正确
+验证确认 docker_tdx 作为数据库 source key 在以下位置全部保留：
+
+main.py:883: store.record_heartbeat("docker_tdx", ...)
+scheduler.py:215: store.get_latest_heartbeat("docker_tdx")
+store.py:603: def get_latest_heartbeat(self, source="docker_tdx")
+且 store.py:602 已添加说明注释 "历史命名,实际为 API 服务端信号"。✅ 正确。
+
+LOW-2: Commit 统计数据验证
+报告声称	实际验证	是否一致
+5 次 commit	5 次 (3e68cff/c17a0ed/06a1b0e/a20fdd4/45257ed)	✅
+24 文件	28 次改动 - 4 次重叠 = 24 唯一文件	✅
++1,249 行	2+298+160+580+209 = 1,249	✅
+-232 行	2+88+87+55+0 = 232	✅
+LOW-3: F1 修复验证通过
+3e68cff 将 LIVE_TRADER_URL 默认值从 host.docker.internal:8001 改为 127.0.0.1:8001，同时添加了注释说明 Docker 环境需设环境变量覆盖。✅ 正确。
+
+LOW-4: import asyncio 修复验证通过
+main.py:6 确认 import asyncio 已提升到模块顶部，buy_signal() 函数内不再有局部 import asyncio。✅ 正确。
+
+六、数据流验证
+策略名全链路 — ✅ 基本正确
+
+前端输入 "MY_STRATEGY"
+  ↓ PUT /api/settings/tqsdk-formula
+settings.set("tqsdk", "formula_name", "MY_STRATEGY", save=True)
+  ↓ settings.reload()
+app_setting.json 持久化
+  ↓
+┌─ cron_jobs.py 选股 ──→ _get_formula_name() → "MY_STRATEGY" ✅
+│   ↓ bridge.execute_screen(formula_name="MY_STRATEGY") ✅
+│
+├─ cron_jobs.py 信号转发 ──→ _get_formula_name() → "MY_STRATEGY" ✅
+│   ↓ payload = {"strategy": "MY_STRATEGY"} ✅
+│
+├─ sim_trader.py 选股 ──→ _get_formula_name() → "MY_STRATEGY" ✅
+│   ↓ bridge.execute_screen(formula_name="MY_STRATEGY") ✅
+│
+└─ live_trader/main.py ──→ getattr(signal_req, 'strategy', 'QUANTQQ') ✅
+    ↓ _process_one_signal(strategy_name="MY_STRATEGY") ✅
+    ↓ OrderIntent(strategy_name="MY_STRATEGY") ✅
+关键函数 _get_formula_name() 验证:
+
+override → settings → "QUANTQQ" 三级优先级 ✅
+不可能返回 None 或空字符串 ✅
+异常兜底返回 "QUANTQQ" ✅
+扫描间隔数据流 — ✅ 正确
+
+前端输入 30s
+  ↓ PUT /live/config/scan-interval
+后端 scheduler.set_scan_interval(30) → 内存立即生效 ✅
+  ↓ settings.set("live_trader", "exit_scan_interval_sec", 30, save=True)
+  ↓ app_setting.json 持久化 ✅
+下次启动
+  ↓ load_config() 从 app_setting.json 读取 ✅
+  ↓ LiveScheduler.__init__ 从 config 读取 ✅
+三重校验验证:
+
+前端 HTML min=10 max=300 ✅
+后端 PUT seconds < 10 or seconds > 300 → 400 ✅
+scheduler max(10.0, min(300.0, ...)) 兜底 ✅
+七、安全审计
+审计项	结果	说明
+硬编码密钥	✅ 无	扫描间隔端点无密钥
+SQL 注入	✅ 无	所有 SQL 使用参数化查询
+XSS	✅ 无	扫描间隔值通过 textContent 设置，非 innerHTML
+输入校验	✅ 到位	三重校验（前端+后端+scheduler）
+权限控制	⚠️ 弱	PUT /live/config/scan-interval 无鉴权，同局域网任何人可修改扫描间隔
+环境变量泄漏	✅ 无	LIVE_TRADER_HOST 等环境变量不暴露给前端
+⚠ 权限控制问题: 扫描间隔修改端点无需认证。虽然 8001 端口仅本机访问，但如果未来开放远程访问，任何人都能修改扫描间隔。建议增加 Token 验证（与 buy-signal 端点一致）。
+
+八、报告逐项核实
+报告声称	实际情况	评判
+"5次commit，24文件，+1,249/-232行"	数字全部准确	✅ 通过
+"QUANTQQ 40+处"	后端 Python 约 39 处 + 前端 7 处 ≈ 46 处	✅ 基本准确
+"A类功能性硬编码8处"	A1-A6 + A7(不改) + A8 = 8 处	✅ 通过
+"23处注释纠正"	live_trader/内 9 处 + 外 10 处 + scheduler 2处 + store 1处 + schemas 2处 ≈ 24 处	✅ 基本准确
+"F1 信号转发连接失败"	cron_jobs.py LIVE_TRADER_URL 默认值确实无法解析	✅ 真实 BUG
+"asyncio 模块缺失"	原代码确实缺少模块级 import	✅ 真实 BUG
+"c17a0ed 为注释纠正+默认值修复"	严重失实 — 包含 2 项安全关键重写 + 3 项基础设施迁移	🔴 不通过
+"三轮审计价值"	三轮审计确实发现了真实问题（A7/A8遗漏、方案A不可编译、import asyncio缺失）	✅ 通过
+"向后兼容验证"	默认值兼容设计正确	✅ 通过
+"语法验证 py_compile"	无测试输出证据，但改动语法正确	⚠️ 无法完全验证
+"新增文件: live_trader.js"	确认存在，200行，功能完整	✅ 通过
+九、审计结论与整改要求
+必须整改（CRITICAL）
+#	整改项	期限	具体要求
+1	报告补录 c17a0ed 隐藏变更	立即	在报告中新增章节，详细说明 _cleanup_dryrun_residue 重写、Redis 降级层、端口迁移 5 项功能性变更，包括变更原因、影响范围、风险评估
+2	补充测试	1 周	至少覆盖：_get_formula_name() 三级优先级、set_scan_interval() 边界值、_cleanup_dryrun_residue dry-run/live 模式、MemoryCacheFallback TTL 行为
+建议整改（HIGH）
+#	整改项	优先级	具体要求
+3	Kill Switch 自动恢复	中	评估是否需要定时自动解除机制，防止 QMT 抖动导致交易系统永久停止
+4	扫描间隔端点鉴权	中	为 PUT /live/config/scan-interval 增加 Token 验证
+5	Redis 降级层语义对齐	低	统一 hset TTL 行为；修复 redis_client = None 后可能的 AttributeError
+6	端口迁移回退路径	低	评估是否需要兼容旧端口 8081 的回退机制
+建议改进（MEDIUM）
+#	改进项	说明
+7	修正 README 风控闸门数量	确认实际闸门数（9还是10），统一文档和代码
+8	修正 README 回测引擎数量	功能表列 3 行但注意事项说 4 种，需统一
+9	合并 _get_formula_name() 调用	同一 cron tick 内只调用一次，避免理论竞态
+10	c17a0ed 拆分 commit	按变更类型拆分为：注释纠正 + 残留清理重写 + Redis降级 + 端口迁移
+审计完毕。本报告基于对 5 个 commit 的逐行 diff 验证、数据流追踪、边界条件测试和文档一致性校验，所有发现均有代码证据支撑。
+
+Update Todos
+
+验证 Commit 1 (3e68cff): F1 紧急修复 host.docker.internal
+
+验证 Commit 2 (c17a0ed): 23处注释纠正 + F2-F4默认值修复 + 隐藏变更
+
+验证 Commit 3 (06a1b0e): 策略名全链路动态化 A1-A8 + import asyncio
+
+验证 Commit 4 (a20fdd4): 离场扫描间隔可配置化
+
+验证 Commit 5 (45257ed): README.md 内容准确性
+
+审计数据流一致性：策略名从设置到生效的完整链路
+
+审计逻辑漏洞与设计缺陷
+
+审计安全与边界条件
+
+综合评定并出具审计报告
+Bash Calculate elapsed time
+IN
+python -c "import time; start=1783002311; elapsed=int(time.time()-start); m=elapsed//60; s=elapsed%60; print(f'{m}m {s}s')"
+
+OUT
+6m 1s
+简单总结一下审计结论：
+
+最大问题：报告声称 c17a0ed 是"注释纠正+默认值修复"，但这个 commit 里藏了两个安全关键改动——实盘残留清理逻辑从"删除+通知"反转为"永不删除+Kill Switch停交易"，以及 180 行 Redis 内存缓存降级层。这两项变更占了该 commit 70% 的代码量，但报告只字未提。
+
+其次：5 个 commit、6 项功能/BUG 修复，零新增测试。按行业标准这是不合格的。
+
+好的方面：策略名全链路数据流验证通过，_get_formula_name() 三级防护可靠；扫描间隔三重校验到位；F1 BUG 修复真实有效；import asyncio 和向后兼容设计正确。
+
+⏱ 时间戳
+
+📅 当前时间: 2026-07-02 22:29:02 (周四)
+🕐 本次回答经过: 6m 1s

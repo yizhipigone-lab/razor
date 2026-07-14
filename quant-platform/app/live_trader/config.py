@@ -20,7 +20,7 @@ class LiveTraderConfig:
     qmt_call_timeout_sec: float = 3.0  # 所有 xtquant 调用超时(v5.1 §10.2)
 
     # ===== 资金与模式 =====
-    live_capital: float = 100000.0  # LIVE_CAPITAL,默认 10 万(用户待确认)
+    live_capital: float = 1150000.0  # LIVE_CAPITAL,用户实际入金 115 万(2026-07-13 确认)
     mode: str = "dry-run"  # dry-run / live(v5.3 mode 字段方案)
 
     # ===== 持仓接管(§3.3.1 ETF 保留决策)=====
@@ -66,8 +66,10 @@ class LiveTraderConfig:
     reconcile_critical_pct: float = 0.10      # 市值10% CRITICAL
 
     # ===== 通知(§10 / §19.5 M4)=====
-    wework_webhook: str = ""  # 从 app_setting.json 读
-    multi_channel_alert: bool = True  # CRITICAL 多通道(企业微信+桌面弹窗+日志标红)
+    wework_webhook: str = ""  # 企业微信 webhook(从 app_setting.json notify 段读)
+    feishu_webhook: str = ""  # 飞书自定义机器人 webhook(从 app_setting.json notify 段读)
+    notify_channel: str = ""  # 通道:""自动(feishu优先)/"feishu"/"wework"/"both"
+    multi_channel_alert: bool = True  # CRITICAL 多通道(飞书/企业微信+桌面弹窗+日志标红)
 
     # ===== 路径 =====
     db_path: str = "data/live_trader/live_trader.duckdb"
@@ -75,13 +77,25 @@ class LiveTraderConfig:
     restart_counter_file: str = "data/live_trader/restart_counter.json"
 
     # ===== 信号桥接(v1.2.2 §5.2) =====
-    buy_position_size: float = 10000.0       # 单只买入软上限(元),闸门1是硬上限
+    buy_position_size: float = 10000.0       # [已废弃] 由 buy_position_ratio + 全局 max 取代,保留向后兼容
+    buy_position_ratio: float = 0.05         # 单只占本金比例(实盘 tab 可配,热更新;5%×本金=单只金额,被全局 min/max 卡)
     buy_signal_token: str = ""               # Bearer token 鉴权(从 app_setting.json 读)
     buy_signal_enabled: bool = True          # 冗余开关(buy-signal 端点检查)
     buy_signal_cutoff: str = "14:59"         # buy-signal 截止时点(14:59 后拒收)
 
+    # ===== 实盘自给自足尾盘选股(2026-07-14:替代被动 /live/buy-signal)=====
+    # scheduler 在 auto_buy_time 自动调 TdxBridge 选股 + 下单,不再依赖外部推信号。
+    # 安全:双层默认关(config 种子 + runtime_state holder),需显式打开才生效。
+    auto_buy_enabled: bool = False           # 种子值,运行时由 runtime_state.auto_buy_enabled 覆盖
+    auto_buy_time: str = "14:50"             # 触发时点(在 buy_signal_cutoff 14:59 之前;比模拟盘 14:52 早,错开 TDX)
+    auto_buy_lookback_days: int = 500        # 选股回看天数(与模拟盘 cron_jobs.py:452 对齐)
+
     # ===== 离场扫描 =====
     exit_scan_interval_sec: float = 60.0    # 离场扫描间隔(默认60s,可调低至10s)
+
+    # ===== 每日账户概览(v6.0 Phase 2) =====
+    daily_summary_enabled: bool = True    # 是否发送每日账户概览
+    daily_summary_time: str = "15:30"    # 发送时点
 
 
 def load_config() -> LiveTraderConfig:
@@ -101,12 +115,14 @@ def load_config() -> LiveTraderConfig:
     # 从 app_setting.json live_trader 段读(可选)
     cfg_dict = settings.get("live_trader", default={}) or {}
 
-    # 通知 webhook 从单独段读
+    # 通知 webhook 从单独段读(notify 段)
     wework_webhook = settings.get("notify", "wework_webhook", default="") or ""
+    feishu_webhook = settings.get("notify", "feishu_webhook", default="") or ""
+    notify_channel = settings.get("notify", "channel", default="") or ""
 
     # 合并:环境变量 > JSON > 默认值
     mode = env_mode or cfg_dict.get("mode", "dry-run")
-    live_capital = float(env_capital) if env_capital else float(cfg_dict.get("live_capital", 100000.0))
+    live_capital = float(env_capital) if env_capital else float(cfg_dict.get("live_capital", 1150000.0))
 
     config = LiveTraderConfig(
         qmt_userdata_path=qmt_userdata_path,
@@ -121,11 +137,20 @@ def load_config() -> LiveTraderConfig:
         daily_loss_halt_pct=float(cfg_dict.get("daily_loss_halt_pct", 0.03)),
         max_single_loss_pct=float(cfg_dict.get("max_single_loss_pct", 0.05)),
         wework_webhook=wework_webhook,
+        feishu_webhook=feishu_webhook,
+        notify_channel=notify_channel,
         buy_position_size=float(cfg_dict.get("buy_position_size", 10000.0)),
+        buy_position_ratio=float(cfg_dict.get("buy_position_ratio", 0.05)),
         buy_signal_token=cfg_dict.get("buy_signal_token", ""),
         buy_signal_enabled=cfg_dict.get("buy_signal_enabled", True),
         buy_signal_cutoff=cfg_dict.get("buy_signal_cutoff", "14:59"),
+        auto_buy_enabled=cfg_dict.get("auto_buy_enabled", False),
+        auto_buy_time=cfg_dict.get("auto_buy_time", "14:50"),
+        auto_buy_lookback_days=int(cfg_dict.get("auto_buy_lookback_days", 500)),
         exit_scan_interval_sec=float(cfg_dict.get("exit_scan_interval_sec", 60.0)),
+        # 每日账户概览(v6.0 Phase 2)
+        daily_summary_enabled=settings.get("notify", "daily_summary_enabled", default=True),
+        daily_summary_time=settings.get("notify", "daily_summary_time", default="15:30"),
     )
 
     # fail-fast 校验(§16.4)
@@ -140,6 +165,8 @@ def _validate_config(config: LiveTraderConfig) -> None:
         errors.append("QMT_ACCOUNT_ID 环境变量未设置")
     if config.live_capital <= 0:
         errors.append("live_capital 必须 > 0")
+    if not (0 < config.buy_position_ratio <= 1):
+        errors.append("buy_position_ratio 必须在 (0,1]")
     if config.max_single_trade_pct <= 0 or config.max_single_trade_pct > 1:
         errors.append("max_single_trade_pct 必须在 (0,1]")
     if config.max_position_pct <= 0 or config.max_total_position_pct <= 0:

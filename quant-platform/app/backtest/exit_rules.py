@@ -82,16 +82,37 @@ class RuleContext:
     # 同bar内TP已触发 → 跳过后续止损检查
     tp_triggered_this_bar: bool = False
 
+    # 成交价假设："stop"=纯止损线(对齐VERA,默认); "min"=真实(min(stop,open)跳空低开按开盘); False/"max"=旧乐观(max(stop,open))
+    realistic_stop_fill: str = "stop"
+
+    # 阶梯止盈模式：False=首个生效(旧行为,一根K线只触发一档); True=叠加(同bar所有档位全触发,按最高档成交,ratio累加)
+    tp_stack_mode: bool = True
+    # TP1(idx=0)成交价固定比例：0=用原逻辑(target/close); 0.03=按3%成交(对齐VERA,VERA的TP1成交价=entry*1.03)
+    tp1_fill_pct: float = 0.03
+
+    # 优先级模式："stop_first"(止损优先) / "trailing_first"(止盈>移动>止损,对齐VERA,默认)
+    # trailing_first 下盘中触及止损线但同日也触及止盈目标时，止盈先触发卖部分，不全仓止损
+    priority_mode: str = "trailing_first"
+
 
 # ═══════════════════════════════════════════════════
 # 规则函数（每个返回 Optional[ExitSignal]，首个非 None 生效）
 # ═══════════════════════════════════════════════════
 
 def rule_hard_stop(ctx: RuleContext) -> Optional[ExitSignal]:
-    """硬止损：用 Low 检测"""
+    """硬止损：用 Low 检测(T+1: 持仓<2日不触发, 隔夜跳空才能卖)"""
+    if ctx.hold_days < 2:
+        return None
     stop_price = ctx.entry_price * (1 + ctx.hard_stop)
     if ctx.low > 0 and ctx.low <= stop_price:
-        return ExitSignal("HS", max(stop_price, ctx.open))
+        # 成交价假设: False/"max"=旧乐观(max(stop,open)); True/"min"=真实(min); "stop"=纯止损线(对齐VERA)
+        if ctx.realistic_stop_fill == "stop":
+            fill = stop_price
+        elif ctx.realistic_stop_fill:
+            fill = min(stop_price, ctx.open)
+        else:
+            fill = max(stop_price, ctx.open)
+        return ExitSignal("HS", fill)
     # 兜底：用收盘价检测
     cur = ctx.close / ctx.entry_price - 1
     if cur <= ctx.hard_stop:
@@ -125,35 +146,67 @@ def rule_time_force(ctx: RuleContext) -> Optional[ExitSignal]:
 
 
 def rule_take_profit(ctx: RuleContext) -> Optional[ExitSignal]:
-    """多档阶梯止盈：按顺序触发，每档只触发一次"""
+    """多档阶梯止盈(T+1: 持仓<2日不触发)
+
+    tp_stack_mode=False(旧): 首个非None生效，一根K线只触发一档
+    tp_stack_mode=True(叠加,对齐VERA): 同bar内所有未触发档位全触发，按最高档成交价，sell_ratio累加(钳位1.0)
+    """
+    if ctx.hold_days < 2:
+        return None
     tiers = ctx.take_profit_tiers
     if not tiers:
         return None
 
+    if ctx.tp_stack_mode:
+        # 叠加模式：收集本bar所有新触发档位
+        new_hits = []
+        for idx, tier in enumerate(tiers):
+            if idx in ctx.triggered_tiers:
+                continue
+            tp_pct = tier.get("profit_pct", 999)
+            target = ctx.entry_price * (1 + tp_pct)
+            triggered = (ctx.high >= target) if ctx.use_high_for_tp else (ctx.close >= target)
+            if triggered:
+                new_hits.append((idx, tier, target))
+        if not new_hits:
+            return None
+        # 按档位降序（最高档在前），取最高档成交价，ratio累加
+        new_hits.sort(key=lambda x: x[0], reverse=True)
+        highest_idx, _highest_tier, highest_target = new_hits[0]
+        # TP1 按 tp1_fill_pct 成交（对齐VERA 3%）
+        if highest_idx == 0 and ctx.tp1_fill_pct > 0:
+            highest_target = ctx.entry_price * (1 + ctx.tp1_fill_pct)
+        total_ratio = min(sum(h[1].get("sell_ratio", 1.0) for h in new_hits), 1.0)
+        for idx, _, _ in new_hits:
+            ctx.triggered_tiers.add(idx)
+        return ExitSignal(f"TP{highest_idx + 1}", highest_target, total_ratio)
+
+    # 旧模式：首个生效
     for idx, tier in enumerate(tiers):
         if idx in ctx.triggered_tiers:
             continue
-
         tp_pct = tier.get("profit_pct", 999)
         target = ctx.entry_price * (1 + tp_pct)
-
         if ctx.use_high_for_tp:
             triggered = ctx.high >= target
             sell_px = target
         else:
             triggered = ctx.close >= target
             sell_px = ctx.close
-
         if triggered:
+            # TP1 按 tp1_fill_pct 成交（对齐VERA 3%）
+            if idx == 0 and ctx.tp1_fill_pct > 0:
+                sell_px = ctx.entry_price * (1 + ctx.tp1_fill_pct)
             sell_ratio = tier.get("sell_ratio", 1.0)
             label = f"TP{idx + 1}"
             return ExitSignal(label, sell_px, sell_ratio)
-
     return None
 
 
 def rule_trailing_stop(ctx: RuleContext) -> Optional[ExitSignal]:
-    """移动止盈：峰值盈利超激活线后，从峰值回撤超阈值触发"""
+    """移动止盈：峰值盈利超激活线后，从峰值回撤超阈值触发(T+1)"""
+    if ctx.hold_days < 2:
+        return None
     peak_pct = ctx.peak_price / ctx.entry_price - 1
 
     if peak_pct < ctx.trail_activate:
@@ -170,7 +223,14 @@ def rule_trailing_stop(ctx: RuleContext) -> Optional[ExitSignal]:
         dd_from_peak = ctx.low / ctx.peak_price - 1
         if dd_from_peak <= -eff_dd:
             trail_price = ctx.peak_price * (1 - eff_dd)
-            return ExitSignal("TR", max(trail_price, ctx.open))
+            # 成交价假设: False/"max"=旧乐观; True/"min"=真实; "stop"=纯回撤线(对齐VERA)
+            if ctx.realistic_stop_fill == "stop":
+                fill = trail_price
+            elif ctx.realistic_stop_fill:
+                fill = min(trail_price, ctx.open)
+            else:
+                fill = max(trail_price, ctx.open)
+            return ExitSignal("TR", fill)
 
     # 兜底：用 close 检测
     dd_close = ctx.close / ctx.peak_price - 1
@@ -190,7 +250,9 @@ def rule_time_condition(ctx: RuleContext) -> Optional[ExitSignal]:
 
 
 def rule_breakeven_stop(ctx: RuleContext) -> Optional[ExitSignal]:
-    """保本止损：最高盈利曾达阈值后，回落到保本线就卖"""
+    """保本止损：最高盈利曾达阈值后，回落到保本线就卖(T+1)"""
+    if ctx.hold_days < 2:
+        return None
     if ctx.breakeven_threshold <= 0:
         return None
     peak_pct = ctx.peak_price / ctx.entry_price - 1
@@ -239,6 +301,19 @@ ALL_RULES: List[tuple] = [
     (10,  rule_vol_climax_exit, "成交量高潮离场",   False),
 ]
 
+# trailing_first 模式：阶梯止盈 > 移动止盈 > 硬止损（对齐VERA priority=trailing_first）
+# 盘中触及止损线但同日也触及止盈目标时，止盈先触发卖部分，不全仓止损出局
+ALL_RULES_TRAILING: List[tuple] = [
+    (110, rule_take_profit,     "多档阶梯止盈",     False),
+    (105, rule_trailing_stop,   "移动止盈",         False),
+    (100, rule_hard_stop,       "硬止损",          False),
+    (95,  rule_breakeven_stop,  "保本止损",         False),
+    (90,  rule_first_day_exit,  "首日弱势离场",     True),
+    (80,  rule_time_force,      "强制时间退出",     False),
+    (20,  rule_time_condition,  "时间条件退出",     False),
+    (10,  rule_vol_climax_exit, "成交量高潮离场",   False),
+]
+
 
 class ExitRuleEngine:
     """统一止盈止损规则引擎"""
@@ -247,10 +322,13 @@ class ExitRuleEngine:
         self._rules = rules or ALL_RULES
         # 按优先级降序排列
         self._rules.sort(key=lambda r: r[0], reverse=True)
+        self._rules_trailing = sorted(ALL_RULES_TRAILING, key=lambda r: r[0], reverse=True)
 
     def check(self, ctx: RuleContext, skip_eod_only: bool = False) -> Optional[ExitSignal]:
-        """按优先级依次检查。skip_eod_only=True 时跳过"仅尾盘"规则（盘前盘中不触发FD等）"""
-        for priority, rule_fn, _name, eod_only in self._rules:
+        """按优先级依次检查。skip_eod_only=True 时跳过"仅尾盘"规则（盘前盘中不触发FD等）
+        根据 ctx.priority_mode 选择规则集：trailing_first 止盈优先于止损"""
+        rules = self._rules_trailing if getattr(ctx, 'priority_mode', 'stop_first') == 'trailing_first' else self._rules
+        for priority, rule_fn, _name, eod_only in rules:
             if skip_eod_only and eod_only:
                 continue
             try:
@@ -268,6 +346,45 @@ class ExitRuleEngine:
                 )
                 continue
         return None
+
+    def check_all(self, ctx: RuleContext, skip_eod_only: bool = False) -> list:
+        """trailing_first 顺序执行（对齐VERA engine.py:186）：ladder部分卖后继续检查trailing/cost_stop，
+        用剩余仓位。返回 ExitSignal 列表（可能多个，如 ladder部分卖 + trailing全卖剩余）。
+        非trailing_first 退化为首个生效（返回0或1个元素）。"""
+        if getattr(ctx, 'priority_mode', 'stop_first') != 'trailing_first':
+            sig = self.check(ctx, skip_eod_only)
+            return [sig] if sig else []
+        signals = []
+        remaining = 1.0  # 剩余仓位比例
+        for priority, rule_fn, _name, eod_only in self._rules_trailing:
+            if skip_eod_only and eod_only:
+                continue
+            try:
+                signal = rule_fn(ctx)
+                if signal is None:
+                    continue
+                # 全卖类（trailing/cost_stop/保本/时间等 ratio>=1.0）：卖剩余仓位，结束
+                if signal.sell_ratio >= 1.0:
+                    signal.sell_ratio = remaining if remaining < 1.0 else 1.0
+                    signals.append(signal)
+                    break
+                # 部分卖类（ladder ratio<1.0）：记录，继续检查后续规则
+                if signal.sell_ratio > remaining:
+                    signal.sell_ratio = remaining
+                signals.append(signal)
+                remaining -= signal.sell_ratio
+                if remaining <= 0.001:
+                    break
+            except Exception:
+                _log.error(
+                    f"退出规则 {_name} 执行异常 "
+                    f"(entry={getattr(ctx, 'entry_price', '?')}, "
+                    f"close={getattr(ctx, 'close', '?')}, "
+                    f"hold_days={getattr(ctx, 'hold_days', '?')})",
+                    exc_info=True,
+                )
+                continue
+        return signals
 
     @staticmethod
     def build_context(pos, bar: dict, hold_days: int,
@@ -315,6 +432,10 @@ class ExitRuleEngine:
             breakeven_stop=_pct(params.get("breakeven_stop_pnl_pct", 0.0)),
             vol_climax_enabled=params.get("use_vol_climax_exit", False),
             use_high_for_tp=use_high_for_tp,
+            realistic_stop_fill=params.get("realistic_stop_fill", "stop"),
+            tp_stack_mode=params.get("tp_stack_mode", True),
+            tp1_fill_pct=params.get("tp1_fill_pct", 0.03),
+            priority_mode=params.get("priority_mode", "trailing_first"),
         )
 
 
@@ -335,27 +456,6 @@ def adjust_for_gap(code: str, entry_price: float, peak_price: float,
         ratio = close / prev_close
         return entry_price * ratio, peak_price * ratio
     return entry_price, peak_price
-
-
-import os
-from pathlib import Path as _Path
-
-
-def atomic_write_parquet(df, path: str):
-    """原子写入 parquet：先写 .tmp 再 rename，避免半截文件"""
-    target = _Path(path)
-    tmp = target.with_suffix('.parquet.tmp')
-    df.to_parquet(str(tmp))
-    os.replace(str(tmp), str(target))  # 原子 rename
-
-
-def cleanup_tmp_parquet(dir_path: str):
-    """清理残留的 .parquet.tmp 文件"""
-    for f in _Path(dir_path).rglob('*.parquet.tmp'):
-        try:
-            f.unlink()
-        except Exception:
-            pass
 
 
 # 全局单例

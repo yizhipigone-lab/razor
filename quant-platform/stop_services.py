@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-TARGET_PORTS = {8888: "API服务", 8081: "QMT代理", 5173: "前端Vite"}
+TARGET_PORTS = {8888: "API服务", 8001: "实盘交易", 5173: "前端Vite"}
 
 def kill_proc(proc, source):
     try:

@@ -308,7 +308,31 @@ class CallbackHandler:
             "traded_at": datetime.now(),
         }
         # 终态成交同步落盘(H2)
-        self.store.sync_terminal_write("deal", deal)
+        # H3(2026-07-14):sync_terminal_write 现在会抛(不再静默吞)。
+        # 这里 catch + audit + 飞书告警,但不激活 kill_switch——
+        # 单条 deal 写入失败是数据问题不是交易规则,杀进程会丢更多数据。
+        # 已写 WAL(防 os._exit 丢),重启可补。运维看飞书手动处理。
+        try:
+            self.store.sync_terminal_write("deal", deal)
+        except Exception as e:
+            logger.error(f"[H3] 成交 deal 写入 DuckDB 失败(WAL 已写,可重启补救): trade_id={trade_id} code={code}: {e}", exc_info=True)
+            if self.audit:
+                try:
+                    self.audit.log("db_write_failed", reason=str(e), data={
+                        "kind": "deal", "trade_id": trade_id, "code": code,
+                    })
+                except Exception:
+                    pass
+            if self.notify:
+                try:
+                    self.notify.send(
+                        f"⚠️ [H3] 实盘成交写入失败: code={code} trade_id={trade_id} "
+                        f"WAL 已存,重启可补。错误:{e}"
+                    )
+                except Exception:
+                    pass
+            # 不 re-raise:不让单条 deal 失败拖垮整个 callback 链路
+            # 但已审计+告警,运维可见
 
         # 内存缓存(§18.7)
         with self._deals_lock:
@@ -320,14 +344,31 @@ class CallbackHandler:
         if direction == "buy" and order:
             client_order_id = order.get("client_order_id", "")
             # pending_buy_volume 释放由 risk_gate 在下单时冻结,这里通知释放
-            self._release_pending_buy(code, filled_volume)
+            # H1:传 trade_id 让 apply_buy_fill 幂等(防重复回报双扣持仓)
+            self._release_pending_buy(code, filled_volume, trade_id=trade_id)
 
         # v2(F4/H1):卖出成交递减持仓,清仓则重置;trade_id 幂等防重复回报双扣
+        # H3(2026-07-14):apply_sell_fill 现在会抛(不再静默吞)。同 deal 写入处理:
+        # 审计+告警+不 re-raise,不让单条卖出回调拖垮整个链路。
         if direction == "sell":
             try:
                 self.store.apply_sell_fill(code, filled_volume, trade_id=trade_id)
             except Exception as e:
-                logger.error(f"apply_sell_fill 失败 {code}: {e}")
+                logger.error(f"[H3] 卖出 apply_sell_fill 失败: code={code} trade_id={trade_id}: {e}", exc_info=True)
+                if self.audit:
+                    try:
+                        self.audit.log("db_write_failed", reason=str(e), data={
+                            "kind": "sell_fill", "code": code, "trade_id": trade_id,
+                        })
+                    except Exception:
+                        pass
+                if self.notify:
+                    try:
+                        self.notify.send(
+                            f"⚠️ [H3] 实盘卖出成交写入失败: code={code} trade_id={trade_id} 错误:{e}"
+                        )
+                    except Exception:
+                        pass
 
         # 盈亏重算
         if self.pnl_engine and direction == "sell":
@@ -341,18 +382,18 @@ class CallbackHandler:
         if self.notify:
             self.notify.order_traded(code, direction, filled_volume, filled_price, mode)
 
-    def _release_pending_buy(self, code: str, filled_volume: int) -> None:
+    def _release_pending_buy(self, code: str, filled_volume: int, trade_id: int = None) -> None:
         """C1:成交后释放在途预扣 + 首次建仓写 entry_date
 
         v2(审计H2/H3):改调 store.apply_buy_fill 原子SQL,避免全字段 upsert 覆盖
         tp_triggered/sell_count/peak_price,并补写 entry_date(修 hold_days 恒=1)。
+        v3(2026-07-14 审计H1):传 trade_id 给 apply_buy_fill,防重复回报双扣持仓。
+        v3(2026-07-14 审计H3):异常向上抛,不再吞。调用方 _on_deal_callback 需 try/except 接。
         """
         if not self.store:
             return
-        try:
-            self.store.apply_buy_fill(code, filled_volume)
-        except Exception as e:
-            logger.error(f"apply_buy_fill 失败 {code}: {e}")
+        # H3: 异常向上抛(让 _on_deal_callback 接住 + 告警)
+        self.store.apply_buy_fill(code, filled_volume, trade_id=trade_id)
 
     def _handle_order_error(self, order_id: int, error_id: int, error_msg: str) -> None:
         if not self.store:

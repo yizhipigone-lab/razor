@@ -8,6 +8,8 @@ import json
 import sys
 import os
 import tempfile
+import contextlib
+import io
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -50,6 +52,10 @@ def main():
     with open(args_file, "r", encoding="utf-8") as f:
         task = json.load(f)
 
+    # 注入跨进程 stop signal 文件路径(主进程 set stop_event 时会 touch)
+    global _STOP_FLAG_PATH
+    _STOP_FLAG_PATH = task.get("stop_flag_path")
+
     tq.initialize(__file__)
 
     task_type = task.get("task_type", "screen")
@@ -69,6 +75,20 @@ def main():
         _do_probe_formulas(task)
     else:
         _do_screen(task, stock_list, output_var, match_value)
+
+    # 启动检查:若启动前 stop 文件已存在(主进程来不及清理),直接退出
+    if _check_stop_flag():
+        print(json.dumps({"status": "stopped", "reason": "pre_check"}))
+        return
+
+
+# 跨进程停止信号: 主进程(bridge._run_worker)启动 worker 前清理本文件,
+# 收到 stop 指令时 touch 本文件; worker 每个 batch 前 check,命中立即优雅退出。
+_STOP_FLAG_PATH: str = None  # 启动时从 task['stop_flag_path'] 注入
+
+
+def _check_stop_flag() -> bool:
+    return bool(_STOP_FLAG_PATH) and os.path.exists(_STOP_FLAG_PATH)
 
 
 def _do_probe_formulas(task: dict) -> None:
@@ -133,6 +153,9 @@ def _do_screen(task, stock_list, output_var, match_value):
 
     matched = []
     for batch_start in range(0, len(stock_list), BATCH_SIZE):
+        if _check_stop_flag():
+            print(json.dumps({"status": "stopped", "reason": "stop_flag"}))
+            return
         batch = stock_list[batch_start:batch_start + BATCH_SIZE]
         try:
             result = tq.formula_process_mul_xg(
@@ -254,8 +277,13 @@ def _do_range(task, stock_list, output_var):
     total_batches = (len(stock_list) - 1) // BATCH_SIZE + 1
 
     for batch_start in range(0, len(stock_list), BATCH_SIZE):
+        if _check_stop_flag():
+            print(json.dumps({"status": "stopped", "reason": "stop_flag"}))
+            return
         batch = stock_list[batch_start:batch_start + BATCH_SIZE]
         batch_idx = batch_start // BATCH_SIZE + 1
+        print(json.dumps({"progress": "screen", "done": batch_idx, "total": total_batches,
+                          "msg": f"TDX公式扫描 {batch_idx}/{total_batches} 批"}), flush=True)
         try:
             sig_result = tq.formula_process_mul_xg(
                 formula_name=task["formula_name"],
@@ -309,19 +337,24 @@ def _do_range(task, stock_list, output_var):
     bar_count = est_days + 50
 
     prices = {}
+    total_batches_p = (len(tdx_codes_full) - 1) // BATCH_SIZE + 1
     for batch_start in range(0, len(tdx_codes_full), BATCH_SIZE):
         batch = tdx_codes_full[batch_start:batch_start + BATCH_SIZE]
+        batch_idx_p = batch_start // BATCH_SIZE + 1
+        print(json.dumps({"progress": "prices", "done": batch_idx_p, "total": total_batches_p,
+                          "msg": f"TDX取价 {batch_idx_p}/{total_batches_p} 批"}), flush=True)
         try:
-            mk = tq.get_market_data(
-                field_list=["open", "high", "low", "close"],
-                stock_list=batch,
-                period="1d",
-                start_time=start_time or "",
-                end_time=end_time,
-                count=bar_count,
-                dividend_type="front",
-                fill_data=True,
-            )
+            with contextlib.redirect_stdout(io.StringIO()):
+                mk = tq.get_market_data(
+                    field_list=["open", "high", "low", "close"],
+                    stock_list=batch,
+                    period="1d",
+                    start_time=start_time or "",
+                    end_time=end_time,
+                    count=bar_count,
+                    dividend_type="front",
+                    fill_data=True,
+                )
         except Exception as e:
             print(json.dumps({"diag":"worker_prices","error":str(e)[:200],"batch_size":len(batch)}))
             continue
@@ -404,16 +437,17 @@ def _do_fetch_intraday(task):
     bars_path = None
     record_count = 0
     try:
-        mk_result = tq.get_market_data(
-            field_list=["open", "high", "low", "close"],
-            stock_list=tdx_codes,
-            period=task.get("period", "5m"),
-            start_time=start_date,
-            end_time=end_time,
-            count=bar_count,
-            dividend_type="front",
-            fill_data=True,
-        )
+        with contextlib.redirect_stdout(io.StringIO()):
+            mk_result = tq.get_market_data(
+                field_list=["open", "high", "low", "close"],
+                stock_list=tdx_codes,
+                period=task.get("period", "5m"),
+                start_time=start_date,
+                end_time=end_time,
+                count=bar_count,
+                dividend_type="front",
+                fill_data=True,
+            )
 
         if mk_result and "Close" in mk_result:
             close_df = mk_result["Close"]

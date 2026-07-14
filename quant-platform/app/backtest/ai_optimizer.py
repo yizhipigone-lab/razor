@@ -26,7 +26,7 @@ from core.logger import get_logger
 from core.settings import settings
 from database.duckdb_manager import db
 from app.screener.engine import load_strategy
-from app.backtest.engine import BacktestEngine
+from app.backtest.simulate_one_trade import simulate_one_trade
 from app.backtest.regime_detector import regime_detector
 from app.backtest.llm_advisor import LLMAdvisor
 
@@ -259,7 +259,6 @@ class AIBacktestOptimizer:
         self._cached_signals: Optional[pd.DataFrame] = None
         self._cached_bars: Optional[pd.DataFrame] = None
         self._code_to_name: dict = {}
-        self._engine = BacktestEngine()
 
     # ── Phase 1: 数据准备 ──────────────────────────────────
     def _prepare_data(
@@ -547,177 +546,65 @@ class AIBacktestOptimizer:
     # ── 核心仿真（1分钟线逐bar迭代，OHLC感知）───
     def _fast_simulate(self, code: str, entry: float, sig_date,
                        params: dict, end_date=None) -> Optional[dict]:
-        """v4.0: 用 1 分钟线逐 bar 精确仿真单笔交易。
-        TP用High检测，SL用Low检测，回落用Close检测。
-        sig_date: 信号入场日期 (date对象)
-        end_date: WFO截止日，不包含此日之后的bar (date对象或None)
+        """[v4.1 委托] 1 分钟线聚为日线 OHLC → 调 simulate_one_trade kernel。
+
+        旧影子(假默认 -7/15、TP 按真实档位成交、fake cost、缺 trailing_first/stack)
+        → 忠实 kernel。intraday 分钟归并为日,丢 1 天内分钟级触发时机(对参数寻优无影响)。
+        返回 dict 仍带 pnl_pct(由 kernel return_pct 映射)以兼容 optimizer 读 trade["pnl_pct"]。
         """
-        def _p(key, default=None):
-            if params and key in params:
-                return params[key]
-            return getattr(settings, key, default)
-
-        hard_sl   = _p('hard_stop_loss_pct',      -7.0)
-        be_thresh = _p('breakeven_threshold_pct',  5.0)
-        be_stop   = _p('breakeven_stop_pnl_pct',   0.0)
-        trail_act = _p('trailing_activate_pct',   15.0)
-        trail_dd  = _p('trailing_drawdown_pct',    5.0)
-        max_hold  = int(_p('time_exit_days',      30))
-        time_exit_min_pnl = _p('time_exit_min_profit_pct', None)
-
-        # 分档止盈
-        if params and 'tp1_profit' in params:
-            # P0-1 单位约定: tp*_profit 是百分比(3.0=3%)，统一转小数(0.03) 与 config/_build_tp_plan 一致
-            tp_plan = [
-                {"profit_pct": params.get('tp1_profit', 10.0) / 100.0,
-                 "sell_ratio": params.get('tp1_ratio', 0.33), "label": "分阶止盈1"},
-                {"profit_pct": params.get('tp2_profit', 20.0) / 100.0,
-                 "sell_ratio": params.get('tp2_ratio', 0.33), "label": "分阶止盈2"},
-            ]
-            if 'tp3_profit' in params:
-                tp_plan.append({"profit_pct": params.get('tp3_profit', 30.0) / 100.0,
-                                "sell_ratio": params.get('tp3_ratio', 0.34),
-                                "label": "分阶止盈3", "sell_all": True})
-        else:
-            tp_plan = settings.staged_take_profit or []
-
-        # ── 尝试获取 1 分钟线 ──────────────────────────
         closes = self._intraday_closes.get(code)
-        highs  = self._intraday_highs.get(code)
-        lows   = self._intraday_lows.get(code)
-        dates  = self._intraday_dates.get(code)
+        highs = self._intraday_highs.get(code)
+        lows = self._intraday_lows.get(code)
+        dates = self._intraday_dates.get(code)
         date_pos = self._intraday_pos.get(code)
-
         if closes is None or date_pos is None:
-            return None  # 无日内数据，放弃该信号
-
-        # 定位信号日后的第一根 bar
+            return None
         start_idx = date_pos.get(sig_date)
         if start_idx is None:
-            # 信号日不在日内数据中，尝试找最近的下一天
-            all_dates = sorted(date_pos.keys())
-            start_idx = None
-            for d in all_dates:
+            for d in sorted(date_pos.keys()):
                 if d >= sig_date:
                     start_idx = date_pos[d]
                     break
         if start_idx is None:
             return None
-
-        remaining = 1.0
-        highest = entry
-        trailing_active = False
-        staged_done = set()
-        realized = 0.0
-        hold_days = 0
-        exit_price = None
-
-        current_date = sig_date
-        total_bars = len(closes)
-
-        for i in range(start_idx, total_bars):
-            bar_date = dates[i]
-
-            # WFO 截止
-            if end_date is not None and bar_date >= end_date:
-                break
-
-            # 跳过信号日当天的 bar（买入在收盘价）
-            if bar_date <= sig_date:
-                continue
-
-            # 交易日计数
-            if bar_date != current_date:
-                hold_days += 1
-                current_date = bar_date
-
-            if hold_days > max_hold * 3:  # 安全上限
-                break
-
-            close_p = closes[i]
-            high_p  = highs[i]
-            low_p   = lows[i]
-
-            highest = max(highest, high_p)
-            highest_pnl = (highest / entry - 1) * 100
-            close_pnl   = (close_p / entry - 1) * 100
-
-            # ── ① 分档止盈（High 检测，先涨先触发）──
-            tp_triggered = False
-            for s_idx, stage in enumerate(tp_plan):
-                if s_idx in staged_done:
-                    continue
-                tp_pct = stage.get("profit_pct", 999.0)
-                # P0-1: tp_pct 已统一为小数(0.03=3%)。比较与成交价均按小数口径
-                if (high_p / entry - 1) >= tp_pct:
-                    staged_done.add(s_idx)
-                    sell_ratio = remaining if stage.get("sell_all") else stage.get("sell_ratio", 0.0)
-                    actual = min(sell_ratio, remaining)
-                    if actual > 0:
-                        # realized 是百分比口径(close_pnl=(close/entry-1)*100)，tp_pct小数→*100
-                        realized += tp_pct * 100 * actual
-                        remaining -= actual
-                    tp_triggered = True
-                    if remaining <= 0:
-                        exit_price = entry * (1 + tp_pct)
-                        break
-
-            if remaining <= 0:
-                break
-
-            # ── ② 动态硬止损（Low 检测，止盈触发同 bar 则跳过）──
-            if not tp_triggered:
-                curr_stop = hard_sl
-                if highest_pnl >= be_thresh:
-                    curr_stop = be_stop
-                if (low_p / entry - 1) * 100 <= curr_stop:
-                    realized += curr_stop * remaining
-                    exit_price = entry * (1 + curr_stop / 100)
-                    remaining = 0
+        end_idx = len(closes)
+        if end_date is not None:
+            for i in range(start_idx, len(dates)):
+                if dates[i] >= end_date:
+                    end_idx = i
                     break
-
-            # ── ③ 回落止盈（High 激活 + Close 回落检测）──
-            if highest_pnl >= trail_act:
-                trailing_active = True
-            if trailing_active:
-                dd = (highest - close_p) / highest * 100
-                if dd >= trail_dd:
-                    realized += close_pnl * remaining
-                    exit_price = close_p
-                    remaining = 0
-                    break
-
-            # ── ④ 条件时间到期 ──
-            if hold_days >= max_hold and remaining > 0:
-                if time_exit_min_pnl is None or close_pnl >= time_exit_min_pnl:
-                    realized += close_pnl * remaining
-                    exit_price = close_p
-                    remaining = 0
-                    break
-
-        if remaining > 0:
-            return None  # 未完成交易不计入
-
-        # 任务一: 扣交易成本(比例口径)。realized 是百分比收益率(×100)，
-        # 成本同口径×100。买入扣 佣金+滑点；卖出扣 佣金+印花+滑点。
-        # 局限: 比例口径无法体现 min_commission(5元最低)，金额口径重构属后续。
-        apply_costs = bool(_p('apply_costs', True))
-        if apply_costs:
-            from app.backtest.execution import get_cost_cfg
-            _c = get_cost_cfg()
-            buy_cost_rate = _c['commission_rate'] + _c['slippage_rate']
-            sell_cost_rate = _c['commission_rate'] + _c['stamp_tax_rate'] + _c['slippage_rate']
-            realized -= (buy_cost_rate + sell_cost_rate) * 100  # 一买一卖的成本占比(全仓)
-
+        # 聚合 1 分钟 → 日线(high=max, low=min, open=first, close=last)
+        rows = [{"date": dates[i], "open": closes[i], "high": highs[i],
+                 "low": lows[i], "close": closes[i]}
+                for i in range(start_idx, end_idx)]
+        if not rows:
+            return None
+        import pandas as pd
+        df = pd.DataFrame(rows)
+        daily = (df.assign(_d=pd.to_datetime(df["date"]).dt.date)
+                  .groupby("_d")
+                  .agg(open=("open", "first"), high=("high", "max"),
+                       low=("low", "min"), close=("close", "last"))
+                  .reset_index()
+                  .rename(columns={"_d": "date"}))
+        # 委托 kernel;映射 pnl_pct 兼容 optimizer(读 trade["pnl_pct"])
+        from app.backtest.simulate_one_trade import simulate_one_trade
+        result = simulate_one_trade(
+            code=code, stock_name=code, entry_price=entry,
+            signal_date=sig_date, bars_daily=daily, params_override=params,
+        )
+        if result is None:
+            return None
         return {
-            "code": code, "name": self._code_to_name.get(code, code),
-            "entry_price": entry, "exit_price": exit_price or entry,
-            "hold_days": hold_days, "pnl_pct": round(realized, 4),
+            "code": code,
+            "name": self._code_to_name.get(code, code),
+            "entry_price": entry,
+            "exit_price": result["exit_price"],
+            "hold_days": result["hold_days"],
+            "pnl_pct": result["return_pct"],
             "buy_date": str(sig_date),
         }
 
-    # ── 默认搜索空间（配置缺失时的降级方案）──────
-    @staticmethod
     def _default_search_space() -> dict:
         # 以系统配置的 risk 参数为基线，范围 ≤ 2×
         tp1 = settings.get("risk", "take_profit_tiers", default=[])[0]["profit_pct"] if settings.get("risk", "take_profit_tiers", default=[]) else 3.0

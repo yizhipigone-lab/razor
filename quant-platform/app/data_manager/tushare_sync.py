@@ -24,7 +24,7 @@ class TushareSyncManager:
         try:
             log.info("Fetching stock basics from Tushare...")
             df = self.pro.stock_basic(fields='ts_code,symbol,name,area,industry,market,list_date')
-            
+
             if df.empty:
                 log.warning("Received empty stock basic dataframe.")
                 return False
@@ -41,7 +41,7 @@ class TushareSyncManager:
 
             required_cols = ['code', 'name', 'exchange', 'sector', 'concepts', 'list_date', 'status']
             upsert_df = df[required_cols].copy()
-            
+
             db.upsert_stocks(upsert_df)
             log.info(f"Successfully synced {len(upsert_df)} stock basics.")
             return True

@@ -6,20 +6,11 @@ import pandas as pd
 import numpy as np
 
 
-def generate_signals(df: pd.DataFrame,
-                     filter_st: bool = True,
-                     filter_bj: bool = True,
-                     skip_limit_up: bool = True,
-                     ) -> pd.DataFrame:
+def generate_signals(df: pd.DataFrame) -> pd.DataFrame:
+    """候选⑤:ST/北交所/涨停 过滤已移到 base.preprocess(引擎在调本函数前已过滤)。"""
     if df is None or len(df) < 60:
         return pd.DataFrame()
     df = df.copy()
-
-    # ── ST / 北交所 过滤 ─────────────────────────────
-    if filter_st and 'name' in df.columns:
-        df = df[~df['name'].str.contains('ST', na=False, case=True)]
-    if filter_bj and 'code' in df.columns:
-        df = df[~df['code'].astype(str).str.startswith('8')]
 
     g = df.groupby('code', group_keys=False)
 
@@ -58,19 +49,8 @@ def generate_signals(df: pd.DataFrame,
     )
     df['buy'] = df['za'] & (df['count_20'] == 1)
 
-    # ═══════════ 涨停过滤 ═══════════
-    if skip_limit_up:
-        df['daily_ret'] = df['close'] / df['close'].shift(1) - 1
-        limit_map = {'688': 0.195, '300': 0.195, '301': 0.195,
-                     '8': 0.29, '4': 0.29}
-        df['limit_pct'] = 0.095
-        for pfx, lp in limit_map.items():
-            df.loc[df['code'].astype(str).str.startswith(pfx), 'limit_pct'] = lp
-        df['limit_up'] = df['daily_ret'] >= df['limit_pct']
-    else:
-        df['limit_up'] = False
-
-    df['buy_signal'] = df['buy'] & (~df['limit_up'])
+    # 候选⑤:涨停过滤已移到 base.preprocess;此处只剩信号逻辑
+    df['buy_signal'] = df['buy']
 
     # ═══════════ 输出 ═══════════
     date_col = "date" if "date" in df.columns else "datetime"
@@ -92,13 +72,15 @@ class MA5AngleStrategy(BaseStrategy):
     """MA5 角度突破策略"""
     name = "MA5角度_原版"
     description = "ATAN角度金叉 + 三角收敛 + 价格<26 + 日涨幅>2% + 站上MA20"
+    # 候选⑤:保留旧 0.195 涨停阈值(原 inline 表)
+    LIMIT_TABLE = {"688": 0.195, "300": 0.195, "301": 0.195, "8": 0.29, "4": 0.29}
+    LIMIT_MAIN_PCT = 0.095
+
+    def default_params(self) -> dict:
+        return dict(PARAMS)
 
     def generate_signals(self, bars):
-        kwargs = {}
-        for k in ('filter_st', 'filter_bj', 'skip_limit_up'):
-            if k in self.params:
-                kwargs[k] = self.params[k]
-        return generate_signals(bars, **kwargs)
+        return generate_signals(bars)
 
 
 PARAMS = {

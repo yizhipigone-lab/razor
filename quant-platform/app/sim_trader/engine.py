@@ -94,6 +94,24 @@ class Position:
             return 0.0
         return (self.current_price / self.entry_price - 1) * 100
 
+    def today_pnl(self, cur_price: float, prev_close: float,
+                  today: date) -> Optional[float]:
+        """CARD4 统一今日盈亏(后端唯一真相源)。
+
+        基准: 当日买入 = entry_price, 过夜 = prev_close。
+        return round(remaining_shares * (cur - base), 0)
+        已平仓 / 缺现价 / 缺基准 → None(保留 api 471 哨兵语义)。
+        """
+        if self.remaining_shares <= 0:
+            return None
+        if not cur_price or cur_price <= 0:
+            return None
+        base_px = self.entry_price if self.entry_date == today else prev_close
+        if not base_px or base_px <= 0:
+            return None
+        rem = self.remaining_shares or self.shares
+        return round(rem * (cur_price - base_px), 0)
+
     def is_tier_triggered(self, idx: int) -> bool:
         return self.tp1_triggered if idx == 0 else self.tp2_triggered
 
@@ -359,24 +377,31 @@ class SimTraderEngine:
         if not codes:
             return {}
         try:
-            from app.trader.gateways.qmt import qmt_gateway
-            quotes = qmt_gateway.get_realtime_quotes(codes) or {}
+            from app.data_manager.quote_source import get_realtime_quotes
+            qdf = get_realtime_quotes(codes)
         except Exception as e:
-            log.debug(f"[实时快照] QMT 获取失败: {e}")
+            log.debug(f"[实时快照] 行情获取失败: {e}")
+            return {}
+        if qdf.empty:
             return {}
         snap = {}
         for code in codes:
-            q = quotes.get(code) or quotes.get(code.split('.')[0]) or {}
-            if not isinstance(q, dict):
+            # 兼容带/不带后缀:先精确,再按裸 code
+            rows = qdf[qdf['code'] == code]
+            if rows.empty and '.' in code:
+                rows = qdf[qdf['code'] == code.split('.')[0]]
+            if rows.empty:
                 continue
-            price = float(q.get('lastPrice', 0) or q.get('price', 0) or 0)
+            row = rows.iloc[0]
+            price = float(row.get('price', 0) or 0)
             if price <= 0:
                 continue
-            pre = float(q.get('lastClose', 0) or q.get('preClose', 0) or 0)
+            _lc = row.get('last_close', 0)
+            pre = float(_lc) if (_lc is not None and _lc == _lc and _lc > 0) else 0.0  # NaN/缺失→0(守 Q6,不用现价冒充)
             snap[code] = {
-                'open': float(q.get('open', price) or price),
-                'high': float(q.get('high', price) or price),
-                'low': float(q.get('low', price) or price),
+                'open': float(row.get('open', price) or price),
+                'high': float(row.get('high', price) or price),
+                'low': float(row.get('low', price) or price),
                 'close': price,
                 'preClose': pre,
             }
@@ -410,6 +435,11 @@ class SimTraderEngine:
         if code in self.positions:
             return None
         max_amt = min(self.max_buy_amount(), self.cash)
+        # 全局 min/max 卡边界(与实盘同源,系统设置 trading 段;模拟盘同进程即时生效)
+        from core.settings import settings
+        g_min = float(settings.get("trading", "min_buy_amount", default=5000))
+        g_max = float(settings.get("trading", "max_buy_amount", default=60000))
+        max_amt = max(g_min, min(max_amt, g_max))
         if max_amt < MIN_BUY_AMT:
             return None
         shares = int(max_amt / price / 100) * 100
@@ -477,27 +507,10 @@ class SimTraderEngine:
 
             # 构建参数 — 优先从 settings（app_setting.json）读取，config.py 兜底
             # 与 intraday_monitor._check_position 保持完全一致的取值逻辑
-            from core.settings import settings as _settings
-            def _cfg(key, default):
-                val = _settings.get("risk", key)
-                if val is None:
-                    import app.sim_trader.config as _sc
-                    return getattr(_sc, key.upper(), default)
-                return val
-
-            sim_params = {
-                "hard_stop": _cfg("hard_stop_loss_pct", -6.0) / 100.0,
-                "take_profit_tiers": _cfg("take_profit_tiers", [{"profit_pct": 0.03, "sell_ratio": 0.30}]),
-                "trail_activate": _cfg("trailing_stop_activate_pct", 5.0) / 100.0,
-                "trail_dd": _cfg("trailing_stop_drawdown_pct", 2.0) / 100.0,
-                "time_exit_days": _cfg("time_exit_days", 7),
-                "time_exit_profit": _cfg("time_exit_min_profit_pct", 3.0) / 100.0,
-                "time_force_days": _cfg("time_exit_force_days", 12),
-                "first_day_exit_min_profit": _cfg("first_day_exit_min_profit", 0.0),
-                "first_day_exit_days": _cfg("first_day_exit_days", 1),
-                "use_atr_trail": _cfg("use_atr_stop", False),
-                "atr_trail_multiplier": _cfg("atr_stop_multiplier", 1.0),
-            }
+            # v5.5 (2026-07-14): 统一走 risk_params.load_risk_params, 与 intraday_monitor/exit_monitor 共享, 杜绝 4 套默认值漂移
+            from app.config.risk_params import load_risk_params as _load_risk_params
+            import dataclasses
+            sim_params = dataclasses.asdict(_load_risk_params())
             ctx = exit_rule_engine.build_context(pos, bar, hold_days, sim_params, use_high_for_tp=True)
             signal = exit_rule_engine.check(ctx)
 
@@ -603,17 +616,8 @@ class SimTraderEngine:
                 # 这样能避免盘中 sell + 尾盘 sell 时,内存与 DB 不一致
                 # 注意:execute_sell 已调用 _store.save_trade(trade),这里不再重复保存
 
-                # 真实券商委托（需 BROKER_ENABLED=True 且 gateway 可用）
-                from app.sim_trader.config import BROKER_ENABLED
-                if BROKER_ENABLED:
-                    try:
-                        from core.gateway import get_gateway
-                        gw = get_gateway()
-                        gw.sell(code=trade.code, price=exit_price,
-                                volume=trade.shares, reason=reason)
-                        log.info(f"券商委托: {trade.code} 卖出 {trade.shares}股 @ {exit_price:.2f} [{reason}]")
-                    except Exception as e:
-                        log.error(f"券商委托失败 {trade.code}: {e}")
+                # 真实券商委托路径已删除(2026-07-14):sim_trader 永远不真下单,真单走 live_trader
+                # 见 docs/审计报告/项目质量审计_2026-07-13_全项目.md 架构决定
 
         if sells:
             log.info(f"[卖出阶段] 共执行 {len(sells)} 笔卖出")

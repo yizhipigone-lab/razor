@@ -16,29 +16,6 @@ stop_events = {}
 _stop_events_lock = threading.Lock()
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 
-@router.get("/api/backtest/strategies")
-async def list_backtest_strategies():
-    """扫描物理策略文件，返回 AI 回测可用的策略列表"""
-    STRAT_DIR = ROOT_DIR / "app" / "screener" / "strategies"
-    EXCLUDED = {"base.py", "__init__.py"}
-    result = []
-    for f in sorted(STRAT_DIR.glob("*.py")):
-        if f.name in EXCLUDED:
-            continue
-        name = f.stem
-        # 读首行 docstring 作为显示名
-        try:
-            lines = f.read_text(encoding="utf-8").split("\n")
-            desc = next((l.strip(' "\'') for l in lines[:10]
-                         if l.strip().strip('"\'') and not l.startswith("#")
-                         and not l.startswith("from") and not l.startswith("import")
-                         and not l.startswith("class") and not l.startswith("def")
-                         and len(l.strip().strip('"\'')) > 2), name)
-        except Exception:
-            desc = name
-        result.append({"name": name, "label": desc[:40]})
-    return {"status": "ok", "strategies": result}
-
 
 @router.post("/api/backtest/ai/start")
 async def ai_backtest_start(body: dict):
@@ -315,133 +292,6 @@ async def ai_backtest_apply(body: dict):
 
 
 
-class BacktestRequest(BaseModel):
-    strategy_name: str
-    strategy_params: dict = {}
-    start: Optional[str] = None
-    end: Optional[str] = None
-    exchanges: Optional[List[str]] = None
-    sectors: Optional[List[str]] = None
-    index_filter: Optional[List[str]] = None   # e.g. ['HS300', 'ZZ500']
-    min_mv: Optional[float] = None              # 流通市值下限（亿元）
-    max_mv: Optional[float] = None              # 流通市值上限（亿元）
-    # 资金与仓位
-    initial_capital: Optional[float] = None
-    position_size: Optional[float] = None
-    use_portfolio: Optional[bool] = None
-    streak_pause: Optional[int] = None
-    pause_days: Optional[int] = None
-    intraday_freq: Optional[str] = None
-    # 风险参数覆盖（前端直接传递）
-    risk_params: dict = {}
-    use_atr_stop: Optional[bool] = None
-    atr_stop_multiplier: Optional[float] = None
-    # 热门概念过滤
-    use_hot_concept: Optional[bool] = None
-    hot_concept_top_n: Optional[int] = None
-
-@router.post("/api/backtest")
-async def run_backtest(body: BacktestRequest):
-    try:
-        # 为当前请求创建唯一的终止事件
-        stop_event = threading.Event()
-        with _stop_events_lock:
-            stop_events['backtest'] = stop_event # 同一时间只允许一个回测任务存在对应的终止信号
-        
-        def _do_backtest():
-            try:
-                from app.backtest.engine import backtest_engine
-                def _prog(step, total, msg):
-                    sync_broadcast({"type": "progress", "step": step, "total": total, "msg": msg, "context": "backtest"})
-
-                result = backtest_engine.run(
-                    strategy_name=body.strategy_name,
-                    strategy_params=body.strategy_params,
-                    start=date.fromisoformat(body.start) if body.start else None,
-                    end=date.fromisoformat(body.end) if body.end else None,
-                    exchanges=body.exchanges,
-                    sectors=body.sectors,
-                    index_filter=body.index_filter,
-                    min_mv=body.min_mv,
-                    max_mv=body.max_mv,
-                    progress_callback=_prog,
-                    stop_event=stop_event,
-                    initial_capital=body.initial_capital,
-                    position_size=body.position_size,
-                    use_portfolio=body.use_portfolio,
-                    streak_pause=body.streak_pause,
-                    pause_days=body.pause_days,
-                    intraday_freq=body.intraday_freq,
-                    params_override=body.risk_params if body.risk_params else None,
-                    use_atr_stop=body.use_atr_stop if body.use_atr_stop is not None else None,
-                    atr_stop_multiplier=body.atr_stop_multiplier,
-                    use_hot_concept=body.use_hot_concept if body.use_hot_concept is not None else False,
-                    hot_concept_top_n=body.hot_concept_top_n if body.hot_concept_top_n is not None else 5,
-                )
-                
-                summary = {
-                    "total_trades": result.total_trades,
-                    "win_rate": round(result.win_rate, 1),
-                    "avg_pnl_pct": round(result.total_pnl_pct, 2),
-                }
-                stocks = []
-                for s in result.trades:
-                    row = dict(s)
-                    for k, v in row.items():
-                        if hasattr(v, "isoformat") or hasattr(v, "strftime"): 
-                            row[k] = str(v)
-                    stocks.append(row)
-                
-                if stop_event.is_set():
-                    sync_broadcast({"type": "log", "level": "warn", "msg": "🛑 回测任务已被用户中止"})
-                else:
-                    # 💾 自动保存回测历史
-                    try:
-                        import json as _json
-                        _risk = settings.get("risk") or {}
-                        _hist_id = db.save_backtest_history(
-                            strategy_name=body.strategy_name,
-                            start_date=body.start, end_date=body.end,
-                            exchanges=body.exchanges, sectors=body.sectors,
-                            index_filter=body.index_filter,
-                            min_mv=body.min_mv, max_mv=body.max_mv,
-                            risk_params=_json.dumps(_risk, ensure_ascii=False),
-                            total_trades=result.total_trades,
-                            win_rate=result.win_rate,
-                            avg_pnl_pct=result.total_pnl_pct,
-                            trades_json=_json.dumps(stocks, ensure_ascii=False),
-                        )
-                        log.info(f"回测历史已保存 (id={_hist_id})")
-                    except Exception as _e:
-                        log.warning(f"回测历史保存失败: {_e}")
-
-                # 投资组合结果（如果有）
-                portfolio = None
-                if getattr(result, "portfolio_initial_capital", None):
-                    portfolio = {
-                        "initial_capital": result.portfolio_initial_capital,
-                        "final_value": round(result.portfolio_final_value, 2),
-                        "total_return": round(result.portfolio_total_return, 2),
-                        "funded_trades": len(result.portfolio_trades) if result.portfolio_trades else 0,
-                        "skipped": result.portfolio_skipped,
-                        "monthly": getattr(result, "portfolio_monthly", None),
-                    }
-
-                sync_broadcast({"type": "backtest_done", "summary": summary, "stocks": stocks, "portfolio": portfolio})
-            except Exception as e:
-                import traceback
-                err_msg = f"回测后台任务崩溃: {str(e)}\n{traceback.format_exc()}"
-                log.error(err_msg)
-                sync_broadcast({"type": "log", "level": "error", "msg": f"回测崩溃: {str(e)}"})
-            finally:
-                with _stop_events_lock:
-                    if 'backtest' in stop_events: del stop_events['backtest']
-
-        run_in_thread(_do_backtest)
-        return {"status": "started"}
-    except Exception as e:
-        log.error(f"回测接口异常: {e}")
-        return {"status": "error", "message": str(e)}
 
 # ─── 任务控制 API ─────────────────────────────────────────────
 @router.post("/api/tasks/stop")
@@ -832,6 +682,7 @@ async def run_simple_backtest(body: dict):
 
             if result.get('status') == 'stopped':
                 sync_broadcast({"type": "log", "level": "warn", "msg": "回测已停止"})
+                sync_broadcast({"type": "simple_bt_stopped"})
                 return
 
             # 检查 TDX 信号为 0 的情况
@@ -866,17 +717,17 @@ async def run_simple_backtest(body: dict):
             sync_broadcast({
                 "type": "simple_bt_done",
                 "result_id": result_id,
-                "summary": result['summary'],
-                "equity": result['equity'],
-                "trades": result['trades'],
-                "indices": result['indices'],
+                "summary": result.get('summary', {'total_return': 0, 'max_drawdown': 0, 'win_rate': 0, 'sharpe': 0}),
+                "equity": result.get('equity', []),
+                "trades": result.get('trades', []),
+                "indices": result.get('indices', []),
                 "daily_trades": result.get('daily_trades', {}),
                 "params": result.get('params', {}),
             })
 
             # 额外的丰富完成日志（前端 simple_bt_done 已记基本日志，这里加更详细）
             try:
-                s = result['summary']
+                s = result.get('summary', {})
                 trades = result.get('trades', [])
                 sync_broadcast({"type": "log", "level": "info",
                     "msg": f"[数据源] {s.get('data_source', '?')} | 数据区间: {s.get('start_date', '')} ~ {s.get('end_date', '')}"})
@@ -933,11 +784,19 @@ async def run_simple_backtest(body: dict):
 
 @router.post("/api/backtest/run-simple/stop")
 async def stop_simple_backtest():
+    """中断正在运行的简化回测（用户在 UI 点停止时调用）"""
     with _stop_events_lock:
-        if 'simple_bt' in stop_events:
-            stop_events['simple_bt'].set()
-            return {"status": "ok", "message": "停止信号已发送"}
-    return {"status": "error", "message": "无正在运行的回测"}
+        evt = stop_events.get('simple_bt')
+        if evt:
+            evt.set()
+    # 跨进程 stop signal: touch 文件让 TDX worker 立即优雅退出(不等 proc.kill)
+    try:
+        os.makedirs("output", exist_ok=True)
+        open("output/bt_stop.signal", "w").close()
+    except Exception as e:
+        log.warning(f"创建 stop signal 文件失败(可能不影响主进程 stop_event): {e}")
+    sync_broadcast({"type": "log", "level": "warning", "msg": "🛑 简化回测停止指令已发送"})
+    return {"status": "ok", "message": "停止信号已发送"}
 
 
 @router.get("/api/backtest/simple/history")

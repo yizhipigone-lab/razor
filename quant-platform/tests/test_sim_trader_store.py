@@ -267,3 +267,58 @@ def test_record_marks_record_when_price_complete(tmp_store):
     ec = tmp_store.load_equity_curve()
     assert ec[-1]["source"] == "record"
 
+
+# ── CARD4: Position.today_pnl 统一今日盈亏 ─────────────────────
+#
+# 锁口径:
+#   base_px = entry_price if entry_date == today else prev_close
+#   rem     = remaining_shares or shares
+#   return  round(rem * (cur_price - base_px), 0)
+# 已平仓/缺现价/缺基准 → None(保留 api/sim_trader.py:471 哨兵语义)
+
+
+class TestPositionTodayPnl:
+    def test_overnight_uses_prev_close(self):
+        """过夜持仓: 基准 = 昨收 10.5, 现 11.0, 1000 股 → +500"""
+        pos = Position(code="000001", entry_date=date(2026, 3, 2),
+                       entry_price=10.0, shares=1000, cost=10000.0)
+        pos.remaining_shares = 1000
+        assert pos.today_pnl(11.0, 10.5, date(2026, 3, 3)) == 500.0
+
+    def test_bought_today_uses_entry_price(self):
+        """当日买入: 基准 = entry 10.0, 现 10.8, 1000 股 → +800"""
+        today = date(2026, 3, 3)
+        pos = Position(code="000001", entry_date=today,
+                       entry_price=10.0, shares=1000, cost=10000.0)
+        pos.remaining_shares = 1000
+        assert pos.today_pnl(10.8, 10.5, today) == 800.0
+
+    def test_partial_remaining(self):
+        """部分卖出后用 remaining_shares: 剩 300 股, 现 11.0, 昨收 10.0 → +300"""
+        pos = Position(code="000001", entry_date=date(2026, 3, 2),
+                       entry_price=10.0, shares=1000, cost=10000.0)
+        pos.remaining_shares = 300
+        assert pos.today_pnl(11.0, 10.0, date(2026, 3, 3)) == 300.0
+
+    def test_closed_returns_none(self):
+        """已平仓(remaining_shares<=0)→ None(api:471 哨兵语义)"""
+        pos = Position(code="000001", entry_date=date(2026, 3, 2),
+                       entry_price=10.0, shares=1000, cost=10000.0)
+        pos.remaining_shares = 0
+        assert pos.today_pnl(11.0, 10.0, date(2026, 3, 3)) is None
+
+    def test_missing_cur_price_returns_none(self):
+        """缺现价 → None"""
+        pos = Position(code="000001", entry_date=date(2026, 3, 2),
+                       entry_price=10.0, shares=1000, cost=10000.0)
+        pos.remaining_shares = 1000
+        assert pos.today_pnl(0.0, 10.0, date(2026, 3, 3)) is None
+        assert pos.today_pnl(-1.0, 10.0, date(2026, 3, 3)) is None
+
+    def test_overnight_missing_prev_close_returns_none(self):
+        """过夜但缺昨收 → None"""
+        pos = Position(code="000001", entry_date=date(2026, 3, 2),
+                       entry_price=10.0, shares=1000, cost=10000.0)
+        pos.remaining_shares = 1000
+        assert pos.today_pnl(11.0, 0.0, date(2026, 3, 3)) is None
+

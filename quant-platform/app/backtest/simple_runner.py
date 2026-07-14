@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Callable, Optional
 import json
 from core.logger import get_logger
-from app.backtest.execution import can_buy, calc_buy_cost, calc_sell_revenue
+from app.backtest.execution import can_buy, calc_buy_cost, calc_sell_revenue, realized_pnl
 
 log = get_logger("SimpleBT")
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -51,6 +51,7 @@ class FastEngine:
         self.cl = 0
         self.pause = None
         self.td_list = td_list
+        self._td_index = {d: i for i, d in enumerate(td_list)}  # 日期→序号，供 _td O(1) 查表
         self.p = params
         if 'take_profit_tiers' not in self.p:
             tiers = []
@@ -71,7 +72,17 @@ class FastEngine:
         return sum(1 for p in self.positions.values() if p.active)
 
     def _td(self, d1, d2):
-        return sum(1 for t in self.td_list if d1 <= t <= d2)
+        # 持仓天数 = 交易日序号之差 + 1（含买入日与当天，与原 sum(<=) 语义一致）
+        # getattr 防御：子类若重写 __init__ 不调 super（缺 _td_index）→ 走线性扫描兜底，不崩
+        idx = getattr(self, '_td_index', None)
+        if idx is None:
+            return sum(1 for t in self.td_list if d1 <= t <= d2)
+        i1 = idx.get(d1)
+        i2 = idx.get(d2)
+        if i1 is None or i2 is None:
+            # d1/d2 不在 td_list（非交易日/超界）→ 退回线性扫描
+            return sum(1 for t in self.td_list if d1 <= t <= d2)
+        return max(0, i2 - i1 + 1)
 
     def eq(self, prices):
         pv = 0
@@ -86,7 +97,7 @@ class FastEngine:
         if code in self.positions: return None
         # L28 修复: 统一成交执行层 - 涨停过滤
         # simple_runner 没有 prev_close 历史,简化处理:prev_close = px (无涨停判断)
-        # 严格过滤由 strict_runner / engine 承担
+        # 严格过滤由 engine 承担(原 strict_runner 已废弃移除)
         prev_close = px
         can_buy_ok, _ = can_buy(code, prev_close, px)
         if not can_buy_ok:
@@ -125,8 +136,8 @@ class FastEngine:
                     )
 
             ctx = exit_rule_engine.build_context(p, bar, hd, self.p, use_high_for_tp=True)
-            signal = exit_rule_engine.check(ctx)
-            if signal:
+            # check_all: trailing_first 下 ladder部分卖后继续trailing/cost_stop（对齐VERA），可能返回多个signal
+            for signal in exit_rule_engine.check_all(ctx):
                 if signal.reason.startswith('TP'):
                     idx = int(signal.reason[2]) - 1
                     p.tp_triggered.add(idx)
@@ -148,17 +159,14 @@ class FastEngine:
             ss = min(100, int(p.remaining))
         if ss <= 0: return None
         ss = min(ss, int(p.remaining))
-        # L28 修复: 统一成交执行层 - 卖出净收入(扣佣金+印花+滑点)
-        sell_rev = calc_sell_revenue(px, ss)
-        revenue = sell_rev['total']
-        cost_basis = ss * p.entry_price
-        profit = revenue - cost_basis
-        ret = (px / p.entry_price - 1) * 100
+        # CARD1 统一净口径:cost_basis 用 pos.cost 含费基按比例摊分(避免 min_commission 重复计费破守恒)
+        _cb = p.cost * (ss / p.shares) if p.shares else 0.0
+        _rp = realized_pnl(p.entry_price, px, ss, cost_basis=_cb)
+        self.cash += _rp['sell_revenue']
         p.remaining -= ss
         if p.remaining <= 0: p.active = False; p.remaining = 0
-        self.cash += revenue
         return Trade(p.code, p.entry_date, xd or date.today(),
-                     p.entry_price, px, ss, ret, profit, reason, 0)
+                     p.entry_price, px, ss, _rp['ret_pct'], _rp['pnl'], reason, 0)
 
     def sell_phase(self, d, snap, prev_snap=None):
         streak_pause = self.p.get('loss_streak_pause', 5)
@@ -464,19 +472,10 @@ def _run_intraday_backtest(
         })
         prev_snap = day_snap
 
-    # 最终清仓
-    for code, p in list(positions.items()):
-        if not p.active:
-            continue
-        px = closes.get(td[-1], {}).get(code, p.entry_price) if td else p.entry_price
-        ret = (px / p.entry_price - 1) * 100
-        profit = p.remaining * (px - p.entry_price)
-        cash += p.remaining * px
-        trades_all.append(Trade(code, p.entry_date, td[-1] if td else end,
-                                p.entry_price, px, p.remaining,
-                                round(ret, 2), round(profit, 0), "FE",
-                                sum(1 for t in td if p.entry_date <= t <= td[-1]) if td else 0))
-        sell_reasons["FE"] += 1
+    # 注: 原"最终清仓"循环已删除 —— 回测结束时不再强制卖出持仓
+    # 持仓按市值(equity_curve 已有 pos_value)计入 final_equity,标记为"持仓中"
+    # 修复 FE 误标记: 之前用 entry_price fallback 算 profit=-15248 的 4 笔 7-13 trades 是 bug
+    # 持仓未平仓部分在 positions 字典保留,equity_curve 末尾的 pos_value 已 mark-to-market
 
     # 构建结果
     indices = {}
@@ -595,20 +594,17 @@ def _execute_signal(pos, code, d, sig, cash, trades_all, sell_reasons, cooldown)
         sell_shares = min(ss, pos.shares)
     if sell_shares <= 0:
         sell_shares = pos.shares
-    # 任务一: 卖出扣成本。口径对齐 FastEngine.sell(:152-156): cost_basis 用裸 entry_price,
-    # profit=净卖出额-裸成本基(买入费已在建仓时从cash扣除,体现在净值曲线), ret 用毛收益率
-    _sr = calc_sell_revenue(sig.sell_price, sell_shares)
-    sell_revenue = _sr['total']
-    profit = sell_revenue - sell_shares * pos.entry_price
-    ret = (sig.sell_price / pos.entry_price - 1) * 100
-    cash += sell_revenue
+    # CARD1 统一净口径:cost_basis 用 pos.cost 含费基按比例摊分(避免 min_commission 重复计费破守恒)
+    _cb = pos.cost * (sell_shares / pos.shares) if pos.shares else 0.0
+    _rp = realized_pnl(pos.entry_price, sig.sell_price, sell_shares, cost_basis=_cb)
+    cash += _rp['sell_revenue']
     pos.remaining -= sell_shares
     if pos.remaining <= 0:
         pos.active = False
         pos.remaining = 0
     trades_all.append(Trade(code, pos.entry_date, d,
                             pos.entry_price, sig.sell_price, sell_shares,
-                            round(ret, 2), round(profit, 0), sig.reason,
+                            round(_rp['ret_pct'], 2), round(_rp['pnl'], 0), sig.reason,
                             (d - pos.entry_date).days))
     sell_reasons[sig.reason] += 1
     cooldown[code] = d
