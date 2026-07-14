@@ -121,3 +121,49 @@ class TestTakeProfit:
         sig = rule_take_profit(ctx)
         assert sig is not None
         assert sig.reason == "TP2"
+
+
+# ── H8(2026-07-15 全项目审计): adjust_for_gap 不应把正常跌停误判为除权 ──
+
+class TestAdjustForGap:
+    """H8: 旧版阈值 -0.10/-0.12/-0.30 恰好等于/小于跌停幅度, 正常跌停被误判除权
+    → 永久下调 entry/peak。修复后阈值超过跌停幅度才触发。"""
+
+    def test_main_board_normal_limit_down_not_triggered(self):
+        from app.backtest.exit_rules import adjust_for_gap
+        # 主板跌停 -10%: 不应触发(旧 bug 会把 entry 10→9)
+        entry, peak = adjust_for_gap("000001.SZ", 10.0, 12.0, 9.0, 10.0)
+        assert entry == 10.0
+        assert peak == 12.0
+
+    def test_main_board_ex_rights_beyond_limit_triggered(self):
+        from app.backtest.exit_rules import adjust_for_gap
+        # 超过跌停(-25%): 真除权, 按比例下调
+        entry, peak = adjust_for_gap("000001.SZ", 10.0, 12.0, 7.5, 10.0)
+        assert entry == pytest.approx(7.5)
+        assert peak == pytest.approx(9.0)
+
+    def test_chinext_normal_limit_down_not_triggered(self):
+        from app.backtest.exit_rules import adjust_for_gap
+        # 创业板跌停 -20%: 旧 -0.12 阈值会误判, 修复后不触发
+        entry, peak = adjust_for_gap("300001.SZ", 10.0, 12.0, 8.0, 10.0)
+        assert entry == 10.0
+        assert peak == 12.0
+
+    def test_star_market_normal_drop_not_triggered(self):
+        from app.backtest.exit_rules import adjust_for_gap
+        # 科创板 -18%(跌停-20%内正常波动): 不触发
+        entry, peak = adjust_for_gap("688001.SH", 10.0, 12.0, 8.2, 10.0)
+        assert entry == 10.0
+
+    def test_bj_4xx_uses_30pct_threshold(self):
+        """M1: 北证 4xx 应走 -30% 阈值, 不是主板 -10%。-15% 不触发。"""
+        from app.backtest.exit_rules import adjust_for_gap
+        entry, peak = adjust_for_gap("430123.BJ", 10.0, 12.0, 8.5, 10.0)  # -15%
+        assert entry == 10.0  # 不触发(旧版 4xx 走 -0.10 会误判)
+
+    def test_zero_prev_close_no_change(self):
+        from app.backtest.exit_rules import adjust_for_gap
+        entry, peak = adjust_for_gap("000001.SZ", 10.0, 12.0, 9.0, 0.0)
+        assert entry == 10.0
+        assert peak == 12.0

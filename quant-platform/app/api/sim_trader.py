@@ -343,7 +343,7 @@ async def sim_trader_execute():
                     if sig_result.get('status') == 'ok':
                         matched = sig_result.get('matched', [])
                         log.info(f'{formula_name}选股: {len(matched)}只')
-                        from app.sim_trader.config import SAME_STOCK_COOLDOWN
+                        from app.sim_trader.config import SAME_STOCK_COOLDOWN, STRATEGY_NAME
                         paused = engine.pause_until is not None and today <= engine.pause_until
                         if not paused and matched:
                             for code in matched:

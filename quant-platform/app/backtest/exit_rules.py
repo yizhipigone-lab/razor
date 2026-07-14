@@ -446,12 +446,17 @@ def adjust_for_gap(code: str, entry_price: float, peak_price: float,
         return entry_price, peak_price
     gap = close / prev_close - 1
     prefix = code[:3] if len(code) >= 3 else code
+    # H8(2026-07-15 全项目审计): 阈值改为【超过跌停幅度】才判除权, 避免正常跌停被误判。
+    # 旧版主板 -0.10 / 创业科创 -0.12 / 北证 -0.30, 其中 -0.10/-0.12 恰好等于/小于
+    # 跌停幅度, 导致正常跌停日被永久下调 entry/peak → P&L 失真。
+    # 新阈值取跌停幅度再过 1%: 主板 -0.11, 创业科创 -0.21, 北证 -0.31。
+    # M1: 北证 4xx 原走错分支(prefix[0]=='4' 落 else -0.10), 现并入 ('8','4') → -0.31。
     if prefix in ('300', '301', '688'):
-        limit = -0.12  # 创业板/科创板除权更频繁，阈值收紧
-    elif prefix[0] == '8':
-        limit = -0.30
+        limit = -0.21   # 创业板/科创板跌停-20%, 超过才判除权
+    elif prefix[0] in ('8', '4'):
+        limit = -0.31   # 北证(8xx/4xx)跌停-30%, 超过才判除权
     else:
-        limit = -0.10
+        limit = -0.11   # 主板跌停-10%, 超过才判除权
     if gap <= limit:
         ratio = close / prev_close
         return entry_price * ratio, peak_price * ratio

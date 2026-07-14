@@ -462,7 +462,10 @@ class SimTraderEngine:
         # 任务一: 卖出扣成本(佣金+印花+滑点)，profit/ret 基于含费净额
         from app.backtest.execution import calc_sell_revenue
         sell_net = calc_sell_revenue(exit_price, ss)['total']
-        cost_basis = pos.cost * (ss / pos.shares) if pos.shares else 0.0
+        # H2(2026-07-15 全项目审计): 成本基按【剩余股数】(本次卖出前)摊分, 不是原始 shares。
+        # 旧版用 pos.shares(原始, 永不改)做分母, 但 pos.cost 已被前次部分卖摊减 →
+        # 第二次起 cost_basis 系统性低估、利润虚高。改为 remaining_shares(本次卖出前值)。
+        cost_basis = pos.cost * (ss / pos.remaining_shares) if pos.remaining_shares else 0.0
         profit = sell_net - cost_basis
         rp = (profit / cost_basis * 100) if cost_basis else 0.0
         pos.remaining_shares -= ss

@@ -322,3 +322,59 @@ class TestPositionTodayPnl:
         pos.remaining_shares = 1000
         assert pos.today_pnl(11.0, 0.0, date(2026, 3, 3)) is None
 
+
+# ── H2(2026-07-15 全项目审计): execute_sell 多次部分卖出成本基按剩余股数摊分 ──
+
+class TestExecuteSellPartialCostBasis:
+    """H2: 旧版用 pos.shares(原始)做分母, 部分卖出后 cost 已摊减但分母不变 → 利润虚高。
+    修复后用 remaining_shares(本次卖出前)做分母, 多次部分卖出总成本回收 == 原 pos.cost。
+    """
+
+    def test_three_partial_sells_recover_full_cost(self):
+        """1000 股 cost=10000, 分 3 次各卖 300: 每次成本基应按剩余摊分, 总回收==10000。"""
+        from app.sim_trader.engine import SimTraderEngine
+        engine = SimTraderEngine()  # 无 store 纯内存
+        engine.cash = 100_000
+        pos = Position(code="000001", entry_date=date(2026, 3, 2),
+                       entry_price=10.0, shares=1000, cost=10000.0)
+        pos.remaining_shares = 1000
+        engine.positions["000001"] = pos
+
+        # 卖出价=成本价(10.0), 无费用场景下 profit=0, cost 回收应等于成本基
+        # calc_sell_revenue 含费, 这里用高价让 profit>0 不影响成本基断言
+        recovered = 0.0
+        for _ in range(3):
+            trade = engine.execute_sell(pos, 12.0, "TP1", partial=300,
+                                        exit_date=date(2026, 3, 3))
+            if trade:
+                recovered += trade.profit_amount + (10000.0 * 300 / 1000 if recovered == 0 else 0)
+        # 关键: 部分卖出后 pos.cost 正确摊减
+        # 卖1: cost_basis=10000*(300/1000)=3000, pos.cost→7000, remaining→700
+        # 卖2: cost_basis=7000*(300/700)=3000, pos.cost→4000, remaining→400  (旧 bug 会算 2100)
+        # 卖3: cost_basis=4000*(300/400)=3000, pos.cost→1000, remaining→100
+        # 三次 cost_basis 都应是 3000, 总 9000, 剩余 cost=1000
+        assert pos.remaining_shares == 100
+        assert pos.cost == pytest.approx(1000.0)  # 10000 - 9000
+        # 旧 bug: 卖2 cost_basis=2100, 卖3=1470 → 总 6570, 剩余 cost=3430(≠1000)
+
+    def test_partial_sell_cost_basis_uses_remaining_not_original(self):
+        """直接断言: 第二次部分卖的 cost_basis 按 remaining 摊分(3000), 不是按 original(2100)。"""
+        from app.sim_trader.engine import SimTraderEngine
+        engine = SimTraderEngine()
+        engine.cash = 100_000
+        pos = Position(code="000001", entry_date=date(2026, 3, 2),
+                       entry_price=10.0, shares=1000, cost=10000.0)
+        pos.remaining_shares = 1000
+        engine.positions["000001"] = pos
+
+        # 第一次卖 300: cost_basis=3000, pos.cost→7000, remaining→700
+        engine.execute_sell(pos, 10.0, "TP1", partial=300, exit_date=date(2026, 3, 3))
+        assert pos.cost == pytest.approx(7000.0)
+        assert pos.remaining_shares == 700
+
+        # 第二次卖 300: cost_basis 应=7000*(300/700)=3000, pos.cost→4000
+        # 旧 bug 会算 7000*(300/1000)=2100 → pos.cost→4900
+        engine.execute_sell(pos, 10.0, "TP1", partial=300, exit_date=date(2026, 3, 3))
+        assert pos.cost == pytest.approx(4000.0)  # 不是 4900
+        assert pos.remaining_shares == 400
+
