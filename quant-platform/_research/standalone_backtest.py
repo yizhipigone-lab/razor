@@ -534,7 +534,8 @@ def run_backtest(
         for code in universe:
             if code in positions:
                 continue
-            if len(positions) >= max_positions:
+            # max_positions <= 0 视作不限仓位数;只受现金与每单笔上限约束
+            if max_positions > 0 and len(positions) >= max_positions:
                 break
             zp_arr = signals_full.get(code)
             if zp_arr is None or date_idx >= len(zp_arr) or zp_arr[date_idx] != 1:
@@ -547,9 +548,14 @@ def run_backtest(
             if entry_price <= 0:
                 continue
             # 单笔上限 — 防止复利把单笔推到不切实际
-            position_size = cash / max_positions
-            if params.get("max_position_cash") is not None:
-                position_size = min(position_size, params["max_position_cash"])
+            # max_positions <= 0 意味着"不限仓位数",只受单笔上限与现金约束
+            if max_positions <= 0:
+                position_size = (params.get("max_position_cash")
+                                  or (cash / 5))
+            else:
+                position_size = cash / max_positions
+                if params.get("max_position_cash") is not None:
+                    position_size = min(position_size, params["max_position_cash"])
             entry_shares = int(position_size / entry_price / 100) * 100
             if entry_shares < 100:
                 continue
@@ -681,7 +687,8 @@ def main():
     parser.add_argument("--start", default="2020-01-01")
     parser.add_argument("--end", default=date.today().isoformat())
     parser.add_argument("--capital", type=float, default=1_000_000)
-    parser.add_argument("--max-positions", type=int, default=5)
+    parser.add_argument("--max-positions", type=int, default=5,
+                        help="同时持仓上限(默认 5);设 0=不限制(只受单笔上限约束)")
     parser.add_argument("--max-position-cash", type=float, default=200000,
                         help="单笔持仓现金上限($);默认 20 万防止复利")
     parser.add_argument("--slippage", type=float, default=0.0005,
