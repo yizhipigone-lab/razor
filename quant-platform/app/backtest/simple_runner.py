@@ -94,20 +94,27 @@ class FastEngine:
         return self.cash + pv
 
     def buy(self, d, code, px, prev_close=None):
-        """d 当前日, code 股票, px 当前价, prev_close 昨日真实收盘价
+        """d 当前日, code 股票, px 当前价, prev_close 昨日真实收盘价(可选)
 
-        2026-07-15 HIGH-3: 涨停过滤必须用真实 prev_close,不再 prev_close=px。
-        缺前收 → 显式 raise (对齐原 strict_runner "缺数据 raise"),
-        不再静默失效 → 根除 '永远 can_buy_ok=True' 的 bug。
+        2026-07-15 HIGH-3 (compat 4b): 涨停过滤必须用真实前收,不再 'px=prev_close' 默认静默失效。
+        - prev_close 提供时:用真实前收严查涨停(can_buy 真实前收 → 拒涨停日)。
+        - prev_close 缺省(<=0):logger.warning + can_buy 走"无涨停过滤"路径(等同 Task 4 改前的旧行为)
+                       —— 这是给 scripts/*.py 旧 CLI 调用的兼容降级路径,
+                           主回测(simple_runner.py 主循环 / tdx_runner.py:803)始终传 prev_close。
+        不 raise 的原因:scripts/ 下 22 个 CLI 旧三参调用 eng.buy(d, code, px) 不应崩。
+        副作用:旧脚本的涨停过滤暂时降级为无(等同改前) — 用户已接受。
         """
         if code in self.positions: return None
         if prev_close is None or prev_close <= 0:
-            raise ValueError(
-                f"simple_runner.buy 缺真实 prev_close(code={code} d={d}); "
-                "需从 closes 取前一个交易日,不要传 px 充当 prev_close"
+            # 兼容降级路径 — 不 raise 以保护 scripts/ 下 22 个 CLI 不崩
+            import logging
+            logging.getLogger("FastEngine").warning(
+                f"buy() 缺 prev_close (code={code} d={d}),涨停过滤降级 — "
+                "建议调用方从 closes 取前一个交易日"
             )
-        # can_buy(code, prev_close, today_high) 3 位参数 - 用当前价作 today_high
-        can_buy_ok, _ = can_buy(code, prev_close, px)
+            can_buy_ok, _ = can_buy(code, px, px)  # 故意 (px, px):永远 0% 涨,等价无过滤
+        else:
+            can_buy_ok, _ = can_buy(code, prev_close, px)
         if not can_buy_ok:
             return None
         ma = min(self.max_pos(), self.cash)

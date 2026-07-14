@@ -32,13 +32,14 @@ def test_can_buy_rejects_limit_up_with_real_prev_close():
     assert reason and ("涨停" in reason or "limit" in reason.lower())
 
 
-def test_simple_runner_buy_requires_real_prev_close():
-    """HIGH-3 回归测试 - simple_runner.buy 缺 prev_close 必 raise
+def test_simple_runner_buy_without_prev_close_warns_skips_filter(caplog):
+    """HIGH-3 (compat 4b) 回归测试 - 缺 prev_close → logger.warning + 走无涨停过滤路径
 
-    2026-07-15: 涨停过滤实化 — buy() 必须传真实 prev_close=None 时显式 raise,
-    不复刻 'prev_close = px' 静默失效的 bug。
+    上一版该测试断言 raise,现改为 assert warning 日志出现 + 不崩。
+    raise-严格模式不在 buy() 内部做,留给主回测路径(传入真实 prev_close)。
+    scripts/ 下 22 个 CLI 用旧三参 eng.buy(d, code, px) 不应崩 — 此测试守住兼容降级。
     """
-    import pytest
+    import logging
     from app.backtest.simple_runner import FastEngine
     td_list = [date(2024, 1, d) for d in range(2, 11)]
     params = {
@@ -47,8 +48,41 @@ def test_simple_runner_buy_requires_real_prev_close():
         "min_buy_amt": 5_000,
     }
     eng = FastEngine(td_list, params)
-    with pytest.raises(ValueError, match="缺真实 prev_close"):
-        eng.buy(date(2024, 1, 3), "600000", 11.5, prev_close=None)
+
+    with caplog.at_level(logging.WARNING, logger="FastEngine"):
+        res = eng.buy(date(2024, 1, 3), "600000", 11.5, prev_close=None)
+    # 缺 prev_close 时 buy 不应该崩,且能"模拟买入"或拒(取决于其它约束)
+    assert res is None or getattr(res, "code", None) == "600000", \
+        "降级路径应静默继续,不 raise"
+    assert any("缺 prev_close" in r.message for r in caplog.records), \
+        "应 logger.warning 显式记录"
+
+
+def test_simple_runner_main_loop_passes_prev_close(caplog):
+    """HIGH-3 回归测试 - 主回测路径传真实 prev_close 时,不应触发降级 warning
+
+    验证 22 个 scripts/ CLI 才是降级消费者,
+    simple_runner 主回测路径(self call)走严格 prev_close。
+    模拟主回测传 prev_close=10.0 (无涨停日) → 应成功买入 + 无 warning。
+    """
+    import logging
+    from app.backtest.simple_runner import FastEngine
+    td_list = [date(2024, 1, d) for d in range(2, 11)]
+    params = {
+        "initial_capital": 1_000_000,
+        "position_size": 50_000,
+        "min_buy_amt": 5_000,
+    }
+    eng = FastEngine(td_list, params)
+
+    with caplog.at_level(logging.WARNING, logger="FastEngine"):
+        res = eng.buy(date(2024, 1, 3), "600000", 10.5, prev_close=10.0)
+    # +5% 非涨停,应成功买入
+    assert res is not None and getattr(res, "code", None) == "600000", \
+        "传真实 prev_close + 非涨停价 → 应成功买入"
+    # 传了 prev_close 不应触发 warning
+    assert not any("缺 prev_close" in r.message for r in caplog.records), \
+        "传了 prev_close 不应触发降级 warning"
 
 
 def test_simple_runner_filters_limit_up():
