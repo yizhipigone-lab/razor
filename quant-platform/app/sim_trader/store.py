@@ -108,7 +108,7 @@ class SimTraderStore:
             ])
 
     def load_positions(self) -> Dict[str, "Position"]:
-        from app.sim_trader.engine import Position
+        from app.sim_trader.models import Position
         rows = self.conn.execute(
             "SELECT * FROM sim_positions WHERE is_active = TRUE"
         ).fetchall()
@@ -143,7 +143,7 @@ class SimTraderStore:
         ])
 
     def load_trades(self) -> List["Trade"]:
-        from app.sim_trader.engine import Trade
+        from app.sim_trader.models import Trade
         rows = self.conn.execute(
             "SELECT * FROM sim_trades ORDER BY id"
         ).fetchall()
@@ -170,8 +170,10 @@ class SimTraderStore:
         rows = self.conn.execute(
             "SELECT date, equity, cash, positions FROM sim_equity ORDER BY date"
         ).fetchall()
+        # 2026-07-14: 同时输出 'pos' 键(对齐 JsonSimStore / InMemoryStore 契约);
+        # 保留 'positions' 键供老消费方向后兼容, 不破坏现有读取。
         return [{'date': r[0], 'equity': r[1], 'cash': r[2],
-                 'positions': r[3]} for r in rows]
+                 'pos': r[3], 'positions': r[3]} for r in rows]
 
     # ── 引擎状态 ────────────────────────────────
 
@@ -229,6 +231,21 @@ class SimTraderStore:
         except Exception:
             pass
         return {}
+
+    # ── 全量清空(对齐 JsonSimStore, 测试/回放用) ───────────
+
+    def clear_all(self):
+        """清空所有 sim_* 表。历史 SimTraderStore 缺此方法, 调用必 AttributeError。"""
+        try:
+            for tbl in ('sim_positions', 'sim_trades', 'sim_equity', 'sim_state'):
+                self.conn.execute(f"DELETE FROM {tbl}")
+            self.conn.commit()
+        except Exception:
+            try:
+                self.conn.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
 
 
 class JsonSimStore:
@@ -301,7 +318,7 @@ class JsonSimStore:
         return self._data.get('prev_day_snap', {})
 
     def load_positions(self) -> Dict[str, "Position"]:
-        from app.sim_trader.engine import Position
+        from app.sim_trader.models import Position
         result = {}
         for code, p in self._data.get('positions', {}).items():
             pos = Position(
@@ -351,7 +368,7 @@ class JsonSimStore:
         self._save()
 
     def load_trades(self) -> List["Trade"]:
-        from app.sim_trader.engine import Trade
+        from app.sim_trader.models import Trade
         result = []
         for t in self._data.get('trades', []):
             result.append(Trade(
