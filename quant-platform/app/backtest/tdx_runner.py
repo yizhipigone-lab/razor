@@ -68,29 +68,28 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
     log.info(f"TDX回测: {start}~{end} ({natural_days}d) kline_count={kline_count} formula_start={formula_start}")
 
     # 默认参数 — 全部从 config.py 读取，不硬编码任何数字
-    from app.sim_trader.config import (
-        INITIAL_CAPITAL, POSITION_SIZE, MIN_BUY_AMT,
-        HARD_STOP, TAKE_PROFIT_TIERS, TRAIL_ACTIVATE, TRAIL_DD,
-        TIME_EXIT_DAYS, TIME_EXIT_PROFIT, TIME_FORCE_DAYS,
-        LOSS_STREAK_HALVE, LOSS_STREAK_PAUSE, PAUSE_DAYS, SAME_STOCK_COOLDOWN,
-    )
-    params.setdefault("initial_capital", INITIAL_CAPITAL)
-    params.setdefault("position_size", POSITION_SIZE)
-    params.setdefault("min_buy_amt", MIN_BUY_AMT)
-    params.setdefault("hard_stop", HARD_STOP)
-    params.setdefault("take_profit_tiers", TAKE_PROFIT_TIERS)
-    params.setdefault("trail_activate", TRAIL_ACTIVATE)
-    params.setdefault("trail_dd", TRAIL_DD)
-    params.setdefault("time_exit_days", TIME_EXIT_DAYS)
-    params.setdefault("time_exit_profit", TIME_EXIT_PROFIT)
-    params.setdefault("time_force_days", TIME_FORCE_DAYS)
-    params.setdefault("loss_streak_pause", LOSS_STREAK_PAUSE)
-    params.setdefault("pause_days", PAUSE_DAYS)
-    params.setdefault("loss_streak_halve", LOSS_STREAK_HALVE)
-    params.setdefault("same_stock_cooldown", SAME_STOCK_COOLDOWN)
+    # 2026-07-15 CRITICAL-1: 改走 risk_params 路径,消除对 sim_trader.config 的反向依赖
+    from app.config.risk_params import load_risk_params, load_position_params, load_streak_params
+    _rp = load_risk_params()
+    _pp = load_position_params()
+    _sp = load_streak_params()
+    params.setdefault("initial_capital", _pp.initial_capital)
+    params.setdefault("position_size",    _pp.position_size)
+    params.setdefault("min_buy_amt",      _pp.min_buy_amt)
+    params.setdefault("hard_stop",        _rp.hard_stop)
+    params.setdefault("take_profit_tiers", _rp.take_profit_tiers)
+    params.setdefault("trail_activate",   _rp.trail_activate)
+    params.setdefault("trail_dd",         _rp.trail_dd)
+    params.setdefault("time_exit_days",   _rp.time_exit_days)
+    params.setdefault("time_exit_profit", _rp.time_exit_profit)
+    params.setdefault("time_force_days",  _rp.time_force_days)
+    params.setdefault("loss_streak_pause", _sp.loss_streak_pause)
+    params.setdefault("pause_days",       _sp.pause_days)
+    params.setdefault("loss_streak_halve", _sp.loss_streak_halve)
+    params.setdefault("same_stock_cooldown", _sp.same_stock_cooldown)
 
     # 动态仓位：position_size 转为净值的固定比例（默认20%）
-    params["position_ratio"] = params.get("position_size", POSITION_SIZE) / params["initial_capital"]
+    params["position_ratio"] = params["position_size"] / params["initial_capital"]
 
     # 关键修复：从 params 读 formula_name 作为 override 传给 bridge
     _formula_name = params.get("strategy_name") or None

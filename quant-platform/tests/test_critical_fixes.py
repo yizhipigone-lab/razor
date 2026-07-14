@@ -97,3 +97,54 @@ def test_simple_runner_filters_limit_up():
     # 前收 10 + 现价 11.5 (+15% 涨停主板)
     res = eng.buy(date(2024, 1, 3), "600000", 11.5, prev_close=10.0)
     assert res is None, "涨停日应拒, got position object 是 bug"
+
+
+def test_tdx_runner_no_sim_trader_import():
+    """CRITICAL-1 回归测试 - 架构分层禁止:回测引擎不准反向依赖模拟盘运行态
+
+    2026-07-15: tdx_runner 直接 `from app.sim_trader.config`
+    把模拟盘运行态常量偷渡到回测引擎,导致回测结果与 sim_trader 配置漂移。
+    修复后必须改走 `app.config.risk_params` 路径。
+    """
+    import ast
+    from pathlib import Path
+    src = Path("app/backtest/tdx_runner.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            mod = node.module or ""
+            assert "sim_trader" not in mod, \
+                f"tdx_runner 反向依赖 {mod}.{[n.name for n in node.names]} — 必须改走 risk_params"
+        elif isinstance(node, ast.Import):
+            for n in node.names:
+                assert "sim_trader" not in n.name, \
+                    f"tdx_runner 反向依赖 {n.name} — 必须改走 risk_params"
+
+
+def test_sim_trader_config_derives_from_risk_params():
+    """CRITICAL-1 回归测试 - sim_trader/config.py 的 risk 段必须派生自 risk_params
+
+    防止有人改回 sim_trader/config.py 硬编码 risk 段常量,
+    破坏 H6 修复(2026-07-14)的"唯一真相源"约束。
+    """
+    from app.sim_trader.config import HARD_STOP, TRAIL_ACTIVATE, TRAIL_DD, TAKE_PROFIT_TIERS
+    from app.config.risk_params import load_risk_params
+    rp = load_risk_params()
+    assert HARD_STOP == rp.hard_stop
+    assert TRAIL_ACTIVATE == rp.trail_activate
+    assert TRAIL_DD == rp.trail_dd
+    assert TAKE_PROFIT_TIERS == rp.take_profit_tiers
+
+
+def test_tdx_runner_uses_risk_params_consistently():
+    """CRITICAL-1 回归测试 - tdx_runner 函数体内不应再残留 sim_trader.config import
+
+    AST 检查 + 字符串源码双重护栏,防有人绕过 AST 在函数体内字符串里 import。
+    """
+    import inspect
+    from app.backtest.tdx_runner import run_tdx_backtest
+    func_src = inspect.getsource(run_tdx_backtest)
+    assert "from app.sim_trader.config" not in func_src, \
+        "run_tdx_backtest 函数体内仍残留 sim_trader.config import — 必须清除"
+    assert "app.config.risk_params" in func_src or "load_risk_params" in func_src, \
+        "run_tdx_backtest 应改走 risk_params 路径,未发现 load_risk_params 引用"
