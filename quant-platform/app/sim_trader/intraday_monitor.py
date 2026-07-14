@@ -123,18 +123,38 @@ class IntradayMonitor:
     def _check_position(self, pos, current_price: float, session_peak: float,
                         daily_atr: float = 0.0):
         """
-        用统一规则引擎检查止盈止损，返回 (reason, partial_qty) 或 None
+        用统一规则引擎检查止盈止损，返回 (reason, partial_qty) 或 None。
+
+        2026-07-14 修复 NameError: v5.5 重构后遗留 ctx/overall_peak 未定义,
+        盘中 tick 命中持仓必崩。现对齐 live_trader.exit_monitor._build_context
+        + engine.check_stops 的正确范式:
+          build_context(pos, bar, hold_days, params) → check(ctx, skip_eod_only=True)。
         """
         from app.backtest.exit_rules import exit_rule_engine
-        from core.settings import settings
-
-        # v5.5 (2026-07-14): 统一走 risk_params.load_risk_params, 与 engine/exit_monitor 共享
         from app.config.risk_params import load_risk_params as _load_risk_params
         import dataclasses
-        risk_params_dict = dataclasses.asdict(_load_risk_params())
-        # 覆盖峰值：盘中使用 session_peak
-        ctx.peak_price = overall_peak
 
+        sim_params = dataclasses.asdict(_load_risk_params())
+
+        # 盘中 bar: close/low/open 用现价, high 用 session_peak(对齐 exit_monitor U1)
+        bar = {
+            'open': current_price,
+            'high': session_peak,
+            'low': current_price,
+            'close': current_price,
+            'atr': daily_atr,
+        }
+
+        # 峰值跟踪: 与 EOD check_stops 一致, 新高则抬升 pos.peak_price
+        if session_peak > pos.peak_price:
+            pos.peak_price = session_peak
+
+        # hold_days: 交易日计数(对齐 exit_monitor._calc_hold_days)
+        hold_days = self._calc_hold_days(pos.entry_date)
+
+        ctx = exit_rule_engine.build_context(
+            pos, bar, hold_days, sim_params, use_high_for_tp=True
+        )
         signal = exit_rule_engine.check(ctx, skip_eod_only=True)
         if signal is None:
             return None
@@ -148,6 +168,26 @@ class IntradayMonitor:
             return None
 
         return (signal.reason, None)
+
+    def _calc_hold_days(self, entry_date) -> int:
+        """交易日计数(对齐 live_trader.exit_monitor._calc_hold_days)。
+        entry_date 缺失用今日; 无交易日历则自然日兜底; 异常返回 1(不阻断风控)。"""
+        try:
+            if entry_date is None:
+                entry_date = date.today()
+            if hasattr(entry_date, "date"):
+                entry_d = entry_date.date()
+            else:
+                entry_d = entry_date
+            from app.api.sim_trader import _load_trading_calendar
+            cal = _load_trading_calendar() or set()
+            today = date.today()
+            if cal:
+                window = sorted(d for d in cal if entry_d <= d <= today)
+                return max(1, len(window))
+            return max(1, (today - entry_d).days)
+        except Exception:
+            return 1
 
     def _execute_sell(self, pos, price: float, reason: str, partial_qty: Optional[int]):
         """执行卖出并广播"""
