@@ -138,8 +138,8 @@ class Settings:
     @property
     def trailing_activate_pct(self) -> float:
         """触发移动止盈的最低利润率（%）"""
-        # L21 修复: 缺键从 app/sim_trader/config.py 读(唯一真相源),无假默认
-        from app.config.schema import load_risk_params
+        # 缺键从 risk_params 读(唯一真相源),无假默认
+        from app.config.risk_params import load_risk_params
         val = self._data.get("risk", {}).get("trailing_stop_activate_pct")
         if val is not None:
             return float(val)
@@ -148,8 +148,8 @@ class Settings:
     @property
     def trailing_drawdown_pct(self) -> float:
         """从历史最高价回落多少触发清仓（%）"""
-        # L21 修复: 缺键从 app/sim_trader/config.py 读(唯一真相源),无假默认
-        from app.config.schema import load_risk_params
+        # 缺键从 risk_params 读(唯一真相源),无假默认
+        from app.config.risk_params import load_risk_params
         val = self._data.get("risk", {}).get("trailing_stop_drawdown_pct")
         if val is not None:
             return float(val)
@@ -158,8 +158,8 @@ class Settings:
     @property
     def hard_stop_loss_pct(self) -> float:
         """硬止损跌幅（%，负数）"""
-        # L21 修复: 缺键从 app/sim_trader/config.py 读(唯一真相源),无假默认
-        from app.config.schema import load_risk_params
+        # 缺键从 risk_params 读(唯一真相源),无假默认
+        from app.config.risk_params import load_risk_params
         val = self._data.get("risk", {}).get("hard_stop_loss_pct")
         if val is not None:
             return float(val)
@@ -168,22 +168,22 @@ class Settings:
     @property
     def breakeven_threshold_pct(self) -> float:
         """利润保护激活阈值（%）"""
-        # L21 修复: 缺键从 app/sim_trader/config.py 读(唯一真相源),无假默认
-        from app.config.schema import load_risk_params
+        # 缺键从 risk_params 读(唯一真相源),无假默认
+        from app.config.risk_params import load_risk_params
         val = self._data.get("risk", {}).get("breakeven_threshold_pct")
         if val is not None:
             return float(val)
-        return load_risk_params().breakeven_threshold * 100
+        return load_risk_params().breakeven_threshold_pct * 100
 
     @property
     def breakeven_stop_pnl_pct(self) -> float:
         """保本止损位（%，如+0.5%）"""
-        # L21 修复: 缺键从 app/sim_trader/config.py 读(唯一真相源),无假默认
-        from app.config.schema import load_risk_params
+        # 缺键从 risk_params 读(唯一真相源),无假默认
+        from app.config.risk_params import load_risk_params
         val = self._data.get("risk", {}).get("breakeven_stop_pnl_pct")
         if val is not None:
             return float(val)
-        return load_risk_params().breakeven_stop * 100
+        return load_risk_params().breakeven_stop_pnl_pct * 100
 
     @property
     def staged_take_profit(self) -> list:
@@ -193,8 +193,8 @@ class Settings:
     @property
     def time_exit_days(self) -> int:
         """持仓超过几天触发时间止损"""
-        # L21 修复: 缺键从 app/sim_trader/config.py 读(唯一真相源),无假默认
-        from app.config.schema import load_risk_params
+        # 缺键从 risk_params 读(唯一真相源),无假默认
+        from app.config.risk_params import load_risk_params
         val = self._data.get("risk", {}).get("time_exit_days")
         if val is not None:
             return int(val)
@@ -206,8 +206,8 @@ class Settings:
         语义: 只要收益不低于此阈值则触发时间清仓,因此应为正数阈值。
         schema 中 TIME_EXIT_PROFIT 为正小数,单位 *100 后为正百分比。
         """
-        # L21 修复: 缺键从 app/sim_trader/config.py 读(唯一真相源),无假默认
-        from app.config.schema import load_risk_params
+        # 缺键从 risk_params 读(唯一真相源),无假默认
+        from app.config.risk_params import load_risk_params
         val = self._data.get("risk", {}).get("time_exit_min_profit_pct")
         if val is not None:
             return float(val)
@@ -216,8 +216,8 @@ class Settings:
     @property
     def time_exit_force_days(self) -> int:
         """强制时间止损：超过此天数无条件清仓"""
-        # L21 修复: 缺键从 app/sim_trader/config.py 读(唯一真相源),无假默认
-        from app.config.schema import load_risk_params
+        # 缺键从 risk_params 读(唯一真相源),无假默认
+        from app.config.risk_params import load_risk_params
         val = self._data.get("risk", {}).get("time_exit_force_days")
         if val is not None:
             return int(val)

@@ -182,20 +182,38 @@ class Notifier:
                             source="order")
 
     def order_traded_with_tag(self, code: str, direction: str, volume: int,
-                              price: float, mode: str, tag: str) -> None:
+                              price: float, mode: str, tag: str,
+                              avg_cost: float = 0) -> None:
         """成交通知(带标签)
 
         Args:
             tag: "信号买入" / "止损" / "止盈" / "时间退出" / "强制退出" / "手动" / "其他"
+            avg_cost: 买入均价(卖出时传入,用于计算盈亏)
         """
         arrow = "买入" if direction == "buy" else "卖出"
         mode_tag = "(测试单)" if mode == "dry-run" else ""
+        amount = volume * price
+        # 手续费估算:从 get_cost_cfg() 取费率(与回测口径一致),佣金万2.5(最低5元)+印花税千1(卖)
+        from app.backtest.execution import get_cost_cfg
+        _cost = get_cost_cfg()
+        comm_rate = _cost.get("commission_rate", 0.00025)
+        stamp_rate = _cost.get("stamp_tax_rate", 0.001)
+        commission = max(amount * comm_rate, 5) if direction == "buy" else max(amount * comm_rate, 5) + amount * stamp_rate
+
         content = (
             f"**实盘成交{mode_tag} [{tag}]**\n"
             f"> {code} {arrow} {volume}股 @{price:.2f}\n"
-            f"> 金额:{volume*price:.2f}\n"
+            f"> 金额:¥{amount:,.2f}\n"
+            f"> 费用:¥{commission:.2f}\n"
             f"> 时间:{datetime.now().strftime('%H:%M:%S')}"
         )
+        # 卖出时显示盈亏
+        if direction == "sell" and avg_cost > 0:
+            cost_basis = avg_cost * volume
+            profit = amount - cost_basis - commission
+            profit_pct = profit / cost_basis * 100 if cost_basis > 0 else 0
+            sign = "+" if profit >= 0 else ""
+            content += f"\n> **盈亏: {sign}¥{profit:,.2f} ({sign}{profit_pct:.2f}%)**"
         with self._lock:
             self._dispatch(content)
         self._record_history("INFO", f"{tag} {arrow} {code}", content[:200],
