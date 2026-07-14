@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""pre-commit gate — 阻止未授权的提交,要求三项前置条件。
+
+设计:零依赖,纯 stdlib。Windows + bash + PowerShell 兼容。
+
+Gate 1: 不准 commit 大文件(>800 行单文件) — 文件级强制 review
+Gate 2: 不准 commit 硬编码 token / webhook URL — 防 2026-07 webhook 泄漏重演
+Gate 3: 不准把 docs/_research/、docs/_drafts/ 提交 — 私人草稿不进 git
+"""
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+MAX_FILE_LINES = 800
+FORBIDDEN_PATTERNS = [
+    (re.compile(r"https://open\.feishu\.cn/open-apis/bots/v2/hook/[a-f0-9-]{20,}"), "feishu webhook URL"),
+    (re.compile(r"wh-[a-f0-9]{20,}"), "Microsoft Teams webhook"),
+    (re.compile(r"hooks\.slack\.com/services/T[a-zA-Z0-9_]+/B[a-zA-Z0-9_]+/[a-zA-Z0-9_]+"), "Slack webhook"),
+    (re.compile(r"AKID[A-Z0-9]{20,}"), "Aliyun AccessKey"),
+    (re.compile(r"AIza[0-9A-Za-z\-_]{35}"), "Google API Key"),
+    (re.compile(r"sk-[A-Za-z0-9]{20,}"), "OpenAI/Anthropic API Key"),
+]
+FORBIDDEN_PATHS = ["docs/_research/", "docs/_drafts/", ".claude/"]
+
+
+def get_staged_files():
+    """拿 staged 但未 commit 的文件清单 + 行数"""
+    result = subprocess.run(
+        ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMRT"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    if result.returncode != 0:
+        return []
+    files = []
+    for f in result.stdout.strip().splitlines():
+        if not f:
+            continue
+        try:
+            content = Path(f).read_bytes()
+            text = content.decode("utf-8", errors="replace")
+            line_count = text.count("\n") + 1
+        except (OSError, UnicodeError):
+            line_count = 0
+        files.append((f, line_count))
+    return files
+
+
+def main():
+    files = get_staged_files()
+    if not files:
+        return 0
+
+    errors = []
+
+    # Gate 1: 大文件
+    for f, lc in files:
+        if lc > MAX_FILE_LINES and f.endswith((".py", ".md", ".json", ".yaml", ".yml")):
+            errors.append(f"[Gate 1] {f}: {lc} 行 > {MAX_FILE_LINES} 行上限,需先拆分")
+
+    # Gate 2: 硬编码密钥
+    for f, _ in files:
+        if not f.endswith((".py", ".json", ".md", ".yaml", ".yml", ".env", ".sh", ".bat")):
+            continue
+        try:
+            content = Path(f).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for pattern, name in FORBIDDEN_PATTERNS:
+            if pattern.search(content):
+                errors.append(f"[Gate 2] {f}: 检测到 {name},禁止 commit")
+
+    # Gate 3: 禁止路径
+    for f, _ in files:
+        for bad in FORBIDDEN_PATHS:
+            if f.startswith(bad) or f"/{bad}" in f or f.endswith(bad.rstrip("/")):
+                errors.append(f"[Gate 3] {f}: 禁止路径({bad}),不进 git")
+                break
+
+    if errors:
+        print("=" * 70)
+        print("[PRE-COMMIT FAIL] 阻止提交,以下问题必须先解决:")
+        print("=" * 70)
+        for e in errors:
+            print(f"  {e}")
+        print("=" * 70)
+        print("跳过 hook(应急): git commit --no-verify")
+        return 1
+
+    print(f"[PRE-COMMIT OK] {len(files)} 个文件通过 3 道关卡")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
