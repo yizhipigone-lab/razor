@@ -11,7 +11,6 @@
 测试可 mock:frozen dataclass 可在测试中替换整对象(`monkeypatch.setattr(rp, 'hard_stop', -0.07)`)
 """
 from dataclasses import dataclass
-from typing import List
 
 from core.settings import settings as _settings
 
@@ -97,7 +96,16 @@ class StreakParams:
 def _g_run(key: str, default):
     """读 settings[run] 段 → default 兜底。
 
-    Settings.get 的 default 是 keyword-only,位置传参会被当成第 3 个 key。
+    调用方式:val = _settings.get("run", key) — 只传 2 个位置 key。
+    注意 Settings.get(*keys, default=...) 的 default 是 keyword-only,
+    如果用 _settings.get("run", key, default) 第三个位置会再被当作第 3 个 key,
+    反而取出深一层值 → 落进 None 兜底,行为不一致。
+
+    本函数不依赖 keyword-only default,而是在 apply 层显式 None → 回退 default,
+    语义更显式,可读 logger / raise 失败信号。
+
+    对外接口 _g_run(key, default) 永远位置传参;这里的 default 是 Python 函数参,
+    与 Settings.get 的 keyword-only default 无关,二者不要混用。
     """
     val = _settings.get("run", key)
     return val if val is not None else default
