@@ -9,6 +9,8 @@
   - positions 全量覆写, 保留完整运行态字段
   - state / prev_day_snap 独立槽位
   - clear_all() 清空一切
+  注: save_trade/load_trades 额外保留 entry_reason(JsonSimStore 历史不存),
+      测试场景下更完整, 不影响 engine(Trade.entry_reason 默认 "")。
 
 不落盘: 所有数据存实例内存, 实例回收即消失。线程安全由调用方保证(测试单线程)。
 """
@@ -58,8 +60,12 @@ class InMemoryStore:
         from app.sim_trader.models import Position
         result = {}
         for code, p in self._positions.items():
+            # entry_date 防御性转 date(对齐 JsonSimStore, 防外部灌字符串日期)
+            ed = p['entry_date']
+            if not hasattr(ed, 'year'):
+                ed = date.fromisoformat(str(ed))
             pos = Position(
-                code=code, entry_date=p['entry_date'],
+                code=code, entry_date=ed,
                 entry_price=p['entry_price'], shares=p['shares'],
                 cost=p['cost'], strategy_name=p.get('strategy_name', ''),
                 entry_time=p.get('entry_time', '15:00'),

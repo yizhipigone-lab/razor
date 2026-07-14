@@ -81,15 +81,16 @@ def test_check_position_trailing_stop_triggers(monitor, fixed_risk):
 
     trailing_first 顺序下 TP 先于 TR, 故先标记 tp1_triggered=True 跳过 TP。
     entry=10, session_peak=12(+20%>trail_activate 5%), 现价 11.5。
-    pos.peak_price 被抬升到 12, dd_from_peak = 11.5/12-1 = -4.17% > trail_dd 2% → TR。
+    ctx.peak_price 被覆盖为 12, dd_from_peak = 11.5/12-1 = -4.17% > trail_dd 2% → TR。
+    注: pos.peak_price 不被修改(对齐 master 不持久化盘中峰值), 仍为 10。
     """
     pos = _make_pos(10.0)
     pos.tp1_triggered = True  # 跳过 TP, 让 TR 有机会触发
     result = monitor._check_position(pos, 11.5, 12.0)
     assert result is not None
     assert result[0].startswith("TR")
-    # 验证峰值确实被抬升(session_peak 进了 pos)
-    assert pos.peak_price == 12.0
+    # pos.peak_price 不被修改(Option B: 只覆盖 ctx, 不动 pos)
+    assert pos.peak_price == 10.0
 
 
 def test_check_position_tp_partial_returns_qty(monitor, fixed_risk):
@@ -103,8 +104,14 @@ def test_check_position_tp_partial_returns_qty(monitor, fixed_risk):
 
 
 def test_check_position_session_peak_does_not_lower_historic_peak(monitor, fixed_risk):
-    """session_peak 低于历史峰值时, 不应拉低 pos.peak_price(峰值只升不降)。"""
+    """session_peak 低于历史峰值时, 不应拉低 pos.peak_price(峰值只升不降)。
+
+    选价 14.8 避开任何信号触发: TP1 target 10.3 但 tp1_triggered=True 跳过;
+    TR 回撤 14.8/15-1=-1.33% < trail_dd 2% 不触发; HS low 14.8 > stop 9.4 不触发。
+    """
     pos = _make_pos(10.0)
+    pos.tp1_triggered = True
     pos.peak_price = 15.0  # 历史已抬到 15
-    monitor._check_position(pos, 11.0, 11.0)  # session_peak 11 < 15
+    result = monitor._check_position(pos, 14.8, 14.8)  # session_peak 14.8 < 15
+    assert result is None
     assert pos.peak_price == 15.0  # 未被拉低

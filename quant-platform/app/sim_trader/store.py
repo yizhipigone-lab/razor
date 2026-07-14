@@ -235,11 +235,16 @@ class SimTraderStore:
     # ── 全量清空(对齐 JsonSimStore, 测试/回放用) ───────────
 
     def clear_all(self):
-        """清空所有 sim_* 表。历史 SimTraderStore 缺此方法, 调用必 AttributeError。"""
+        """清空所有 sim_* 表。历史 SimTraderStore 缺此方法, 调用必 AttributeError。
+
+        用显式事务包住全部 DELETE, 杜绝 autocommit 下"持仓删成功但 trades 删失败"
+        的半清空状态(对齐 save_state 的事务模式)。
+        """
         try:
+            self.conn.execute("BEGIN")
             for tbl in ('sim_positions', 'sim_trades', 'sim_equity', 'sim_state'):
                 self.conn.execute(f"DELETE FROM {tbl}")
-            self.conn.commit()
+            self.conn.execute("COMMIT")
         except Exception:
             try:
                 self.conn.execute("ROLLBACK")

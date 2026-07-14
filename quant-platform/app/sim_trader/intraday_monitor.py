@@ -129,6 +129,11 @@ class IntradayMonitor:
         盘中 tick 命中持仓必崩。现对齐 live_trader.exit_monitor._build_context
         + engine.check_stops 的正确范式:
           build_context(pos, bar, hold_days, params) → check(ctx, skip_eod_only=True)。
+
+        峰值处理: 不修改 pos.peak_price(对齐 master 盘中从不持久化峰值的行为,
+        EOD check_stops 会用当日 high 更新), 而是构建 ctx 后覆盖 ctx.peak_price
+        = max(历史峰值, session_peak), 让盘中检查用真实峰值, 但 pos 状态不变 →
+        EOD trailing 行为零改变。
         """
         from app.backtest.exit_rules import exit_rule_engine
         from app.config.risk_params import load_risk_params as _load_risk_params
@@ -145,16 +150,16 @@ class IntradayMonitor:
             'atr': daily_atr,
         }
 
-        # 峰值跟踪: 与 EOD check_stops 一致, 新高则抬升 pos.peak_price
-        if session_peak > pos.peak_price:
-            pos.peak_price = session_peak
-
         # hold_days: 交易日计数(对齐 exit_monitor._calc_hold_days)
         hold_days = self._calc_hold_days(pos.entry_date)
 
         ctx = exit_rule_engine.build_context(
             pos, bar, hold_days, sim_params, use_high_for_tp=True
         )
+        # 盘中峰值覆盖(不修改 pos): 用 max(历史, session_peak) 作检查峰值
+        if session_peak > ctx.peak_price:
+            ctx.peak_price = session_peak
+
         signal = exit_rule_engine.check(ctx, skip_eod_only=True)
         if signal is None:
             return None
