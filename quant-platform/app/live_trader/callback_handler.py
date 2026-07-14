@@ -159,7 +159,15 @@ class CallbackHandler:
                 trade_id = safe_getattr(trade, "traded_id", 0)
                 order_id = safe_getattr(trade, "order_id", 0)
                 logger.info(f"[CB] on_stock_trade tid={trade_id} oid={order_id}")
-                handler._handle_trade(trade)
+                # CRITICAL-2(2026-07-15):未知 order_type _handle_trade 会 raise ValueError
+                # (已 audit + notify + kill_switch.activate)。这里 try/except 显式隔离,
+                # 防一条异常回报拖垮整个 callback 链路——xtquant executor 是单线程串行,
+                # 一处 raise 会卡死后续所有回报。
+                try:
+                    handler._handle_trade(trade)
+                except ValueError as e:
+                    # 已知协议级异常:已审计+告警+激活 kill switch,仅记录不传播
+                    logger.warning(f"[CB] 已知协议级异常(已处理,链路继续): {e}")
 
             def on_order_error(self, err):
                 order_id = safe_getattr(err, "order_id", 0)
@@ -299,13 +307,49 @@ class CallbackHandler:
         _rs_mode = self.runtime_state.mode if self.runtime_state else self.config.mode
         mode = order.get("mode", _rs_mode) if order else _rs_mode
         # v2(审计M1):显式判断方向,未知值不当卖出(否则 apply_sell_fill 误扣)
+        # CRITICAL-2(2026-07-15):未知方向强抛,不允许 direction="unknown" 进入 DB——
+        # 1 笔 unknown = 1 笔失联系持仓,必须 raise + kill switch + audit + 飞书告警,
+        # 任一环节失败都不能吞掉。外层 on_stock_trade 的 try/except ValueError 隔离 raise,
+        # 保证 xtquant executor 单线程串行不被一条坏回报卡死。
         if order_type == 23:
             direction = "buy"
         elif order_type == 24:
             direction = "sell"
         else:
-            direction = "unknown"
-            logger.warning(f"未知 order_type={order_type} trade_id={trade_id},持仓更新跳过")
+            msg = (f"未知 order_type={order_type} trade_id={trade_id} "
+                   f"code={code},拒绝落 deal 并激活 kill switch")
+            logger.error(msg)
+            # audit(失败吞,不传播)
+            if self.audit:
+                try:
+                    self.audit.log("unknown_order_type", reason=msg, data={
+                        "order_type": order_type,
+                        "trade_id": trade_id,
+                        "code": code,
+                    })
+                except Exception:
+                    pass
+            # 飞书告警(失败吞)
+            if self.notify:
+                try:
+                    self.notify.send(
+                        f"🚨 [CRITICAL-2] 实盘收到未知 order_type={order_type} "
+                        f"trade_id={trade_id} code={code},已激活 kill_switch"
+                    )
+                except Exception:
+                    pass
+            # kill_switch(真方法是 activate(reason, source),不是 trigger)
+            if self.kill_switch:
+                try:
+                    self.kill_switch.activate(
+                        reason=f"unknown_order_type={order_type}",
+                        source="callback_unknown_order_type",
+                    )
+                except Exception:
+                    pass
+            # 强抛:deal 不落 DB,后续 sync_terminal_write / apply_*_fill 不会执行;
+            # 外层 on_stock_trade 的 try/except ValueError 接住,仅日志不传播。
+            raise ValueError(msg)
 
         deal = {
             "trade_id": trade_id,
