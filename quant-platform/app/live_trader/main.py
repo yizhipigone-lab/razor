@@ -1059,8 +1059,10 @@ async def get_scan_interval():
 
 
 @app.put("/live/config/scan-interval")
-async def set_scan_interval(body: dict):
-    """设置离场扫描间隔(秒)。保存后立即生效,不阻塞。范围:10~300"""
+async def set_scan_interval(request: Request, body: dict):
+    """设置离场扫描间隔(秒,仅本地)。保存后立即生效,不阻塞。范围:10~300"""
+    if not _is_local(request):
+        raise HTTPException(403, "仅允许本地调用")
     scheduler = _state.get("scheduler")
     if not scheduler:
         raise HTTPException(503, "调度服务未启动")
@@ -1079,6 +1081,39 @@ async def set_scan_interval(body: dict):
     from core.settings import settings
     settings.set("live_trader", "exit_scan_interval_sec", seconds, save=True)
     return {"interval_sec": scheduler.get_scan_interval(), "saved": True}
+
+
+@app.get("/live/config/auto-buy-time")
+async def get_auto_buy_time():
+    """获取自动选股触发时点(HH:MM)"""
+    scheduler = _state.get("scheduler")
+    if not scheduler:
+        raise HTTPException(503, "调度服务未启动")
+    return {"auto_buy_time": scheduler.get_auto_buy_time()}
+
+
+@app.put("/live/config/auto-buy-time")
+async def set_auto_buy_time(request: Request, body: dict):
+    """设置自动选股触发时点(仅本地)。格式 HH:MM，保存后当日已触发则次日生效。"""
+    if not _is_local(request):
+        raise HTTPException(403, "仅允许本地调用")
+    scheduler = _state.get("scheduler")
+    if not scheduler:
+        raise HTTPException(503, "调度服务未启动")
+    t = body.get("auto_buy_time")
+    if not t:
+        raise HTTPException(400, "缺少 auto_buy_time 参数")
+    try:
+        scheduler.set_auto_buy_time(t)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    from core.settings import settings
+    settings.set("live_trader", "auto_buy_time", t, save=True)
+    audit = _state.get("audit")
+    if audit:
+        audit.log("auto_buy_time_changed", snapshot={"auto_buy_time": t})
+    logger.info(f"auto_buy_time 设置: {t}")
+    return {"auto_buy_time": scheduler.get_auto_buy_time(), "saved": True}
 
 
 @app.get("/live/config/buy-ratio")

@@ -7,7 +7,6 @@ from database.duckdb_manager import db
 from core.settings import settings
 from server.websocket.manager import manager, sync_broadcast
 from app.utils.threading import run_in_thread
-from core.gateway import get_gateway
 import pandas as pd
 
 log = get_logger('API-System')

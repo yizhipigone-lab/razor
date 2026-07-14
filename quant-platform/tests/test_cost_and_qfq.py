@@ -5,7 +5,10 @@
 import pytest
 import pandas as pd
 
-from app.backtest.execution import calc_buy_cost, calc_sell_revenue, get_cost_cfg
+from app.backtest.execution import (
+    calc_buy_cost, calc_sell_revenue, get_cost_cfg,
+    realized_pnl,  # CARD1: 单笔已实现净盈亏(RED → GREEN in this test class)
+)
 
 
 # ───────────── 任务一: 交易成本计算 ─────────────
@@ -118,3 +121,77 @@ class TestStepQuant:
     def test_oversized_step_ignored(self):
         # step 0.5 > 区间宽度 0.32 → 退化保护, 忽略
         assert not self._valid_step(0.06, 0.38, 0.5)
+
+
+# ───────────── CARD1: realized_pnl 单笔已实现净盈亏 ─────────────
+#
+# 锁口径:
+#   sell_revenue = calc_sell_revenue(exit_price, shares)['total']
+#   cb           = cost_basis if not None else calc_buy_cost(entry_price, shares)['total']
+#   pnl          = sell_revenue - cb
+#   ret_pct      = (pnl / cb * 100) if cb > 0 else 0.0  (百分比, 与 Trade.ret 一致)
+# 部分卖出时,必传 cost_basis = pos.cost*(sell_shares/pos.shares),避免重复计 min_commission
+# 破 Σprofit 资金守恒(各部分卖出佣金之和 > 整手佣金)。
+
+class TestRealizedPnl:
+    def test_full_sell_net_matches_hand_calc(self):
+        """全平:pnl == sell_revenue_total - calc_buy_cost_total"""
+        entry, exitp, sh = 10.0, 11.0, 1000
+        cb = calc_buy_cost(entry, sh)["total"]  # 10015
+        rp = realized_pnl(entry, exitp, sh, cost_basis=cb)
+        assert rp["cost_basis"] == 10015.0
+        assert rp["sell_revenue"] == calc_sell_revenue(exitp, sh)["total"]
+        assert rp["pnl"] == rp["sell_revenue"] - 10015.0
+        # 毛收益 10%, 净收益因双边成本拖累应在 (9, 10) 之间(参考 TestTradeCost.round_trip)
+        assert 9.0 < rp["ret_pct"] < 10.0
+        # ret_pct == pnl/cb*100
+        assert abs(rp["ret_pct"] - rp["pnl"] / 10015.0 * 100) < 1e-9
+
+    def test_cost_basis_none_uses_calc_buy_cost_equivalent(self):
+        """cost_basis=None 内部重算,必须与显式传同一值等价"""
+        rp1 = realized_pnl(10.0, 11.0, 1000)
+        rp2 = realized_pnl(10.0, 11.0, 1000, cost_basis=calc_buy_cost(10.0, 1000)["total"])
+        assert rp1 == rp2
+
+    def test_partial_sell_prorated_cost_basis_conserves(self):
+        """部分卖出:Σcb == pos.cost(按比例摊分,无重复计费)"""
+        # 1000 股整手:pos.cost = calc_buy_cost(10, 1000) = 10015
+        pos_cost = calc_buy_cost(10.0, 1000)["total"]
+        # 拆 300 + 700,按比例摊分
+        cb_a = pos_cost * (300 / 1000)
+        cb_b = pos_cost * (700 / 1000)
+        assert abs((cb_a + cb_b) - pos_cost) < 1e-9
+
+    def test_partial_sell_does_not_re_double_min_commission(self):
+        """关键防呆:小笔部分卖出不能每笔重算 min_commission(否则总和 > 整手)"""
+        # 整手 100 股@10: gross 1000, 佣金 max(0.25, 5)=5; pos.cost = 1000+5+10 = 1015
+        pos_cost = calc_buy_cost(10.0, 100)["total"]
+        # 若每笔 50 股重算 calc_buy_cost(10, 50): gross 500, 佣金 max(0.125, 5)=5; 摊 2 笔 = 10 佣金
+        bad = calc_buy_cost(10.0, 50)["total"] * 2  # 2 次重算的总和
+        # bad > pos_cost (因为整手只触发一次 min_commission=5)
+        assert bad > pos_cost + 1.0
+        # 正确做法按比例摊分:Σcb == pos_cost(不破资金守恒)
+        cb_a = pos_cost * (50 / 100)
+        cb_b = pos_cost * (50 / 100)
+        assert abs((cb_a + cb_b) - pos_cost) < 1e-9
+
+    def test_zero_or_negative_shares_safe(self):
+        """零股/负股 → 全零字典(防御 ss<=0 边界)"""
+        z1 = realized_pnl(10.0, 11.0, 0)
+        z2 = realized_pnl(10.0, 11.0, -5)
+        for z in (z1, z2):
+            assert z["cost_basis"] == 0.0
+            assert z["sell_revenue"] == 0.0
+            assert z["pnl"] == 0.0
+            assert z["ret_pct"] == 0.0
+
+    def test_ret_pct_is_percentage_unit_and_signed(self):
+        """ret_pct 是百分比单位(非小数);亏时为负"""
+        # 亏:entry=10, exit=9, cost_basis=含费基
+        rp_loss = realized_pnl(10.0, 9.0, 1000, cost_basis=calc_buy_cost(10.0, 1000)["total"])
+        assert rp_loss["ret_pct"] < 0
+        # 数额一致: pnl == cost_basis * ret_pct / 100
+        assert abs(rp_loss["pnl"] - rp_loss["cost_basis"] * rp_loss["ret_pct"] / 100) < 1e-6
+        # 赚:反之
+        rp_win = realized_pnl(10.0, 11.0, 1000, cost_basis=calc_buy_cost(10.0, 1000)["total"])
+        assert rp_win["ret_pct"] > 0

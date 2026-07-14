@@ -1600,7 +1600,7 @@
           <div class="lt-accordion__item">
             <div class="lt-accordion__header" onclick="toggleAccordion(this)">
               <span class="lt-accordion__head-left"><span class="lt-accordion__arrow">▸</span>执行开关 / 模式</span>
-              <span class="lt-accordion__summary">买入 <b id="lt-sum-buy">—</b> · 卖出 <b id="lt-sum-sell">—</b> · <b id="lt-sum-mode">—</b></span>
+              <span class="lt-accordion__summary">买入 <b id="lt-sum-buy">—</b> · 卖出 <b id="lt-sum-sell">—</b> · 自动选股 <b id="lt-sum-auto-buy">—</b> · <b id="lt-sum-mode">—</b></span>
             </div>
             <div class="lt-accordion__body">
               <div class="fs-13 lt-lh-2">
@@ -1608,6 +1608,14 @@
                   <button class="btn btn-sm btn-ghost" onclick="toggleLiveSwitch('buy')">切换</button></div>
                 <div>卖出开关: <b id="live-sell-switch">—</b>
                   <button class="btn btn-sm btn-ghost" onclick="toggleLiveSwitch('sell')">切换</button></div>
+                <div>自动选股: <b id="live-auto-buy-switch">—</b>
+                  <button class="btn btn-sm btn-ghost" onclick="toggleLiveSwitch('auto')">切换</button></div>
+                <div class="mt-4">自动选股时间:
+                  <input type="time" id="lt-auto-buy-time" step="300" value="14:50">
+                  <button class="btn btn-sm btn-ghost" onclick="saveAutoBuyTime()">保存</button>
+                  <span id="lt-auto-buy-time-msg" class="muted fs-xs ml-6"></span>
+                </div>
+                <div class="muted fs-xs mt-1">关闭后仅接收外部推送信号。保存后当日已触发则次日生效。</div>
                 <div class="mt-6">当前模式: <b id="live-mode-display">—</b>
                   <button class="btn btn-sm btn-ghost" onclick="switchLiveMode()">切换模式</button></div>
                 <div id="live-switch-msg" class="muted fs-xs mt-1">切 live 开始真钱交易(live→dry-run 会先撤在途单等终态)</div>
@@ -1700,6 +1708,7 @@
             <div class="lt-kpi"><span class="lt-kpi__label">QMT</span><span id="alerts-qmt" class="lt-badge">—</span></div>
             <div class="lt-kpi"><span class="lt-kpi__label">模式</span><span id="alerts-mode" class="lt-badge">—</span></div>
             <div class="lt-kpi"><span class="lt-kpi__label">Kill Switch</span><span id="alerts-ks" class="lt-badge">—</span></div>
+            <div class="lt-kpi"><span class="lt-kpi__label">自动选股</span><span id="alerts-auto-buy" class="lt-badge">—</span></div>
             <div class="lt-kpi"><span class="lt-kpi__label">总通知</span><span id="alerts-total" class="lt-kpi__val">—</span></div>
           </div>
         </div>

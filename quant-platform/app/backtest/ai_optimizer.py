@@ -26,7 +26,6 @@ from core.logger import get_logger
 from core.settings import settings
 from database.duckdb_manager import db
 from app.screener.engine import load_strategy
-from app.backtest.engine import BacktestEngine
 from app.backtest.simulate_one_trade import simulate_one_trade
 from app.backtest.regime_detector import regime_detector
 from app.backtest.llm_advisor import LLMAdvisor
@@ -260,7 +259,6 @@ class AIBacktestOptimizer:
         self._cached_signals: Optional[pd.DataFrame] = None
         self._cached_bars: Optional[pd.DataFrame] = None
         self._code_to_name: dict = {}
-        self._engine = BacktestEngine()
 
     # ── Phase 1: 数据准备 ──────────────────────────────────
     def _prepare_data(

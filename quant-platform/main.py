@@ -72,9 +72,21 @@ async def app_lifespan(app: FastAPI):
         start_auto_sync()
 
     asyncio.create_task(_delayed_auto_sync())
+
+    # 实盘快照广播(B3):10s 推送持仓/资产/委托/成交给前端实盘页
+    from server.live.broadcaster import live_broadcaster
+    try:
+        await live_broadcaster.start_broadcast_loop()
+    except Exception as e:
+        log.warning(f"实盘快照广播启动失败(不影响主服务): {e}")
             
     yield
     # 优雅关闭: 显式关 DuckDB(触发 meta.db WAL checkpoint), 防 taskkill /F 绕过 atexit 致 WAL 损坏
+    try:
+        from server.live.broadcaster import live_broadcaster
+        await live_broadcaster.stop_broadcast_loop()
+    except Exception:
+        pass
     try:
         db.close_all()
     except Exception as e:

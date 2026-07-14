@@ -38,16 +38,6 @@ class QMTGateway:
             log.warning("QMTGateway | 无法连接 live_trader (8001)，请检查 Windows 端 live_trader 是否启动")
             return False
 
-    def buy(self, code: str, price: float, volume: int = None, reason: str = "手工买入") -> bool:
-        """手动买入 (live_trader 暂未实现 order_service,待阶段2)"""
-        log.warning(f"QMTGateway.buy() 当前不可用:live_trader 未实现手动下单接口(待阶段2 order_service)")
-        return False
-
-    def sell(self, code: str, price: float, volume: int, reason: str = "手工卖出") -> bool:
-        """手动卖出 (live_trader 暂未实现 order_service,待阶段2)"""
-        log.warning(f"QMTGateway.sell() 当前不可用:live_trader 未实现手动下单接口(待阶段2 order_service)")
-        return False
-
     def get_balance(self) -> dict:
         """获取资产 (live_trader:/live/asset)"""
         try:
@@ -139,8 +129,10 @@ class QMTGateway:
             log.error(f"获取板块 [{sector_name}] 成分股异常: {e}")
         return []
 
-    def cancel_order(self, order_id):
-        log.warning("QMTGateway | 当前代理实现尚未全量覆盖自动撤单协议")
-        return False
+    # NOTE: buy / sell / cancel_order 已删除(2026-07-14):
+    # 真实下单唯一入口是 live_trader:8001 /live/order(qmt_wrapper 直连 xtquant)
+    # 本 gateway 只保留行情/账户/持仓只读方法(get_balance / get_position /
+    #   get_live_trader_quotes / get_stock_list / get_index_members)
+    # 见 docs/审计报告/项目质量审计_2026-07-13_全项目.md H4 决定
 
 qmt_gateway = QMTGateway()

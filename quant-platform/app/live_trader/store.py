@@ -184,10 +184,13 @@ class LiveTraderStore:
 
         终态订单(53/54/56/57)和成交必须同步落盘,防 os._exit 丢数据。
         同时写 WAL 文件,重启可从 WAL 补。
+
+        v2(2026-07-14 审计H3):_write_to_db 失败必须向上抛(资金账目不能丢)。
+        WAL 已先写(就算 DB 失败,重启还能补),所以 DB 失败 re-raise 让上层告警。
         """
         self._write_wal(kind, data)
         with self._db_lock:
-            self._write_to_db(kind, data)
+            self._write_to_db(kind, data)  # H3:异常自然向上抛
 
     def _write_wal(self, kind: str, data: Dict[str, Any]) -> None:
         """写 WAL append-only 文件(H2)"""
@@ -204,16 +207,28 @@ class LiveTraderStore:
         def _flush_loop():
             while not self._stop_event.is_set():
                 if self._buffer:
-                    self._flush_buffer()
+                    # H3:flush 失败不能只 log——上层接住后必须告警。
+                    # 这里 catch 是为了 flusher loop 不退出;错误信息已足够定位。
+                    try:
+                        self._flush_buffer()
+                    except Exception as e:
+                        logger.error(f"L2 flush 写入失败(可能丢 buffer 项): {e}", exc_info=True)
                 self._stop_event.wait(self.config.buffer_flush_interval_ms / 1000.0)
             # 退出前最后 flush 一次
-            self._flush_buffer()
+            try:
+                self._flush_buffer()
+            except Exception as e:
+                logger.error(f"L2 退出前 flush 失败: {e}", exc_info=True)
 
         self._flusher.submit(_flush_loop)
         logger.info("L2 flusher 启动")
 
     def _flush_buffer(self) -> None:
-        """排空 L1 buffer 批量写 DuckDB"""
+        """排空 L1 buffer 批量写 DuckDB
+
+        v2(2026-07-14 审计H3):异常向上抛,让 flusher 顶层 catch 接住+告警。
+        旧版静默吞 → DB 写入失败上层不知道 → 资金账目失真。
+        """
         if not self._buffer:
             return
         with self._buffer_lock:
@@ -223,26 +238,26 @@ class LiveTraderStore:
             return
         with self._db_lock:
             for kind, data in items:
-                try:
-                    self._write_to_db(kind, data)
-                except Exception as e:
-                    logger.error(f"flush 写入失败 kind={kind}: {e}")
+                self._write_to_db(kind, data)  # H3:异常自然向上抛
 
     def _write_to_db(self, kind: str, data: Dict[str, Any]) -> None:
-        """实际写 DuckDB(入库前统一 format_code,防 code 格式不一致)"""
+        """实际写 DuckDB(入库前统一 format_code,防 code 格式不一致)
+
+        v2(2026-07-14 审计H3):异常向上抛,不再静默吞——调用方负责捕获+告警。
+        旧版静默吞 → 上层以为成功实际失败 → 资金账目失真风险。
+        """
         assert self._conn is not None
         # 漏洞B修复:所有含 code 字段的数据入库前统一格式化
         if "code" in data and data["code"]:
             data = {**data, "code": format_code(data["code"])}
-        try:
-            if kind == "order":
-                self._upsert_order(data)
-            elif kind == "deal":
-                self._insert_deal(data)
-            elif kind == "position":
-                self._upsert_position(data)
-        except Exception as e:
-            logger.error(f"DB 写入失败 kind={kind} data={data}: {e}")
+        if kind == "order":
+            self._upsert_order(data)
+        elif kind == "deal":
+            self._insert_deal(data)
+        elif kind == "position":
+            self._upsert_position(data)
+        else:
+            raise ValueError(f"_write_to_db 未知 kind={kind}")
 
     def _upsert_order(self, data: Dict[str, Any]) -> None:
         assert self._conn is not None
@@ -339,15 +354,26 @@ class LiveTraderStore:
                 [tp_triggered, code]
             )
 
-    def apply_buy_fill(self, code: str, filled_volume: int) -> None:
+    def apply_buy_fill(self, code: str, filled_volume: int,
+                        trade_id: int = None) -> None:
         """v2(审计H2/H3):买入成交原子递增 volume + 释放在途预扣 + 首次建仓写 entry_date
+        v3(2026-07-14 审计H1):加 trade_id 幂等,防重复回报双扣持仓(对齐 apply_sell_fill)。
 
         原子 SQL(不读改写),避免 _release_pending_buy 全字段 upsert 覆盖 tp_triggered/sell_count(H3)。
         首次建仓(entry_date 为空)写 today,修 hold_days 恒=1 问题(H2)。
+        重复买入回报(QMT 推重复 / 网络重连):同一 trade_id 已处理 → 静默 return,不动 volume。
         """
         assert self._conn is not None
         if filled_volume <= 0:
             return
+        # H1 幂等:同一 trade_id 已入库则跳过(对齐 apply_sell_fill:303-309)
+        if trade_id is not None:
+            exists = self._conn.execute(
+                "SELECT 1 FROM live_deals WHERE trade_id = ?", [trade_id]
+            ).fetchone()
+            if exists:
+                logger.debug(f"apply_buy_fill 幂等命中,跳过重复 trade_id={trade_id} code={code}")
+                return
         from datetime import date as _date
         today = _date.today()
         with self._db_lock:

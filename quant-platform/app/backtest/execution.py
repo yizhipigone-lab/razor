@@ -146,3 +146,34 @@ def calc_sell_revenue(price: float, shares: int, cfg: dict = None) -> dict:
         'slippage': slippage,
         'total': gross - commission - stamp_tax - slippage,
     }
+
+
+def realized_pnl(entry_price: float, exit_price: float, shares: int,
+                 cfg: dict = None, cost_basis: float = None) -> dict:
+    """CARD1 新增:单笔已实现净盈亏(扣佣金+印花+滑点,买入含费)。
+
+    复用 calc_buy_cost / calc_sell_revenue(单一真相源),保证全引擎口径一致。
+
+    Args:
+        entry_price: 买入价;仅当 cost_basis is None 时用于重算含费买入成本。
+        exit_price:  卖出价。
+        shares:      本次卖出股数(部分卖出传本次股数,不是 pos.shares)。
+        cfg:         成本配置(缺省读 get_cost_cfg)。
+        cost_basis:  预计算的"本批 shares"含费买入成本基。
+                     部分卖出场景必传 = pos.cost * (sell_shares / pos.shares),
+                     避免每笔部分卖出重复触发 min_commission(5元最低)
+                     破坏 Σprofit 资金守恒。
+                     传 None 则按 entry_price 全额重算 calc_buy_cost(适合一次性全平)。
+
+    Returns:
+        {'cost_basis','sell_revenue','pnl','ret_pct'}
+        pnl     = sell_revenue - cost_basis                 (元,金额)
+        ret_pct = (pnl / cost_basis * 100) if cb>0 else 0   (百分比, 与 Trade.ret 同口径)
+    """
+    if shares <= 0:
+        return {'cost_basis': 0.0, 'sell_revenue': 0.0, 'pnl': 0.0, 'ret_pct': 0.0}
+    cb = cost_basis if cost_basis is not None else calc_buy_cost(entry_price, shares, cfg)['total']
+    sell = calc_sell_revenue(exit_price, shares, cfg)['total']
+    pnl = sell - cb
+    ret_pct = (pnl / cb * 100) if cb > 0 else 0.0
+    return {'cost_basis': cb, 'sell_revenue': sell, 'pnl': pnl, 'ret_pct': ret_pct}

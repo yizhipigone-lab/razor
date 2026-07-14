@@ -232,15 +232,11 @@ async def sim_trader_status():
     positions = []
     for p in engine.active_positions():
         cur_price = snapshot.get(p.code, {}).get('close', p.entry_price)
-        # 今日盈亏口径: 当日买入用买入价基准, 过夜持仓用昨收价基准
+        # CARD4: 今日盈亏规则收归 Position.today_pnl(单一真相源,含 None 哨兵)
         prev_close = prev_close_map.get(p.code, 0)
         bought_today = (p.entry_date == today)
-        base_px = p.entry_price if bought_today else prev_close
-        rem = p.remaining_shares if getattr(p, 'remaining_shares', 0) else p.shares
-        if base_px and base_px > 0:
-            today_pnl = round(rem * (cur_price - base_px), 0)
-        else:
-            today_pnl = None
+        base_px = p.entry_price if bought_today else prev_close     # 保留供 today_base 字段
+        today_pnl = p.today_pnl(cur_price, prev_close, today)
         # 当日涨跌幅：始终以昨收价为基准（市场概念，与个人买入价无关）
         if prev_close and prev_close > 0:
             day_chg_pct = round((cur_price / prev_close - 1) * 100, 2)
@@ -428,12 +424,10 @@ async def sim_trader_trades(page: int = 1, limit: int = 50):
             ret = (cur_px / p.entry_price - 1) * 100
             # 今日盈亏口径: 当日买入的用买入价基准(现价-买入价), 过夜持仓用昨收价基准(现价-昨收)
             rem_shares = p.remaining_shares if getattr(p, 'remaining_shares', 0) else p.shares
+            # CARD4: 今日盈亏规则收归 Position.today_pnl(单一真相源,含 None 哨兵)
             bought_today = (p.entry_date == today)
-            base_px = p.entry_price if bought_today else prev_close
-            if base_px and base_px > 0:
-                today_pnl = round(rem_shares * (cur_px - base_px), 0)
-            else:
-                today_pnl = None
+            base_px = p.entry_price if bought_today else prev_close     # 保留供 today_base 字段
+            today_pnl = p.today_pnl(cur_px, prev_close, today)
             # 当日涨跌幅：始终以昨收价为基准（市场概念，与个人买入价无关）
             if prev_close and prev_close > 0:
                 day_chg_pct = round((cur_px / prev_close - 1) * 100, 2)

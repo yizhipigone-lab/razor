@@ -214,26 +214,11 @@ class ExitMonitor:
             return 1
 
     def _load_risk_params(self) -> dict:
-        """v2(决策2): 从 risk 段读止盈止损参数(对齐模拟盘 intraday_monitor)"""
-        from core.settings import settings
+        """v5.5(2026-07-14):统一走 risk_params.load_risk_params,与 sim_trader 共享,杜绝 4 套默认值漂移"""
+        from app.config.risk_params import load_risk_params as _load_risk_params
+        import dataclasses
+        return dataclasses.asdict(_load_risk_params())
 
-        def _cfg(key, default):
-            val = settings.get("risk", key)
-            return val if val is not None else default
-
-        return {
-            "hard_stop": _cfg("hard_stop_loss_pct", -6.0) / 100.0,
-            "take_profit_tiers": _cfg("take_profit_tiers", [{"profit_pct": 0.03, "sell_ratio": 0.30}]),
-            "trail_activate": _cfg("trailing_stop_activate_pct", 5.0) / 100.0,
-            "trail_dd": _cfg("trailing_stop_drawdown_pct", 2.0) / 100.0,
-            "time_exit_days": _cfg("time_exit_days", 7),
-            "time_exit_profit": _cfg("time_exit_min_profit_pct", 3.0) / 100.0,
-            "time_force_days": _cfg("time_exit_force_days", 12),
-            "first_day_exit_min_profit": _cfg("first_day_exit_min_profit", 0.0),
-            "first_day_exit_days": _cfg("first_day_exit_days", 1),
-            "use_atr_trail": _cfg("use_atr_stop", False),
-            "atr_trail_multiplier": _cfg("atr_stop_multiplier", 1.0),
-        }
 
     def _execute_sell(self, action: Dict) -> None:
         """执行卖出(真实下单 + 清仓锁 + 跌停判断)"""

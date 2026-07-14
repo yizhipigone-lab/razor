@@ -50,6 +50,17 @@
     } catch (e) {
       // ignore
     }
+    // 自动选股状态(从 switches 端点取)
+    try {
+      var sw = await fetch('/live/config/switches');
+      if (sw.ok) {
+        var sd = await sw.json();
+        var abOk = !!sd.auto_buy_enabled;
+        setBadge('alerts-auto-buy', abOk, abOk ? '已开启' : '已关闭');
+      }
+    } catch (e) {
+      // ignore
+    }
     // 总通知数
     try {
       var s = await fetch('/live/notifications/summary');
@@ -181,6 +192,7 @@
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 })();

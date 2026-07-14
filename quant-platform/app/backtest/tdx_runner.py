@@ -40,7 +40,7 @@ def _is_signal_value(value_str) -> bool:
 
 from core.logger import get_logger
 from app.backtest.simple_runner import FastEngine, Position, Trade, load_index_data
-from app.backtest.execution import can_buy, can_sell_today, calc_buy_cost, calc_sell_revenue
+from app.backtest.execution import can_buy, can_sell_today, calc_buy_cost, calc_sell_revenue, realized_pnl
 
 log = get_logger("TdxBT")
 
@@ -501,21 +501,18 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
                             sell_shares = min(sell_shares, pos.shares)
                             if sell_shares <= 0:
                                 sell_shares = pos.shares
-                            # 任务一: 卖出扣成本。tdx 有资金守恒断言(:630)，必须用含费成本基(pos.cost)，
-                            # profit=净卖额-含费成本基, 保证 init+Σprofit == cash+pos_value
-                            _sr = calc_sell_revenue(sell_px, sell_shares)
-                            _cost_basis = pos.cost * (sell_shares / pos.shares) if pos.shares else 0.0
-                            profit = _sr['total'] - _cost_basis
-                            ret = (profit / _cost_basis * 100) if _cost_basis else 0.0
-                            cash += _sr['total']
+                            # CARD1:等价改写(已净) → realized_pnl(cost_basis=按比例摊分)
+                            _cb = pos.cost * (sell_shares / pos.shares) if pos.shares else 0.0
+                            _rp = realized_pnl(pos.entry_price, sell_px, sell_shares, cost_basis=_cb)
+                            cash += _rp['sell_revenue']
                             if sell_shares >= pos.shares:
                                 pos.active = False
                             else:
-                                pos.cost -= _cost_basis  # 摊减已卖成本基，保证后续档位 ratio 正确
+                                pos.cost -= _cb  # 摊减已卖成本基，保证后续档位 ratio 正确
                                 pos.shares -= sell_shares
                             trades_all.append(Trade(
                                 code_num, pos.entry_date, d, entry, sell_px,
-                                sell_shares, round(ret, 2), round(profit, 0), reason,
+                                sell_shares, round(_rp['ret_pct'], 2), round(_rp['pnl'], 0), reason,
                                 hold_days,
                             ))
                             sell_reasons[reason] += 1
@@ -549,20 +546,18 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
                     sell_shares = min(sell_shares, pos.shares)
                     if sell_shares <= 0:
                         sell_shares = pos.shares
-                    # 任务一: 卖出扣成本(含费成本基, 满足资金守恒断言)
-                    _sr = calc_sell_revenue(sell_px, sell_shares)
-                    _cost_basis = pos.cost * (sell_shares / pos.shares) if pos.shares else 0.0
-                    profit = _sr['total'] - _cost_basis
-                    ret = (profit / _cost_basis * 100) if _cost_basis else 0.0
-                    cash += _sr['total']
+                    # CARD1:等价改写(已净) → realized_pnl(cost_basis=按比例摊分)
+                    _cb = pos.cost * (sell_shares / pos.shares) if pos.shares else 0.0
+                    _rp = realized_pnl(pos.entry_price, sell_px, sell_shares, cost_basis=_cb)
+                    cash += _rp['sell_revenue']
                     if sell_shares >= pos.shares:
                         pos.active = False
                     else:
-                        pos.cost -= _cost_basis
+                        pos.cost -= _cb
                         pos.shares -= sell_shares
                     trades_all.append(Trade(
                         code_num, pos.entry_date, d, pos.entry_price, sell_px,
-                        sell_shares, round(ret, 2), round(profit, 0), reason,
+                        sell_shares, round(_rp['ret_pct'], 2), round(_rp['pnl'], 0), reason,
                         hold_days,
                     ))
                     sell_reasons[reason] += 1

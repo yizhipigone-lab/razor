@@ -1,6 +1,6 @@
 """单笔交易仿真 深 module(候选②)。
 
-从 app.backtest.engine._simulate_trade_daily_fallback 抽出为自由函数;
+从 app.backtest.engine._simulate_trade_daily_fallback 抽出为独立函数(已重构);
 engine + ai_optimizer._fast_simulate 都委托它 → 影子变忠实,日线路径单一真相。
 
 对比旧 _fast_simulate 影子的关键修正:

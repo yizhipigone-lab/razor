@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Callable, Optional
 import json
 from core.logger import get_logger
-from app.backtest.execution import can_buy, calc_buy_cost, calc_sell_revenue
+from app.backtest.execution import can_buy, calc_buy_cost, calc_sell_revenue, realized_pnl
 
 log = get_logger("SimpleBT")
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -159,17 +159,14 @@ class FastEngine:
             ss = min(100, int(p.remaining))
         if ss <= 0: return None
         ss = min(ss, int(p.remaining))
-        # L28 修复: 统一成交执行层 - 卖出净收入(扣佣金+印花+滑点)
-        sell_rev = calc_sell_revenue(px, ss)
-        revenue = sell_rev['total']
-        cost_basis = ss * p.entry_price
-        profit = revenue - cost_basis
-        ret = (px / p.entry_price - 1) * 100
+        # CARD1 统一净口径:cost_basis 用 pos.cost 含费基按比例摊分(避免 min_commission 重复计费破守恒)
+        _cb = p.cost * (ss / p.shares) if p.shares else 0.0
+        _rp = realized_pnl(p.entry_price, px, ss, cost_basis=_cb)
+        self.cash += _rp['sell_revenue']
         p.remaining -= ss
         if p.remaining <= 0: p.active = False; p.remaining = 0
-        self.cash += revenue
         return Trade(p.code, p.entry_date, xd or date.today(),
-                     p.entry_price, px, ss, ret, profit, reason, 0)
+                     p.entry_price, px, ss, _rp['ret_pct'], _rp['pnl'], reason, 0)
 
     def sell_phase(self, d, snap, prev_snap=None):
         streak_pause = self.p.get('loss_streak_pause', 5)
@@ -597,20 +594,17 @@ def _execute_signal(pos, code, d, sig, cash, trades_all, sell_reasons, cooldown)
         sell_shares = min(ss, pos.shares)
     if sell_shares <= 0:
         sell_shares = pos.shares
-    # 任务一: 卖出扣成本。口径对齐 FastEngine.sell(:152-156): cost_basis 用裸 entry_price,
-    # profit=净卖出额-裸成本基(买入费已在建仓时从cash扣除,体现在净值曲线), ret 用毛收益率
-    _sr = calc_sell_revenue(sig.sell_price, sell_shares)
-    sell_revenue = _sr['total']
-    profit = sell_revenue - sell_shares * pos.entry_price
-    ret = (sig.sell_price / pos.entry_price - 1) * 100
-    cash += sell_revenue
+    # CARD1 统一净口径:cost_basis 用 pos.cost 含费基按比例摊分(避免 min_commission 重复计费破守恒)
+    _cb = pos.cost * (sell_shares / pos.shares) if pos.shares else 0.0
+    _rp = realized_pnl(pos.entry_price, sig.sell_price, sell_shares, cost_basis=_cb)
+    cash += _rp['sell_revenue']
     pos.remaining -= sell_shares
     if pos.remaining <= 0:
         pos.active = False
         pos.remaining = 0
     trades_all.append(Trade(code, pos.entry_date, d,
                             pos.entry_price, sig.sell_price, sell_shares,
-                            round(ret, 2), round(profit, 0), sig.reason,
+                            round(_rp['ret_pct'], 2), round(_rp['pnl'], 0), sig.reason,
                             (d - pos.entry_date).days))
     sell_reasons[sig.reason] += 1
     cooldown[code] = d

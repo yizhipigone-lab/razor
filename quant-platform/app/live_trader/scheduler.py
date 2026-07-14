@@ -10,6 +10,8 @@
 """
 import asyncio
 import os
+import re
+import threading
 import time
 from datetime import date, datetime
 from typing import Optional
@@ -61,6 +63,12 @@ class LiveScheduler:
         # 持仓行情刷新间隔(固定 3s,与 QMT 客户端推送频率一致)
         self._quotes_refresh_interval: float = 3.0
 
+        # 线程安全锁(保护 _exit_scan_interval / _auto_buy_time)
+        self._lock = threading.Lock()
+
+        # auto_buy 触发时点(2026-07-14):用 getattr 兜底,兼容 MockConfig(测试用简版 mock 无新字段)
+        self._auto_buy_time: str = getattr(config, 'auto_buy_time', '14:50')
+
         # 候选④:每个 _run_* 方法配独立 TaskRunner,统一 try/except + exc_info logging
         self._runner = {
             "exit_scan": TaskRunner("live.exit_scan"),
@@ -81,19 +89,44 @@ class LiveScheduler:
 
     def stop(self) -> None:
         """停止调度任务"""
+        if self._auto_buy_task and not self._auto_buy_task.done():
+            self._auto_buy_task.cancel()
+            logger.info("auto_buy 任务已取消")
         if self._task and not self._task.done():
             self._task.cancel()
             logger.info("调度服务停止")
 
-    def set_scan_interval(self, seconds: float) -> None:
+    def set_scan_interval(self, seconds: float) -> float:
         """运行时修改离场扫描间隔(前端保存后立即生效,不阻塞)"""
         seconds = max(10.0, min(300.0, float(seconds)))  # 限制 [10, 300]
-        self._exit_scan_interval = seconds
-        logger.info(f"离场扫描间隔已更新: {seconds}s")
+        with self._lock:
+            old = self._exit_scan_interval
+            self._exit_scan_interval = seconds
+        logger.info(f"离场扫描间隔: {old} -> {seconds}s")
+        return seconds
 
     def get_scan_interval(self) -> float:
         """获取当前离场扫描间隔"""
-        return self._exit_scan_interval
+        with self._lock:
+            return self._exit_scan_interval
+
+    # ── auto_buy_time 热配置 ────────────────────────────────
+
+    def set_auto_buy_time(self, t: str) -> str:
+        """运行时修改 auto_buy 触发时点。格式 HH:MM，保存后当日已触发则次日生效。"""
+        t = str(t).strip()
+        if not re.match(r"^[0-2]\d:[0-5]\d$", t):
+            raise ValueError(f"非法时间格式: {t}，需 HH:MM（如 14:50）")
+        with self._lock:
+            old = self._auto_buy_time
+            self._auto_buy_time = t
+        logger.info(f"auto_buy_time: {old} -> {t}")
+        return t
+
+    def get_auto_buy_time(self) -> str:
+        """获取当前 auto_buy 触发时点"""
+        with self._lock:
+            return self._auto_buy_time
 
     async def _loop(self) -> None:
         """主循环(细粒度调度,1s 一次 tick 内部按子任务间隔节流)"""
@@ -152,7 +185,7 @@ class LiveScheduler:
         # 替代被动 /live/buy-signal:scheduler 自己选股+下单。
         # 先 _executed_today.add 占位防 1s 内重入(真钱:宁漏买不重买)。
         # auto_buy_enabled 关闭时 _run_auto_buy_scan 内部 silent return,这里照常触发无副作用。
-        if (self.config.auto_buy_time <= current_time < self.config.buy_signal_cutoff
+        if (self.get_auto_buy_time() <= current_time < self.config.buy_signal_cutoff
                 and "auto_buy_screen" not in self._executed_today):
             self._executed_today.add("auto_buy_screen")  # 先占位防 1s 内重入(真钱:宁漏买不重买)
             # 存引用防 GC(任务最长 600s;与 _loop 的 self._task 同款约定)

@@ -15,7 +15,7 @@ class TestHardStop:
         ctx = RuleContext(
             entry_price=10.0, peak_price=10.0,
             open=9.5, high=9.6, low=9.4, close=9.6, atr=0,
-            hold_days=1, hard_stop=-0.05,
+            hold_days=2, hard_stop=-0.05,
             take_profit_tiers=[],
             trail_activate=0.03, trail_dd=0.01,
             time_exit_days=7, time_exit_profit=0.02, time_force_days=12,
@@ -28,7 +28,7 @@ class TestHardStop:
         ctx = RuleContext(
             entry_price=10.0, peak_price=10.0,
             open=9.5, high=9.6, low=0, close=9.5, atr=0,
-            hold_days=1, hard_stop=-0.05,
+            hold_days=2, hard_stop=-0.05,
             take_profit_tiers=[],
             trail_activate=0.03, trail_dd=0.01,
             time_exit_days=7, time_exit_profit=0.02, time_force_days=12,

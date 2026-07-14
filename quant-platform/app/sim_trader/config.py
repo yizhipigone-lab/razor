@@ -65,4 +65,5 @@ AUTO_BUY  = True    # 是否执行买入
 # ═══════════ 盘中监控 ═══════════
 MONITOR_ENABLED = True      # 启动时是否自动开启盘中监控
 MONITOR_MODE = "close"      # "intraday"(触发即卖) | "close"(仅告警)
-BROKER_ENABLED  = False     # 是否通过gateway执行真实券商委托（需 QMT/同花顺 已连接）
+# BROKER_ENABLED 已删除(2026-07-14):sim_trader 永远不真下单,真单唯一入口是 live_trader(qmt_wrapper)
+# 见 docs/审计报告/项目质量审计_2026-07-13_全项目.md 架构决定

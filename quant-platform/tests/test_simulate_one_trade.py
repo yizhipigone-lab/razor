@@ -55,7 +55,8 @@ class TestHardStop:
     def test_low_triggers_hard_stop_at_7pct(self):
         bars = _bars([
             ("2024-01-02", 10.0, 10.0, 10.0, 10.0),  # signal day
-            ("2024-01-03", 9.5, 9.6, 9.2, 9.4),     # low 9.2 < entry*0.93=9.3
+            ("2024-01-03", 9.7, 9.8, 9.7, 9.75),    # hold_days=1,过了一晚(T+1 不查)
+            ("2024-01-04", 9.5, 9.6, 9.2, 9.4),     # hold_days=2,low 9.2 < entry*0.93=9.3
         ])
         t = _call(bars)
         assert t is not None
@@ -64,7 +65,8 @@ class TestHardStop:
     def test_no_trigger_when_low_above_stop(self):
         bars = _bars([
             ("2024-01-02", 10.0, 10.0, 10.0, 10.0),
-            ("2024-01-03", 9.6, 9.7, 9.5, 9.65),
+            ("2024-01-03", 9.6, 9.7, 9.5, 9.65),    # hold_days=1,过了一晚
+            ("2024-01-04", 9.6, 9.7, 9.5, 9.65),    # hold_days=2,不触发 HS,尾日清仓
         ])
         # 不触发 HS;但尾日清仓
         t = _call(bars)
@@ -77,10 +79,12 @@ class TestTP1FixedAt3pct:
         """核心修正:tp1_profit=10(目标 11),但 TP1 成交价固定 entry*1.03(_fast_simulate 影子按 11 成交,错)。
         exit_rule_engine 选 highest=LARGEST idx 触发:要让 TP1(idx 0)为 highest,tp2 必须不触发。
         所以 tp2_profit=50(目标 15)→ bar high 11 只触 tp1 → override → 10.3。
+        T+1 保护:hold_days=1(过了一晚那根)不查 TP,hold_days=2 才查。
         """
         bars = _bars([
-            ("2024-01-02", 10.0, 10.0, 10.0, 10.0),
-            ("2024-01-03", 11.0, 11.0, 10.5, 11.0),  # high 11 ≥ tp1 目标 11
+            ("2024-01-02", 10.0, 10.0, 10.0, 10.0),  # signal day
+            ("2024-01-03", 10.1, 10.2, 9.9, 10.1),     # hold_days=1,过了一晚(不查 TP)
+            ("2024-01-04", 11.0, 11.0, 10.5, 11.0),  # hold_days=2,high 11 ≥ tp1 目标 11
         ])
         t = _call(bars, entry=10.0, extra_params={"tp1_profit": 10.0, "tp2_profit": 50.0})
         assert t is not None
@@ -95,9 +99,11 @@ class TestTPStack:
         # highest=tp2(idx 1,LARGEST)→ 成交价 10.5(无 TP1 覆盖,那是 tp1 单独触发时才生效)。
         # 注:exit_rule_engine 产生的 total_ratio 被 kernel 忽略(忠实 engine 行为:
         # kernel 按 highest 单档 sell_ratio 卖,不是累加),所以 ratio=0.33。
+        # T+1 保护:hold_days=1(过了一晚)不查 TP,hold_days=2 才查。
         bars = _bars([
-            ("2024-01-02", 10.0, 10.0, 10.0, 10.0),
-            ("2024-01-03", 10.6, 10.6, 10.5, 10.6),
+            ("2024-01-02", 10.0, 10.0, 10.0, 10.0),  # signal day
+            ("2024-01-03", 10.05, 10.1, 9.95, 10.05), # hold_days=1,过了一晚(不查 TP)
+            ("2024-01-04", 10.6, 10.6, 10.5, 10.6),  # hold_days=2,high 10.6 同触
         ])
         t = _call(bars, entry=10.0, extra_params={"tp1_profit": 3.0, "tp2_profit": 5.0})
         tp_sells = [e for e in t["sell_events"] if "止盈" in e["reason"]]
@@ -164,10 +170,13 @@ class TestEmptyBars:
 
 class TestNoFakeDefaults:
     def test_no_hardcoded_minus7_when_params_override_gives_different_value(self):
-        """影子 _fast_simulate 默认 hard_sl=-7.0(假默认)。kernel 走 params_override,无 -7 默认。"""
+        """影子 _fast_simulate 默认 hard_sl=-7.0(假默认)。kernel 走 params_override,无 -7 默认。
+        T+1 保护:hold_days=1(过了一晚)不查 HS,hold_days=2 才查。
+        """
         bars = _bars([
-            ("2024-01-02", 10.0, 10.0, 10.0, 10.0),
-            ("2024-01-03", 9.0, 9.0, 8.5, 8.7),  # low 8.5 < entry*0.95=9.5 (硬止损 -5%)
+            ("2024-01-02", 10.0, 10.0, 10.0, 10.0),  # signal day
+            ("2024-01-03", 9.6, 9.7, 9.5, 9.6),     # hold_days=1,过了一晚(不查 HS)
+            ("2024-01-04", 9.0, 9.0, 8.5, 8.7),     # hold_days=2,low 8.5 < entry*0.95=9.5
         ])
         # override 给 -5%: 应触 HS
         t = _call(bars, entry=10.0, extra_params={"hard_stop_loss_pct": -5.0})

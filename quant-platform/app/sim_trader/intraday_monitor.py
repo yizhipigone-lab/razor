@@ -128,42 +128,10 @@ class IntradayMonitor:
         from app.backtest.exit_rules import exit_rule_engine
         from core.settings import settings
 
-        # 从持久化配置读取（重启不丢失），config.py 只在首次启动时作为兜底
-        def _cfg(key, default):
-            val = settings.get("risk", key)
-            if val is None:
-                # 兜底：读 config.py
-                import app.sim_trader.config as sc
-                return getattr(sc, key.upper(), default)
-            return val
-
-        overall_peak = max(pos.peak_price, session_peak)
-        # 与 sim_trader.engine.check_stops 公式保持一致（#13 修复）
-        # 用交易日计数（自然日会受周末/假期干扰，触发时机与尾盘不同步）
-        from app.api.sim_trader import _load_trading_calendar
-        _cal = _load_trading_calendar() or set()
-        _today = date.today()
-        trading_dates_window = sorted(d for d in _cal if pos.entry_date <= d <= _today)
-        hold_days = max(1, len(trading_dates_window))  # 至少 1,防空日历误触
-
-        ctx = exit_rule_engine.build_context(
-            pos,
-            {"close": current_price, "high": current_price, "low": current_price, "open": current_price, "atr": daily_atr},
-            hold_days,
-            {
-                "hard_stop": _cfg("hard_stop_loss_pct", -6.0) / 100.0,  # settings用百分比→转小数
-                "take_profit_tiers": _cfg("take_profit_tiers", [{"profit_pct": 0.03, "sell_ratio": 0.30}]),
-                "trail_activate": _cfg("trailing_stop_activate_pct", 5.0) / 100.0,
-                "trail_dd": _cfg("trailing_stop_drawdown_pct", 2.0) / 100.0,
-                "time_exit_days": _cfg("time_exit_days", 7),
-                "time_exit_profit": _cfg("time_exit_min_profit_pct", 3.0) / 100.0,
-                "time_force_days": _cfg("time_exit_force_days", 12),
-                "first_day_exit_min_profit": _cfg("first_day_exit_min_profit", 0.0),
-                "first_day_exit_days": _cfg("first_day_exit_days", 1),
-                "use_atr_trail": _cfg("use_atr_stop", False),
-                "atr_trail_multiplier": _cfg("atr_stop_multiplier", 1.0),
-            },
-        )
+        # v5.5 (2026-07-14): 统一走 risk_params.load_risk_params, 与 engine/exit_monitor 共享
+        from app.config.risk_params import load_risk_params as _load_risk_params
+        import dataclasses
+        risk_params_dict = dataclasses.asdict(_load_risk_params())
         # 覆盖峰值：盘中使用 session_peak
         ctx.peak_price = overall_peak
 
@@ -195,17 +163,7 @@ class IntradayMonitor:
                 k: v for k, v in self.engine.positions.items() if v.is_active
             }
 
-            # 真实券商委托
-            from app.sim_trader.config import BROKER_ENABLED
-            if BROKER_ENABLED:
-                try:
-                    from core.gateway import get_gateway
-                    gw = get_gateway()
-                    gw.sell(code=pos.code, price=price,
-                            volume=trade.shares, reason=reason)
-                    log.info(f"券商委托: {pos.code} 卖出 {trade.shares}股 @ {price:.2f} [{reason}]")
-                except Exception as e:
-                    log.error(f"券商委托失败 {pos.code}: {e}")
+            # 真实券商委托路径已删除(2026-07-14):见 engine.py 同注释
 
             sync_broadcast({
                 "type": "sim_trader_update",
