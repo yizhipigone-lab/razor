@@ -93,10 +93,13 @@ def simulate_one_trade(
     }
 
     def _p(key):
+        """读风控参数,直接返回小数(0.06 表示 6%)。
+        params_override 约定也是小数(0.06 表示 6%);_p 不做单位转换。
+        """
         if params_override and key in params_override:
             return params_override[key]
         if key in _SCHEMA_PCT_FIELDS:
-            return getattr(_risk, _SCHEMA_PCT_FIELDS[key], 0.0) * 100
+            return getattr(_risk, _SCHEMA_PCT_FIELDS[key], 0.0)
         if key in _SCHEMA_INT_FIELDS:
             return getattr(_risk, _SCHEMA_INT_FIELDS[key])
         raise RuntimeError(f"simulate_one_trade 缺风控参数: {key},无假默认,需 schema 或 params_override")
@@ -166,12 +169,12 @@ def simulate_one_trade(
         highest = max(highest, price_h)
 
         ctx_params = {
-            "hard_stop": _pct(hard_sl),
+            "hard_stop": hard_sl,
             "take_profit_tiers": active_tp_plan,
-            "trail_activate": _pct(trail_act),
-            "trail_dd": _pct(trail_dd),
+            "trail_activate": trail_act,
+            "trail_dd": trail_dd,
             "time_exit_days": max_hold,
-            "time_exit_profit": _pct(time_exit_min_pnl) if time_exit_min_pnl is not None else 0.01,
+            "time_exit_profit": time_exit_min_pnl if time_exit_min_pnl is not None else 0.01,
             "time_force_days": force_hold,
             "first_day_exit_min_profit": fd_min_profit,
             "first_day_exit_days": fd_days,

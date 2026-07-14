@@ -216,3 +216,98 @@ class TestRiskParamsRealSettings:
             f"settings [risk] 段命中 key 仅 {hit}/{len(expected_keys)}, "
             f"可能 settings 改名/迁移未同步, 导致 load_risk_params 走默认"
         )
+
+
+class TestRiskParamsCriticalBugRepro:
+    """CRITICAL bug 真触发测试(2026-07-15 第二轮迭代新增)。
+
+    之前的 mock 测试用 first_day_exit=3.0 验证 /100 计算,但 mock 路径不能
+    证明 bug 在真实数据流下会消失。本测试用 monkeypatch 强制 settings 给出
+    非零的 first_day_exit,走完 exit_rule_engine 的真实触发路径,断言
+    C1 修复后行为正确(不会因量纲错误导致永远触发)。
+    """
+
+    def test_first_day_exit_bug_does_not_fire_when_pct_normal(self):
+        """C1 bug 真复现: monkeypatch settings 让 first_day_exit=3.0(百分比整数),
+        走 exit_rule_engine,断言:
+          - 修复后: fd=0.03, day_high_pct=0.01 < fd → 触发(正常)
+          - C1 bug: fd=3.0, day_high_pct=0.01 < fd → 触发(但量纲错误,无差别)
+
+        本测试的核心目的:**证明修复后 exit_rules 收到的 fd 已经是小数 0.03,
+        而不是百分比整数 3.0**。这是 audit 报告 C1 第 65-72 行 bug 路径的真验证。
+        """
+        from unittest import mock
+        from app.config.risk_params import load_risk_params
+        from app.backtest.exit_rules import (
+            RuleContext, ExitRuleEngine, ExitSignal,
+        )
+
+        # 模拟 settings 中 first_day_exit_min_profit=3.0 (用户配置百分比整数)
+        fake_risk = {
+            "first_day_exit_min_profit": 3.0,  # settings 存百分比数
+            "first_day_exit_days": 1,
+            "hard_stop_loss_pct": -6.0,
+            "trailing_stop_activate_pct": 5.0,
+            "trailing_drawdown_pct": 2.0,
+            "time_exit_days": 7,
+            "time_exit_min_pnl_pct": 3.0,
+            "time_exit_force_days": 12,
+        }
+        m = mock.MagicMock()
+        m.get = lambda section, key: fake_risk.get(key)
+        with mock.patch("app.config.risk_params._settings", m):
+            rp = load_risk_params()
+
+        # 修复后断言:RiskParams.first_day_exit_min_profit 应是 0.03(小数)
+        assert rp.first_day_exit_min_profit == 0.03, (
+            f"C1 修复无效: settings=3.0(%) 但 RiskParams={rp.first_day_exit_min_profit} "
+            f"(应为 0.03)。如果 = 3.0 说明 /100 没生效。"
+        )
+
+        # 走完整 exit_rule_engine 路径,验证 day_high_pct 比较
+        # 构造一个 entry=10, high=10.01 (day_high_pct=0.001=0.1%) 的 ctx
+        ctx = RuleContext(
+            entry_price=10.0, peak_price=10.01,
+            shares=100, hold_days=2,  # fd_days=1, hold_days in [2, 2]
+            high=10.01, low=10.0, close=10.0, open=10.0,
+            first_day_exit_min_profit=rp.first_day_exit_min_profit,  # 0.03
+            first_day_exit_days=rp.first_day_exit_days,
+            first_day_hold_value=2,
+        )
+        # day_high_pct = 10.01/10 - 1 = 0.001 < 0.03 → 应触发 FD
+        signal = ExitRuleEngine().check(ctx)
+        assert signal is not None, "day_high_pct(0.001) < fd(0.03) 应触发首日离场"
+        assert signal.reason.startswith("FD"), f"应触发 FD,实际 {signal.reason}"
+
+    def test_first_day_exit_does_NOT_fire_when_high_above_threshold(self):
+        """C1 bug 反向验证:day_high_pct >= fd 时不应触发。
+        如果 fd 是 3.0(C1 bug),0.05 > 3.0 不成立,但 0.05 > 0.03 成立 → 不触发。
+        如果 fd 是 0.03(修复后),0.05 > 0.03 成立 → 不触发。两条路径结果相同,
+        但本测试能证明 fd 收到了正确的小数。
+        """
+        from unittest import mock
+        from app.config.risk_params import load_risk_params
+        from app.backtest.exit_rules import RuleContext, ExitRuleEngine
+
+        fake_risk = {"first_day_exit_min_profit": 3.0, "first_day_exit_days": 1}
+        m = mock.MagicMock()
+        m.get = lambda section, key: fake_risk.get(key)
+        with mock.patch("app.config.risk_params._settings", m):
+            rp = load_risk_params()
+
+        # fd=0.03, hold_days=2, high=10.50 → day_high_pct=0.05 > fd → 不触发
+        ctx = RuleContext(
+            entry_price=10.0, peak_price=10.50,
+            shares=100, hold_days=2,
+            high=10.50, low=10.0, close=10.4, open=10.4,
+            first_day_exit_min_profit=rp.first_day_exit_min_profit,
+            first_day_exit_days=rp.first_day_exit_days,
+            first_day_hold_value=2,
+        )
+        signal = ExitRuleEngine().check(ctx)
+        # day_high_pct=0.05 > fd=0.03 → 不应触发 FD
+        if signal is not None:
+            assert not signal.reason.startswith("FD"), (
+                f"C1 bug 复活: day_high_pct=0.05 > fd 但仍触发 FD, "
+                f"说明 fd={rp.first_day_exit_min_profit} 实际仍是 3.0(C1 bug 路径)"
+            )

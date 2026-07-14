@@ -17,7 +17,18 @@ from core.logger import get_logger
 _log = get_logger("ExitRules")
 
 def _pct(v: float) -> float:
-    """自动识别百分比/小数格式：abs>1 时除以100，否则保持"""
+    """[DEPRECATED 2026-07-15] 自动识别百分比/小数格式：abs>1 时除以100,否则保持。
+
+    ⚠️ 已废弃:risk_params.py 集中加载层保证所有风控参数输出为小数(0.03 表示 3%)。
+    build_context 不再走本函数,直接拿小数。
+    保留仅作向后兼容(老调用方可能传百分比整数,abs>1 时还能救一下)。
+    新代码禁止使用本函数 — 传单位不一致的值是 bug 信号。
+    """
+    import warnings
+    warnings.warn(
+        "_pct() is deprecated, use risk_params.py for unit conversion",
+        DeprecationWarning, stacklevel=2,
+    )
     if abs(v) > 1:
         return v / 100.0
     return v
@@ -428,8 +439,8 @@ class ExitRuleEngine:
             first_day_exit_days=params.get("first_day_exit_days", 1),
             use_atr_trail=params.get("use_atr_trail", True),
             atr_trail_multiplier=params.get("atr_trail_multiplier", 1.0),
-            breakeven_threshold=_pct(params.get("breakeven_threshold_pct", 0.0)),
-            breakeven_stop=_pct(params.get("breakeven_stop_pnl_pct", 0.0)),
+            breakeven_threshold=params.get("breakeven_threshold_pct", 0.0),
+            breakeven_stop=params.get("breakeven_stop_pnl_pct", 0.0),
             vol_climax_enabled=params.get("use_vol_climax_exit", False),
             use_high_for_tp=use_high_for_tp,
             realistic_stop_fill=params.get("realistic_stop_fill", "stop"),

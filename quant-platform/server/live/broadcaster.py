@@ -54,6 +54,18 @@ class LiveTraderBroadcaster:
         self.update_task: Optional[asyncio.Task] = None
         self.last_broadcast_time = 0.0
         self._fail_count = 0  # 不健康计数(全空/部分失败/异常),全成功清零
+        self.total_broadcasts = 0  # 累计成功广播次数(可观测性 metric)
+        self.total_fails = 0  # 累计失败次数
+
+    def get_metrics(self) -> dict:
+        """暴露 metric 供 /api/system/metrics 端点读取 (2026-07-15 第三轮迭代新增)"""
+        return {
+            "live_broadcaster_fails": self._fail_count,
+            "live_broadcaster_total_broadcasts": self.total_broadcasts,
+            "live_broadcaster_total_fails": self.total_fails,
+            "live_broadcaster_running": self.update_task is not None and not self.update_task.done(),
+            "live_broadcaster_interval_s": self.broadcast_interval,
+        }
 
     async def start_broadcast_loop(self) -> None:
         if self.update_task:
@@ -134,8 +146,10 @@ class LiveTraderBroadcaster:
                     log.info(f"实盘快照恢复(此前 fail={self._fail_count})")
                 self._fail_count = 0
             await manager.broadcast({"type": "live_trader_snapshot", "data": payload})
+            self.total_broadcasts += 1
         except Exception as e:
             self._fail_count += 1
+            self.total_fails += 1
             if self._fail_count == 1 or self._fail_count % 10 == 0:
                 log.warning(f"实盘快照广播失败(fail={self._fail_count}): {e}")
 

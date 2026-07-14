@@ -22,16 +22,17 @@ def _bars(rows):
 
 _PARAMS = {
     # schema 字段(走 params_override,绕开 load_risk_params)
-    "hard_stop_loss_pct": -7.0,
-    "breakeven_threshold_pct": 5.0,
+    # 2026-07-15:单位统一为小数(0.07 表示 7%),与 risk_params.py 一致
+    "hard_stop_loss_pct": -0.07,
+    "breakeven_threshold_pct": 0.05,
     "breakeven_stop_pnl_pct": 0.0,
-    "trailing_activate_pct": 15.0,
-    "trailing_drawdown_pct": 5.0,
+    "trailing_activate_pct": 0.15,
+    "trailing_drawdown_pct": 0.05,
     "time_exit_days": 30,
     "time_exit_force_days": 12,
     "first_day_exit_min_profit": 0.0,
     "first_day_exit_days": 1,
-    # TP 档位
+    # TP 档位(语义保持 % 输入,_p() 不读这两个,TP 路径自己 /100)
     "tp1_profit": 3.0,
     "tp1_ratio": 0.33,
     "tp2_profit": 5.0,
@@ -179,5 +180,5 @@ class TestNoFakeDefaults:
             ("2024-01-04", 9.0, 9.0, 8.5, 8.7),     # hold_days=2,low 8.5 < entry*0.95=9.5
         ])
         # override 给 -5%: 应触 HS
-        t = _call(bars, entry=10.0, extra_params={"hard_stop_loss_pct": -5.0})
+        t = _call(bars, entry=10.0, extra_params={"hard_stop_loss_pct": -0.05})
         assert any("HS" in e["reason"] for e in t["sell_events"])
