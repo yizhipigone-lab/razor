@@ -135,7 +135,7 @@ async def lifespan(app: FastAPI):
             notifier.kill_switch_activated(f"启动检测到残留（{_detail}）", "startup_check", hint=_hint)
 
     qmt = QmtWrapper(config)
-    callback = CallbackHandler(config, store, kill_switch, clearance_lock, pnl_engine, notifier, runtime_state)
+    callback = CallbackHandler(config, store, kill_switch, clearance_lock, pnl_engine, notifier, runtime_state, audit=audit)
     conn = ConnectionManager(config, qmt, callback, kill_switch, store)
     risk_gate = RiskGate(config, store, kill_switch, qmt)
     reconciler = Reconciler(config, store, qmt, kill_switch, notifier, pnl_engine)

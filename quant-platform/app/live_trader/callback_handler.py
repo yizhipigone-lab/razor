@@ -27,7 +27,8 @@ class CallbackHandler:
     """xtquant 回调处理 + mock 回报生成器"""
 
     def __init__(self, config: LiveTraderConfig, store=None, kill_switch=None,
-                 clearance_lock=None, pnl_engine=None, notify=None, runtime_state=None):
+                 clearance_lock=None, pnl_engine=None, notify=None, runtime_state=None,
+                 audit=None):
         self.config = config
         self.store = store
         self.kill_switch = kill_switch
@@ -35,6 +36,7 @@ class CallbackHandler:
         self.pnl_engine = pnl_engine
         self.notify = notify
         self.runtime_state = runtime_state  # v2(A6): 运行时 mode/开关
+        self.audit = audit  # C3(2026-07-15 全项目审计): 注入 audit, DB 写失败兜底要用
 
         # db_executor:有界线程池,所有 DB 写入派发到这里(§5.3)
         self._db_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="live-db")
@@ -55,6 +57,16 @@ class CallbackHandler:
         self._account_anomaly_window_sec = 30.0  # 软异常持续超过该秒数才触发 kill switch
 
         self._mock_counter = 100000  # mock 回报 order_id 计数器(仅 dry-run 用;mock 判定走 runtime_state.is_dry_run)
+
+        # order_remark → tag 映射(用于成交通知标签)
+        self._TAG_MAP = {
+            "signal_buy":   "信号买入",
+            "stop_loss":    "止损",
+            "take_profit":  "止盈",
+            "time_exit":    "时间退出",
+            "force_exit":   "强制退出",
+            "manual":       "手动",
+        }
 
     def make_xtquant_callback(self):
         """构造 XtQuantTraderCallback 实例(供 ConnectionManager 注册)"""
@@ -378,9 +390,20 @@ class CallbackHandler:
         if self.clearance_lock:
             self.clearance_lock.release_by_order_id(order_id)
 
-        # 通知
+        # 通知(卖出时查持仓均价用于显示盈亏)
         if self.notify:
-            self.notify.order_traded(code, direction, filled_volume, filled_price, mode)
+            avg_cost = 0
+            tag = "其他"
+            if direction == "sell" and self.store:
+                pos = self.store.get_position(code)
+                if pos:
+                    avg_cost = float(pos.get("avg_cost", 0) or 0)
+            if order:
+                remark = order.get("order_remark", "")
+                tag = self._TAG_MAP.get(remark, "其他")
+            self.notify.order_traded_with_tag(
+                code, direction, filled_volume, filled_price, mode, tag, avg_cost=avg_cost
+            )
 
     def _release_pending_buy(self, code: str, filled_volume: int, trade_id: int = None) -> None:
         """C1:成交后释放在途预扣 + 首次建仓写 entry_date
@@ -409,9 +432,10 @@ class CallbackHandler:
             # 释放清仓锁
             if self.clearance_lock:
                 self.clearance_lock.release_by_order_id(order_id)
-            # C1:废单释放预扣
+            # C2(2026-07-15 全项目审计): 废单=零成交, 只释放 pending_buy_volume 冻结,
+            # 绝不调 apply_buy_fill(会把废单股数加进 volume, 反向膨胀持仓)。
             if existing.get("direction") == "buy":
-                self._release_pending_buy(existing.get("code", ""), existing.get("volume", 0))
+                self.store.release_pending_buy(existing.get("code", ""), existing.get("volume", 0))
 
         if self.notify:
             self.notify.order_error(order_id, error_msg)

@@ -71,9 +71,12 @@ class LiveTraderStore:
                 trade_id BIGINT PRIMARY KEY,
                 order_id BIGINT, code VARCHAR, direction VARCHAR,
                 filled_volume BIGINT, filled_price DOUBLE, filled_amount DOUBLE,
-                commission DOUBLE, mode VARCHAR, traded_at TIMESTAMP
+                commission DOUBLE, mode VARCHAR, traded_at TIMESTAMP,
+                position_applied BOOLEAN DEFAULT FALSE
             )
         """)
+        # C1(2026-07-15 全项目审计): 旧库补 position_applied 列(幂等认领标记)
+        con.execute("ALTER TABLE live_deals ADD COLUMN IF NOT EXISTS position_applied BOOLEAN DEFAULT FALSE")
         con.execute("""
             CREATE TABLE IF NOT EXISTS live_positions (
                 code VARCHAR PRIMARY KEY,
@@ -306,23 +309,32 @@ class LiveTraderStore:
 
     def apply_sell_fill(self, code: str, filled_volume: int,
                         trade_id: int = None) -> None:
-        """v2(F4/A3):卖出成交后递减持仓,清仓则重置全部状态防再买同票用旧值
+        """卖出成交后递减持仓,清仓则重置全部状态防再买同票用旧值。
 
-        trade_id 幂等(审计H1):重复回报不双扣(deal 表 ON CONFLICT 只入库一次,
-        本方法入口再校验一次,防 volume 被多扣)。
-        清仓重置含 avg_cost/entry_date(审计M2),否则再买同票用旧成本/旧日期。
+        C1(2026-07-15 全项目审计): 幂等改用 position_applied 原子认领。
+        旧版 SELECT live_deals 判存在——但 sync_terminal_write 先于本方法插入 deal,
+        首次即命中→持仓永不更新(实盘账目脱钩, PR#6 回归)。现用
+        UPDATE...RETURNING 抢 position_applied FALSE→TRUE: 抢到才更新持仓,
+        重复回报抢不到则跳过。deal 未入库(sync 失败)时仍更新(WAL+reconciler 兜底)。
+        清仓重置含 avg_cost/entry_date(M2),否则再买同票用旧成本/旧日期。
         """
         assert self._conn is not None
         if filled_volume <= 0:
             return
-        # 幂等:同一 trade_id 已处理则跳过(H1)
-        if trade_id is not None:
-            exists = self._conn.execute(
-                "SELECT 1 FROM live_deals WHERE trade_id = ?", [trade_id]
-            ).fetchone()
-            if exists:
-                return
         with self._db_lock:
+            if trade_id is not None:
+                claimed = self._conn.execute(
+                    "UPDATE live_deals SET position_applied=TRUE "
+                    "WHERE trade_id=? AND position_applied=FALSE RETURNING trade_id",
+                    [trade_id]
+                ).fetchone()
+                if claimed is None:
+                    exists = self._conn.execute(
+                        "SELECT 1 FROM live_deals WHERE trade_id = ?", [trade_id]
+                    ).fetchone()
+                    if exists:
+                        return  # 已应用, 幂等跳过
+                    logger.warning(f"apply_sell_fill: trade_id={trade_id} 未入库(sync失败?), 仍更新持仓")
             row = self._conn.execute(
                 "SELECT volume, can_use_volume FROM live_positions WHERE code = ?",
                 [code]
@@ -361,22 +373,29 @@ class LiveTraderStore:
 
         原子 SQL(不读改写),避免 _release_pending_buy 全字段 upsert 覆盖 tp_triggered/sell_count(H3)。
         首次建仓(entry_date 为空)写 today,修 hold_days 恒=1 问题(H2)。
-        重复买入回报(QMT 推重复 / 网络重连):同一 trade_id 已处理 → 静默 return,不动 volume。
+        C1(2026-07-15 全项目审计): 幂等改 position_applied 原子认领(对齐 apply_sell_fill),
+        修旧版 SELECT live_deals 判存在导致首次即跳过、持仓永不更新的回归。
         """
         assert self._conn is not None
         if filled_volume <= 0:
             return
-        # H1 幂等:同一 trade_id 已入库则跳过(对齐 apply_sell_fill:303-309)
-        if trade_id is not None:
-            exists = self._conn.execute(
-                "SELECT 1 FROM live_deals WHERE trade_id = ?", [trade_id]
-            ).fetchone()
-            if exists:
-                logger.debug(f"apply_buy_fill 幂等命中,跳过重复 trade_id={trade_id} code={code}")
-                return
         from datetime import date as _date
         today = _date.today()
         with self._db_lock:
+            if trade_id is not None:
+                claimed = self._conn.execute(
+                    "UPDATE live_deals SET position_applied=TRUE "
+                    "WHERE trade_id=? AND position_applied=FALSE RETURNING trade_id",
+                    [trade_id]
+                ).fetchone()
+                if claimed is None:
+                    exists = self._conn.execute(
+                        "SELECT 1 FROM live_deals WHERE trade_id = ?", [trade_id]
+                    ).fetchone()
+                    if exists:
+                        logger.debug(f"apply_buy_fill 幂等命中,跳过重复 trade_id={trade_id} code={code}")
+                        return  # 已应用, 幂等跳过
+                    logger.warning(f"apply_buy_fill: trade_id={trade_id} 未入库(sync失败?), 仍更新持仓")
             row = self._conn.execute(
                 "SELECT volume, pending_buy_volume, entry_date FROM live_positions WHERE code = ?",
                 [code]
@@ -405,6 +424,22 @@ class LiveTraderStore:
                     "UPDATE live_positions SET volume = ?, pending_buy_volume = ? WHERE code = ?",
                     [new_volume, new_pending, code]
                 )
+
+    def release_pending_buy(self, code: str, volume: int) -> None:
+        """C2(2026-07-15 全项目审计): 废单/拒单时只释放在途预扣冻结, 不动 volume。
+
+        废单=零成交, 本应只释放 risk_gate 下单时冻结的 pending_buy_volume,
+        绝不能复用 apply_buy_fill(那会 volume += 把废单股数加进持仓, 反向膨胀)。
+        """
+        assert self._conn is not None
+        if volume <= 0:
+            return
+        with self._db_lock:
+            self._conn.execute(
+                "UPDATE live_positions SET "
+                "pending_buy_volume = GREATEST(0, pending_buy_volume - ?) WHERE code = ?",
+                [volume, code]
+            )
 
     def clean_dryrun_residue(self) -> None:
         """v2(F8/H1): 清理 dry-run 残留委托/成交/盈亏闭环(切 live 前,防 mock 污染)
@@ -490,6 +525,23 @@ class LiveTraderStore:
         assert self._conn is not None
         rows = self._conn.execute(
             "SELECT * FROM live_orders WHERE order_id = ?", [order_id]
+        ).fetchone()
+        if not rows:
+            return None
+        cols = [d[0] for d in self._conn.description]
+        return dict(zip(cols, rows))
+
+    def get_deal_by_trade_id(self, trade_id: int) -> Optional[Dict[str, Any]]:
+        """H1(2026-07-14):按 trade_id 查成交记录,供 callback_handler 入口幂等检查用。
+
+        QMT 网络抖动/重连会推重复 trade_id 回报,callback_handler 在写 deal 之前
+        先查 deals 表;有则整个跳过(不写 deal、不动 position、不重算盈亏)。
+        """
+        assert self._conn is not None
+        if trade_id is None or trade_id == 0:
+            return None
+        rows = self._conn.execute(
+            "SELECT * FROM live_deals WHERE trade_id = ?", [trade_id]
         ).fetchone()
         if not rows:
             return None
