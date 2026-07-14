@@ -7,7 +7,7 @@ engine + ai_optimizer._fast_simulate 都委托它 → 影子变忠实,日线路�
 - TP1 固定 entry*(1+tp1_fill_pct=0.03),不按真实档位 target 成交
   (旧影子按 entry*(1+tp_pct) 成交,tp1=10% 时差 7%)
 - trailing_first / stack_mode 生效(走 exit_rule_engine,而非固定 TP→HS→TR)
-- 无假默认 -7.0/15.0(走 params_override / schema,缺键报错)
+- 无假默认:风控参数走 params_override → schema 两级兜底(缺键 RuntimeError);TP档位走 params_override(有tp1时连带tp2/tp3,缺档兜底10/20/30%)或 settings.staged_take_profit
 - 成本走 execution.get_cost_cfg()(单一真相源;commission+slippage/stamp 比例与旧 engine 一致)
 
 intraday 逐 bar 仿真(simple_runner/tdx_runner)逻辑不同,不在本 kernel 范围。
@@ -76,12 +76,12 @@ def simulate_one_trade(
         apply_costs = settings.backtest_apply_costs
 
     # 风控参数:params_override 优先 → 否则 schema(无假默认,缺键报错)
-    from app.config.schema import load_risk_params
+    from app.config.risk_params import load_risk_params
     _risk = load_risk_params()
     _SCHEMA_PCT_FIELDS = {
         "hard_stop_loss_pct": "hard_stop",
-        "breakeven_threshold_pct": "breakeven_threshold",
-        "breakeven_stop_pnl_pct": "breakeven_stop",
+        "breakeven_threshold_pct": "breakeven_threshold_pct",
+        "breakeven_stop_pnl_pct": "breakeven_stop_pnl_pct",
         "trailing_activate_pct": "trail_activate",
         "trailing_drawdown_pct": "trail_dd",
         "first_day_exit_min_profit": "first_day_exit_min_profit",
@@ -96,7 +96,7 @@ def simulate_one_trade(
         if params_override and key in params_override:
             return params_override[key]
         if key in _SCHEMA_PCT_FIELDS:
-            return getattr(_risk, _SCHEMA_PCT_FIELDS[key]) * 100
+            return getattr(_risk, _SCHEMA_PCT_FIELDS[key], 0.0) * 100
         if key in _SCHEMA_INT_FIELDS:
             return getattr(_risk, _SCHEMA_INT_FIELDS[key])
         raise RuntimeError(f"simulate_one_trade 缺风控参数: {key},无假默认,需 schema 或 params_override")

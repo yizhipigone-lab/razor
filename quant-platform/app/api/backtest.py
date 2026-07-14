@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional, List
 from pathlib import Path
 from pydantic import BaseModel
@@ -38,7 +38,7 @@ async def ai_backtest_start(body: dict):
     try:
         start_str = body.get("start")
         end_str   = body.get("end")
-        start_date = date.fromisoformat(start_str) if start_str else (date.today() - __import__('datetime').timedelta(days=365))
+        start_date = date.fromisoformat(start_str) if start_str else (date.today() - timedelta(days=365))
         end_date   = date.fromisoformat(end_str) if end_str else date.today()
     except Exception as e:
         return {"status": "error", "message": f"日期格式错误: {e}"}
@@ -247,7 +247,7 @@ async def ai_backtest_apply(body: dict):
 
     # 同时更新搜索空间基线（以应用后的参数为新的中心值）
     # L21 修复: 缺键时从 schema (唯一真相源) 读,不再硬编码假默认
-    from app.config.schema import load_risk_params
+    from app.config.risk_params import load_risk_params
     _risk = load_risk_params()
     _baseline = {
         "tp1_profit": params.get("tp1_profit", 3.0),
@@ -257,8 +257,8 @@ async def ai_backtest_apply(body: dict):
         "hard_stop_loss_pct": params.get("hard_stop_loss_pct", _risk.hard_stop * 100),
         "trailing_activate_pct": params.get("trailing_activate_pct", _risk.trail_activate * 100),
         "trailing_drawdown_pct": params.get("trailing_drawdown_pct", _risk.trail_dd * 100),
-        "breakeven_threshold_pct": params.get("breakeven_threshold_pct", _risk.breakeven_threshold * 100),
-        "breakeven_stop_pnl_pct": params.get("breakeven_stop_pnl_pct", _risk.breakeven_stop * 100),
+        "breakeven_threshold_pct": params.get("breakeven_threshold_pct", _risk.breakeven_threshold_pct * 100),
+        "breakeven_stop_pnl_pct": params.get("breakeven_stop_pnl_pct", _risk.breakeven_stop_pnl_pct * 100),
         "time_exit_days": params.get("time_exit_days", _risk.time_exit_days),
     }
     _new_space = {}
