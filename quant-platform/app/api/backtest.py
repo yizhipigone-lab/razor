@@ -485,59 +485,38 @@ async def reset_simple_bt_config():
 
 @router.post("/api/backtest/apply-to-system")
 async def apply_bt_to_system():
-    """将当前回测配置应用到系统交易配置"""
-    import app.sim_trader.config as sc
+    """将当前回测配置应用到系统交易配置（只写 settings，v5.5 不再写 module 变量）"""
     cfg = _load_bt_config()
     try:
-        sc.HARD_STOP = float(cfg.get('hard_stop', sc.HARD_STOP))
-        sc.TRAIL_ACTIVATE = float(cfg.get('trail_activate', sc.TRAIL_ACTIVATE))
-        sc.TRAIL_DD = float(cfg.get('trail_dd', sc.TRAIL_DD))
-        sc.TIME_EXIT_DAYS = int(cfg.get('time_exit_days', sc.TIME_EXIT_DAYS))
-        sc.TIME_EXIT_PROFIT = float(cfg.get('time_exit_profit', sc.TIME_EXIT_PROFIT))
-        sc.TIME_FORCE_DAYS = int(cfg.get('time_force_days', sc.TIME_FORCE_DAYS))
-        sc.LOSS_STREAK_HALVE = int(cfg.get('loss_streak_halve', sc.LOSS_STREAK_HALVE))
-        sc.LOSS_STREAK_PAUSE = int(cfg.get('loss_streak_pause', sc.LOSS_STREAK_PAUSE))
-        sc.PAUSE_DAYS = int(cfg.get('pause_days', sc.PAUSE_DAYS))
-        sc.SAME_STOCK_COOLDOWN = int(cfg.get('same_stock_cooldown', sc.SAME_STOCK_COOLDOWN))
-        sc.INITIAL_CAPITAL = int(cfg.get('initial_capital', sc.INITIAL_CAPITAL))
-        sc.POSITION_SIZE = int(cfg.get('position_size', sc.POSITION_SIZE))
-        sc.MIN_BUY_AMT = int(cfg.get('min_buy_amt', sc.MIN_BUY_AMT))
-        sc.FIRST_DAY_EXIT_MIN_PROFIT = float(cfg.get('first_day_exit_min_profit', sc.FIRST_DAY_EXIT_MIN_PROFIT))
-        sc.FIRST_DAY_EXIT_DAYS = int(cfg.get('first_day_exit_days', sc.FIRST_DAY_EXIT_DAYS))
-        # 多档止盈
-        tiers = cfg.get('take_profit_tiers', sc.TAKE_PROFIT_TIERS)
-        sc.TAKE_PROFIT_TIERS = tiers
-        # 信号参数
-        sp = cfg.get('signal_params', sc.SIGNAL_PARAMS)
-        sc.SIGNAL_PARAMS = sp
-
-        # 同步写入 app_setting.json
+        # 2026-07-14 v5.5: 不再写 app.sim_trader.config 模块变量，交易逻辑统一走 risk_params → settings
+        # 直接从 cfg 读值写入 settings（不再经由 sc.HARD_STOP 中转）
         from core.settings import settings
         settings.reload()
         risk = settings._data.get('risk', {})
-        risk['hard_stop_loss_pct'] = sc.HARD_STOP * 100
-        risk['trailing_stop_activate_pct'] = sc.TRAIL_ACTIVATE * 100
-        risk['trailing_stop_drawdown_pct'] = sc.TRAIL_DD * 100
-        risk['time_exit_days'] = sc.TIME_EXIT_DAYS
-        risk['time_exit_min_profit_pct'] = sc.TIME_EXIT_PROFIT * 100
-        risk['time_exit_force_days'] = sc.TIME_FORCE_DAYS
-        risk['first_day_exit_min_profit'] = sc.FIRST_DAY_EXIT_MIN_PROFIT
-        risk['first_day_exit_days'] = sc.FIRST_DAY_EXIT_DAYS
-        risk['take_profit_tiers'] = [
-            {'profit_pct': t['profit_pct'], 'sell_ratio': t['sell_ratio']}
-            for t in sc.TAKE_PROFIT_TIERS
-        ]
+        # 止盈止损核心参数（直接从 cfg 拿，cfg 本身已是从 settings 读的）
+        risk['hard_stop_loss_pct']       = float(cfg.get('hard_stop', -6.0))
+        risk['trailing_stop_activate_pct'] = float(cfg.get('trail_activate', 5.0))
+        risk['trailing_stop_drawdown_pct'] = float(cfg.get('trail_dd', 2.0))
+        risk['time_exit_days']            = int(cfg.get('time_exit_days', 7))
+        risk['time_exit_min_profit_pct']  = float(cfg.get('time_exit_profit', 3.0))
+        risk['time_exit_force_days']      = int(cfg.get('time_force_days', 12))
+        risk['first_day_exit_min_profit'] = float(cfg.get('first_day_exit_min_profit', 3.0))
+        risk['first_day_exit_days']       = int(cfg.get('first_day_exit_days', 1))
+        risk['take_profit_tiers'] = cfg.get('take_profit_tiers', [
+            {'profit_pct': 0.03, 'sell_ratio': 0.30}
+        ])
         settings._data['risk'] = risk
+        # 回测参数快照（供回测 tab "系统配置"按钮读取，不参与实盘交易）
         settings._data['backtest'] = {**settings._data.get('backtest', {}),
-            'hard_stop': sc.HARD_STOP,
-            'take_profit_tiers': sc.TAKE_PROFIT_TIERS,
-            'trail_activate': sc.TRAIL_ACTIVATE, 'trail_dd': sc.TRAIL_DD,
-            'time_exit_days': sc.TIME_EXIT_DAYS, 'time_exit_profit': sc.TIME_EXIT_PROFIT,
-            'time_force_days': sc.TIME_FORCE_DAYS,
-            'first_day_exit_min_profit': sc.FIRST_DAY_EXIT_MIN_PROFIT,
-            'first_day_exit_days': sc.FIRST_DAY_EXIT_DAYS,
-            'loss_streak_halve': sc.LOSS_STREAK_HALVE, 'loss_streak_pause': sc.LOSS_STREAK_PAUSE,
-            'pause_days': sc.PAUSE_DAYS, 'same_stock_cooldown': sc.SAME_STOCK_COOLDOWN,
+            'hard_stop': risk['hard_stop_loss_pct'] / 100.0,
+            'take_profit_tiers': risk['take_profit_tiers'],
+            'trail_activate': risk['trailing_stop_activate_pct'] / 100.0,
+            'trail_dd': risk['trailing_stop_drawdown_pct'] / 100.0,
+            'time_exit_days': risk['time_exit_days'],
+            'time_exit_profit': risk['time_exit_min_profit_pct'] / 100.0,
+            'time_force_days': risk['time_exit_force_days'],
+            'first_day_exit_min_profit': risk['first_day_exit_min_profit'],
+            'first_day_exit_days': risk['first_day_exit_days'],
         }
         settings.save()
         log.info("回测配置已应用到系统配置")
@@ -549,66 +528,52 @@ async def apply_bt_to_system():
 
 @router.post("/api/settings/risk-params")
 async def save_risk_params(body: dict):
-    """直接更新 config.py 中的止盈止损参数"""
-    import app.sim_trader.config as sc
+    """直接更新 risk 段参数（只写 settings，v5.5 不再写 module 变量）"""
     try:
-        if 'hard_stop' in body:
-            sc.HARD_STOP = float(body['hard_stop'])
-        if 'trail_activate' in body:
-            sc.TRAIL_ACTIVATE = float(body['trail_activate'])
-        if 'trail_dd' in body:
-            sc.TRAIL_DD = float(body['trail_dd'])
-        if 'time_exit_days' in body:
-            sc.TIME_EXIT_DAYS = int(body['time_exit_days'])
-        if 'time_exit_profit' in body:
-            sc.TIME_EXIT_PROFIT = float(body['time_exit_profit'])
-        if 'time_force_days' in body:
-            sc.TIME_FORCE_DAYS = int(body['time_force_days'])
-        if 'loss_streak_halve' in body:
-            sc.LOSS_STREAK_HALVE = int(body['loss_streak_halve'])
-        if 'loss_streak_pause' in body:
-            sc.LOSS_STREAK_PAUSE = int(body['loss_streak_pause'])
-        if 'pause_days' in body:
-            sc.PAUSE_DAYS = int(body['pause_days'])
-        if 'same_stock_cooldown' in body:
-            sc.SAME_STOCK_COOLDOWN = int(body['same_stock_cooldown'])
-        if 'first_day_exit_min_profit' in body:
-            sc.FIRST_DAY_EXIT_MIN_PROFIT = float(body['first_day_exit_min_profit'])
-        if 'first_day_exit_days' in body:
-            sc.FIRST_DAY_EXIT_DAYS = int(body['first_day_exit_days'])
-        if 'take_profit_tiers' in body:
-            sc.TAKE_PROFIT_TIERS = body['take_profit_tiers']
-
         from core.settings import settings
         settings.reload()
         risk = settings._data.get('risk', {})
-        risk['hard_stop_loss_pct'] = sc.HARD_STOP * 100
-        risk['trailing_stop_activate_pct'] = sc.TRAIL_ACTIVATE * 100
-        risk['trailing_stop_drawdown_pct'] = sc.TRAIL_DD * 100
-        risk['time_exit_days'] = sc.TIME_EXIT_DAYS
-        risk['time_exit_min_profit_pct'] = sc.TIME_EXIT_PROFIT * 100
-        risk['time_exit_force_days'] = sc.TIME_FORCE_DAYS
-        risk['loss_streak_halve'] = sc.LOSS_STREAK_HALVE
-        risk['loss_streak_pause'] = sc.LOSS_STREAK_PAUSE
-        risk['pause_days'] = sc.PAUSE_DAYS
-        risk['same_stock_cooldown'] = sc.SAME_STOCK_COOLDOWN
-        risk['first_day_exit_min_profit'] = sc.FIRST_DAY_EXIT_MIN_PROFIT
-        risk['first_day_exit_days'] = sc.FIRST_DAY_EXIT_DAYS
-        risk['take_profit_tiers'] = [
-            {'profit_pct': t['profit_pct'], 'sell_ratio': t['sell_ratio']}
-            for t in sc.TAKE_PROFIT_TIERS
-        ]
+        if 'hard_stop' in body:
+            risk['hard_stop_loss_pct'] = float(body['hard_stop'])
+        if 'trail_activate' in body:
+            risk['trailing_stop_activate_pct'] = float(body['trail_activate'])
+        if 'trail_dd' in body:
+            risk['trailing_stop_drawdown_pct'] = float(body['trail_dd'])
+        if 'time_exit_days' in body:
+            risk['time_exit_days'] = int(body['time_exit_days'])
+        if 'time_exit_profit' in body:
+            risk['time_exit_min_profit_pct'] = float(body['time_exit_profit'])
+        if 'time_force_days' in body:
+            risk['time_exit_force_days'] = int(body['time_force_days'])
+        if 'loss_streak_halve' in body:
+            risk['loss_streak_halve'] = int(body['loss_streak_halve'])
+        if 'loss_streak_pause' in body:
+            risk['loss_streak_pause'] = int(body['loss_streak_pause'])
+        if 'pause_days' in body:
+            risk['pause_days'] = int(body['pause_days'])
+        if 'same_stock_cooldown' in body:
+            risk['same_stock_cooldown'] = int(body['same_stock_cooldown'])
+        if 'first_day_exit_min_profit' in body:
+            risk['first_day_exit_min_profit'] = float(body['first_day_exit_min_profit'])
+        if 'first_day_exit_days' in body:
+            risk['first_day_exit_days'] = int(body['first_day_exit_days'])
+        if 'take_profit_tiers' in body:
+            risk['take_profit_tiers'] = body['take_profit_tiers']
         settings._data['risk'] = risk
+        # 回测参数快照同步更新
         settings._data['backtest'] = {**settings._data.get('backtest', {}),
-            'hard_stop': sc.HARD_STOP, 'trail_activate': sc.TRAIL_ACTIVATE,
-            'trail_dd': sc.TRAIL_DD, 'time_exit_days': sc.TIME_EXIT_DAYS,
-            'time_exit_profit': sc.TIME_EXIT_PROFIT, 'time_force_days': sc.TIME_FORCE_DAYS,
-            'first_day_exit_min_profit': sc.FIRST_DAY_EXIT_MIN_PROFIT,
-            'first_day_exit_days': sc.FIRST_DAY_EXIT_DAYS,
-            'take_profit_tiers': sc.TAKE_PROFIT_TIERS,
+            'hard_stop': risk.get('hard_stop_loss_pct', -6.0) / 100.0,
+            'trail_activate': risk.get('trailing_stop_activate_pct', 5.0) / 100.0,
+            'trail_dd': risk.get('trailing_stop_drawdown_pct', 2.0) / 100.0,
+            'time_exit_days': risk.get('time_exit_days', 7),
+            'time_exit_profit': risk.get('time_exit_min_profit_pct', 3.0) / 100.0,
+            'time_force_days': risk.get('time_exit_force_days', 12),
+            'first_day_exit_min_profit': risk.get('first_day_exit_min_profit', 3.0),
+            'first_day_exit_days': risk.get('first_day_exit_days', 1),
+            'take_profit_tiers': risk.get('take_profit_tiers', []),
         }
         settings.save()
-        log.info("止盈止损参数已更新到 config.py")
+        log.info("止盈止损参数已保存到 settings（risk 段）")
         return {"status": "ok", "message": "止盈止损参数已保存"}
     except Exception as e:
         log.error(f"保存止盈止损参数失败: {e}")

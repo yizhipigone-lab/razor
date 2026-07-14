@@ -1828,7 +1828,8 @@ function switchTab(name) {
   if (name === 'ai-backtest') { loadBacktestCapitalDefaults(); initAIBacktest(); }
   if (name === 'radar') loadHotSectorData();
   if (name === 'sim-trader') { loadSimTraderStatus(); initLogDates(); loadSimLogs(); loadSimRiskParams(); loadSimSwitches(); loadSimMonitor(); loadSimStrategy(); loadSimTrades(); renderSimEquityChart(); renderSimCalendar(); renderSimStockAnalysis(); }
-  if (name === 'live-trader') { loadLiveAll(); if (window.resizeLiveEquityChart) window.resizeLiveEquityChart(); }
+  if (name === 'live-trader') { loadLiveAll(); if (window.resizeLiveEquityChart) window.resizeLiveEquityChart(); if (typeof startRiskPolling === 'function') startRiskPolling(); }
+  else { if (typeof stopRiskPolling === 'function') stopRiskPolling(); }
   if (name === 'tqsdk') { initTqsdkTab(); }
   // 告警中心(v6.0)
   if (name === 'alerts') {

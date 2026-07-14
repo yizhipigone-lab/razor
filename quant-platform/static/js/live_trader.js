@@ -543,6 +543,7 @@ async function loadLiveAll() {
   loadLiveStatus(); loadLiveAsset(); loadLivePositions(); loadLiveOrders();
   loadLiveEquity(); loadLiveDeals(); loadLiveSwitches(); loadLiveModeDisplay();
   loadLiveRiskParams(); loadScanInterval(); loadLiveBuyRatio(); loadAutoBuyTime();
+  loadRiskMonitor();
 }
 
 // A3: 用 market_quotes 缓存(window._lastQuotes)实时刷新实盘持仓现价/市值/浮盈/汇总/KPI。
@@ -632,3 +633,69 @@ function applyLiveQuotes() {
 // 暴露给 main.js:market_quotes 分支调 applyLiveQuotes;switchTab 切回实盘 tab 调 resizeLiveEquityChart(D,F1)
 window.applyLiveQuotes = applyLiveQuotes;
 window.resizeLiveEquityChart = function () { if (_liveEquityChart) _liveEquityChart.resize(); };
+
+// ── 风控监控（与 alerts.js 轮询模式完全对齐） ─────────────────────────
+let _riskTimer = null;
+
+async function loadRiskMonitor() {
+  const el = document.getElementById('risk-monitor-body');
+  if (!el) return;
+  try {
+    const d = await _liveFetch('/live/config/risk-status');
+    renderRiskMonitor(d);
+  } catch (e) {
+    if (el) el.innerHTML = '<div style="color:var(--red);font-size:12px">加载失败</div>';
+  }
+}
+
+function renderRiskMonitor(d) {
+  const el = document.getElementById('risk-monitor-body');
+  const tsEl = document.getElementById('risk-monitor-updated');
+  if (!el) return;
+  if (tsEl) {
+    const t = d.updated_at ? d.updated_at.replace('T', ' ').substring(11, 19) : '—';
+    tsEl.textContent = '刷新 ' + t;
+  }
+  const positions = d.positions || [];
+  if (!positions.length) {
+    el.innerHTML = '<div class="muted fs-xs">暂无持仓</div>';
+    return;
+  }
+  const STATUS_COLOR = { danger: 'var(--red)', warning: 'var(--yellow)', safe: 'var(--green)' };
+  let html = '<table class="data-table" style="font-size:12px"><thead><tr>' +
+    '<th>代码</th><th>现价</th><th>累计</th><th>状态</th><th>详情</th></tr></thead><tbody>';
+  for (const pos of positions) {
+    const color = STATUS_COLOR[pos.global_status] || 'var(--text2)';
+    const globalLabel = { danger: '⚠️ 危险', warning: '⚡ 激活', safe: '✓ 安全' }[pos.global_status] || '—';
+    // 合并所有 risk_items message 为一行摘要
+    const msgs = (pos.risk_items || []).map(function (it) {
+      if (it.type === 'HS') return it.message;
+      if (it.type === 'TR') return it.message;
+      if (it.type === 'TF') return it.message;
+      if (it.type === 'FD') return it.message;
+      if (it.type === 'TC') return it.message;
+      if (it.type && it.type.startsWith('TP')) return it.message;
+      return '';
+    }).filter(Boolean).join('；');
+    html += '<tr>' +
+      '<td>' + escHtml(pos.code) + (pos.name ? ' ' + escHtml(pos.name) : '') + '</td>' +
+      '<td>' + (pos.current_price > 0 ? pos.current_price.toFixed(2) : '—') + '</td>' +
+      '<td style="color:' + (pos.profit_rate >= 0 ? 'var(--red)' : 'var(--green)') + '">' +
+        (pos.profit_rate > 0 ? '+' : '') + (pos.profit_rate || 0).toFixed(1) + '%</td>' +
+      '<td style="color:' + color + ';font-weight:600">' + globalLabel + '</td>' +
+      '<td style="color:var(--text2);font-size:11px">' + escHtml(msgs) + '</td>' +
+      '</tr>';
+  }
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+// 对齐 alerts.js 模式：暴露 start/stop 给 main.js 的 switchTab 中央调度
+window.startRiskPolling = function () {
+  stopRiskPolling();
+  loadRiskMonitor();
+  _riskTimer = setInterval(loadRiskMonitor, 15000);
+};
+window.stopRiskPolling = function () {
+  if (_riskTimer) { clearInterval(_riskTimer); _riskTimer = null; }
+};

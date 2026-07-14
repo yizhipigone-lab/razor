@@ -1281,6 +1281,228 @@ async def get_risk_params():
     return {"params": {k: settings.get("risk", k) for k in keys}}
 
 
+@app.get("/live/config/risk-status")
+async def get_risk_status():
+    """返回持仓风控实时状态（展示用，不改变任何交易逻辑）。
+
+    进度条宽度 = remaining / budget * 100（已触发 remaining<=0 则 100%）：
+      HS:  budget = |hard_stop|（百分点）
+      TR:  budget = trail_dd（百分点，回撤超过即触发）
+      TF:  budget = trigger_days（天数）
+      TP:  budget = profit_pct（百分点）
+      FD:  budget = first_day_exit_min_profit（百分点）
+      TC:  budget = time_exit_days（天数）
+    """
+    from datetime import datetime
+    from app.config.risk_params import load_risk_params
+    from app.live_trader.utils import calc_trading_days
+
+    store = _state.get("store")
+    if not store:
+        raise HTTPException(503, "未初始化")
+
+    rp = load_risk_params()
+    risk_params = {
+        "hard_stop": rp.hard_stop,
+        "trail_activate": rp.trail_activate,
+        "trail_dd": rp.trail_dd,
+        "take_profit_tiers": rp.take_profit_tiers,
+        "time_exit_days": rp.time_exit_days,
+        "time_exit_profit": rp.time_exit_profit,
+        "time_force_days": rp.time_force_days,
+        "first_day_exit_min_profit": rp.first_day_exit_min_profit,
+        "first_day_exit_days": rp.first_day_exit_days,
+        "use_atr_trail": rp.use_atr_trail,
+        "atr_trail_multiplier": rp.atr_trail_multiplier,
+    }
+
+    positions = store.get_positions() or []
+    result_positions = []
+
+    for pos in positions:
+        code = pos.get("code") or ""
+        avg_cost = float(pos.get("avg_cost") or 0)
+        volume = float(pos.get("volume") or 0)
+        last_close = float(pos.get("last_close") or 0)
+        entry_date = pos.get("entry_date")
+        peak_price = float(pos.get("peak_price") or 0) if pos.get("peak_price") else None
+        tp_triggered = pos.get("tp_triggered") or "[]"
+
+        if avg_cost <= 0 or volume <= 0:
+            continue
+
+        # 基础数据
+        import dataclasses
+        risk_items = []
+
+        # ----- HS 硬止损 -----
+        hard_stop_pct = rp.hard_stop * 100  # 如 -6.0
+        profit_rate = float(pos.get("profit_rate", 0))  # 如 -6.7
+        hs_triggered = profit_rate <= hard_stop_pct
+        if hs_triggered:
+            hs_remaining = 0.0
+            hs_status = "danger"
+            hs_message = f"已触发硬止损（当前{profit_rate:.1f}% < 止损线{hard_stop_pct:.1f}%）"
+        else:
+            hs_remaining = abs(hard_stop_pct - profit_rate)  # 离触发还差多少百分点（正数）
+            hs_status = "safe"
+            hs_message = f"距硬止损 {hard_stop_pct:.1f}% 还差 {hs_remaining:.1f}%"
+        risk_items.append({
+            "type": "HS", "label": "硬止损",
+            "trigger_value": hard_stop_pct,
+            "current_pnl": profit_rate,
+            "remaining": hs_remaining,
+            "budget": abs(hard_stop_pct),   # M-V4-2: 进度条分母
+            "status": hs_status,
+            "message": hs_message,
+        })
+
+        # ----- TR 移动止盈 -----
+        trail_dd_pct = rp.trail_dd * 100  # 如 2.0
+        if peak_price and peak_price > 0 and avg_cost > 0:
+            peak_pnl_pct = (peak_price - avg_cost) / avg_cost * 100
+            current_pnl_pct = profit_rate
+            drawdown = peak_pnl_pct - current_pnl_pct  # 回撤百分点
+            tr_triggered = drawdown >= trail_dd_pct
+        else:
+            peak_pnl_pct = 0.0
+            drawdown = 0.0
+            tr_triggered = False
+        if tr_triggered:
+            tr_remaining = 0.0
+            tr_status = "warning"
+            tr_message = f"已触发移动止盈（回撤{drawdown:.1f}% > 阈值{trail_dd_pct:.1f}%）"
+        else:
+            tr_remaining = trail_dd_pct - drawdown if drawdown >= 0 else abs(drawdown)
+            tr_status = "safe" if drawdown < 0 else "safe"
+            tr_message = f"移动止盈未激活，回撤{drawdown:.1f}%，距触发还差 {max(0, tr_remaining):.1f}%"
+        risk_items.append({
+            "type": "TR", "label": "移动止盈",
+            "trigger_value": -trail_dd_pct,
+            "activated": peak_pnl_pct > 0,
+            "peak_pnl": peak_pnl_pct,
+            "current_pnl": current_pnl_pct,
+            "drawdown": drawdown,
+            "remaining": max(0, tr_remaining),
+            "budget": trail_dd_pct,   # M-V4-2
+            "status": tr_status,
+            "message": tr_message,
+        })
+
+        # ----- TF 强制清仓 -----
+        tf_trigger_days = rp.time_force_days
+        holding_days = calc_trading_days(entry_date) if entry_date else 1
+        tf_remaining = max(0, tf_trigger_days - holding_days)
+        tf_status = "danger" if tf_remaining <= 0 else "safe"
+        tf_message = f"持仓第{holding_days}天/{tf_trigger_days}天，{'已到期' if tf_remaining <= 0 else f'距TF到期还{tf_remaining}天'}"
+        risk_items.append({
+            "type": "TF", "label": "强制清仓",
+            "trigger_days": tf_trigger_days,
+            "current_days": holding_days,
+            "remaining_days": tf_remaining,
+            "remaining": tf_remaining,
+            "budget": tf_trigger_days,   # M-V4-2
+            "status": tf_status,
+            "message": tf_message,
+        })
+
+        # ----- FD 首日离场 -----
+        fd_threshold = rp.first_day_exit_min_profit * 100
+        fd_effective_days = rp.first_day_exit_days
+        fd_triggered = holding_days <= fd_effective_days and profit_rate < fd_threshold
+        fd_status = "warning" if fd_triggered else "safe"
+        fd_message = f"目标涨幅≥{fd_threshold}%，当前{profit_rate:.1f}%，{'已触发' if fd_triggered else '无需处理'}"
+        risk_items.append({
+            "type": "FD", "label": "首日离场",
+            "trigger_profit": fd_threshold,
+            "effective_days": fd_effective_days,
+            "status": fd_status,
+            "message": fd_message,
+        })
+
+        # ----- TC 时间条件退出 -----
+        tc_days = rp.time_exit_days
+        tc_profit_threshold = rp.time_exit_profit * 100
+        tc_remaining = max(0, tc_days - holding_days)
+        tc_status = "warning" if tc_remaining <= 0 and profit_rate >= tc_profit_threshold else "safe"
+        tc_message = f"持仓第{holding_days}天/{tc_days}天，盈利需≥{tc_profit_threshold}%，当前{profit_rate:.1f}%"
+        risk_items.append({
+            "type": "TC", "label": "时间退出",
+            "trigger_days": tc_days,
+            "trigger_profit": tc_profit_threshold,
+            "current_days": holding_days,
+            "remaining_days": tc_remaining,
+            "remaining": tc_remaining,
+            "budget": tc_days,   # M-V4-2
+            "status": tc_status,
+            "message": tc_message,
+        })
+
+        # ----- TP 多档止盈 -----
+        tiers = rp.take_profit_tiers or []
+        for i, tier in enumerate(tiers):
+            tp_pct = tier.get("profit_pct", 0) * 100
+            tp_ratio = tier.get("sell_ratio", 0) * 100
+            tp_triggered_flag = False
+            try:
+                import json as _json
+                triggered_list = _json.loads(tp_triggered) if isinstance(tp_triggered, str) else (tp_triggered or [])
+                tp_triggered_flag = any(
+                    isinstance(t, dict) and t.get("tier") == i
+                    for t in triggered_list
+                )
+            except Exception:
+                pass
+            if tp_triggered_flag:
+                tp_remaining = 0.0
+                tp_status = "warning"
+                tp_message = f"止盈{i+1}档({tp_pct:.1f}%)已触发，卖出{tp_ratio:.0f}%"
+            else:
+                tp_remaining = tp_pct - profit_rate
+                tp_status = "safe"
+                tp_message = f"止盈{i+1}档({tp_pct:.1f}%)未触发，当前{profit_rate:.1f}%，距触发还差 {max(0, tp_remaining):.1f}%"
+            risk_items.append({
+                "type": f"TP{i+1}", "label": f"止盈{i+1}档",
+                "trigger_value": tp_pct,
+                "sell_ratio": tp_ratio,
+                "triggered": tp_triggered_flag,
+                "current_pnl": profit_rate,
+                "remaining_to_trigger": tp_remaining,
+                "remaining": max(0, tp_remaining),
+                "budget": tp_pct,   # M-V4-2
+                "status": tp_status,
+                "message": tp_message,
+            })
+
+        # ----- 全局状态：按 exit_monitor 优先级取最高 -----
+        STATUS_PRIORITY = {"danger": 3, "warning": 2, "safe": 1}
+        global_status = max(risk_items, key=lambda x: STATUS_PRIORITY.get(x["status"], 0))["status"]
+
+        result_positions.append({
+            "code": code,
+            "name": pos.get("name") or "",
+            "current_price": float(pos.get("last_close") or 0),  # 实时价由前端 applyLiveQuotes 填入
+            "avg_cost": avg_cost,
+            "last_close": last_close,
+            "volume": volume,
+            "float_profit": float(pos.get("float_profit") or 0),
+            "profit_rate": profit_rate,
+            "entry_date": str(entry_date) if entry_date else None,
+            "holding_days": holding_days,
+            "peak_price": peak_price,
+            "tp_triggered": tp_triggered,
+            "risk_items": risk_items,
+            "global_status": global_status,
+        })
+
+    return {
+        "risk_params": risk_params,
+        "max_sell_per_scan": 3,
+        "positions": result_positions,
+        "updated_at": datetime.now().isoformat(),
+    }
+
+
 @app.get("/live/equity")
 async def get_equity(days: int = 1):
     """净值曲线数据(从 live_assets_backup 5min 快照,v2 §3.5)"""
