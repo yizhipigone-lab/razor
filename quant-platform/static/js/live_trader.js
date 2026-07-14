@@ -681,11 +681,12 @@ function renderRiskMonitor(d) {
       })[0];
     let barHtml = '—';
     if (topItem) {
-      const pct = topItem.remaining <= 0 ? 100
+      // safe: 0% 绿色；已触发（remaining<=0）: 100% 红色；其余: min(budget, 95) 黄色
+      const pct = topItem.status === 'safe' ? 0
+        : topItem.remaining <= 0 ? 100
         : Math.min(topItem.remaining / topItem.budget * 100, 95);
       const barColor = topItem.status === 'danger' ? 'var(--red)'
         : topItem.status === 'warning' ? 'var(--yellow)'
-        : topItem.remaining > 0 ? 'var(--yellow)'
         : 'var(--green)';
       barHtml = '<div style="background:var(--bg2);border-radius:3px;height:6px;width:100%">' +
         '<div style="width:' + pct + '%;background:' + barColor + ';height:6px;border-radius:3px"></div>' +

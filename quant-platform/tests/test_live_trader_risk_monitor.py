@@ -39,7 +39,7 @@ def _build_risk_items(pos: dict, rp, holding_days: int):
     risk_items = []
     profit_rate = float(pos.get("profit_rate", 0) or 0)
 
-    # HS
+    # HS（与 main.py:1344-1377 完全一致的结构）
     hard_stop_pct = rp.hard_stop * 100
     if holding_days < 2:
         risk_items.append({
@@ -70,7 +70,6 @@ def _build_risk_items(pos: dict, rp, holding_days: int):
                 "status": "safe",
                 "message": f"距硬止损 {hard_stop_pct:.1f}% 还差 {abs(hard_stop_pct - profit_rate):.1f}%",
             })
-
     # TR
     trail_dd_pct = rp.trail_dd * 100
     if peak_price and peak_price > 0 and avg_cost > 0:
@@ -371,3 +370,48 @@ def test_global_status_priority():
     STATUS_PRIORITY = {"danger": 3, "warning": 2, "safe": 1}
     global_status = max(items, key=lambda x: STATUS_PRIORITY.get(x["status"], 0))["status"]
     assert global_status == "danger", f"全局状态应为 danger，实际 {global_status}"
+
+
+def test_hs_boundary_at_exactly_hard_stop():
+    """profit_rate == hard_stop_pct 时应触发 HS（<= 判断）"""
+    # -6.0% == -6.0% → hs_triggered = True（<= 包含等于）
+    pos = dict(code="000001", avg_cost=10.0, volume=1000, last_close=9.5,
+               profit_rate=-6.0, entry_date=date.today(), peak_price=11.0, tp_triggered="[]")
+    rp = _make_rp(hard_stop=-0.06)
+    items = _build_risk_items(pos, rp, holding_days=4)
+    hs = next(i for i in items if i["type"] == "HS")
+    assert hs["status"] == "danger", f"等于止损线应触发，实际 {hs['status']}"
+    assert hs["remaining"] == 0.0
+
+
+def test_holding_days_exactly_2_no_t1_protection():
+    """holding_days == 2 时应走普通 HS 逻辑（T+1 保护仅 < 2）"""
+    pos = dict(code="000001", avg_cost=10.0, volume=1000, last_close=9.5,
+               profit_rate=-5.0, entry_date=date.today(), peak_price=11.0, tp_triggered="[]")
+    rp = _make_rp(hard_stop=-0.06)
+    items = _build_risk_items(pos, rp, holding_days=2)
+    hs = next(i for i in items if i["type"] == "HS")
+    assert hs["status"] == "safe", f"holding_days=2 应走普通 safe 逻辑，实际 {hs['status']}"
+    assert "T+1" not in hs["message"], "holding_days=2 不应触发 T+1 保护"
+
+
+def test_avg_cost_negative():
+    """avg_cost < 0（负成本）也应跳过风控计算"""
+    pos = dict(code="000001", avg_cost=-1.0, volume=1000, last_close=9.5,
+               profit_rate=5.0, entry_date=date.today(), peak_price=11.0, tp_triggered="[]")
+    rp = _make_rp()
+    items = _build_risk_items(pos, rp, holding_days=4)
+    assert items == [], f"avg_cost < 0 应跳过，实际 {items}"
+
+
+def test_tr_drawdown_exactly_at_threshold():
+    """drawdown == trail_dd_pct 时应触发（>= 包含等于）"""
+    # avg_cost=10.0, peak_price=10.72 → (10.72-10)/10*100=7.2% peak
+    # profit_rate=5.2% → drawdown=7.2-5.2=2.0% == trail_dd=2.0% → triggered
+    pos = dict(code="000001", avg_cost=10.0, volume=1000, last_close=9.5,
+               profit_rate=5.2, entry_date=date.today(), peak_price=10.72, tp_triggered="[]")
+    rp = _make_rp(trail_dd=0.02)
+    items = _build_risk_items(pos, rp, holding_days=4)
+    tr = next(i for i in items if i["type"] == "TR")
+    assert tr["status"] == "warning", f"drawdown==阈值应触发，实际 {tr['status']}"
+    assert tr["remaining"] == 0.0
