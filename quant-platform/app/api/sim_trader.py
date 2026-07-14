@@ -589,6 +589,12 @@ async def sim_trader_reset():
     """重置模拟盘"""
     global _engine
     with _engine_lock:
+        old = _engine
+        if old is not None:
+            # H3(2026-07-15 全项目审计): 等在途 cycle(sell_phase/buy/record)完成,
+            # 防止旧引擎引用继续写已清空的 state.json 污染新引擎状态
+            with old._cycle_lock:
+                pass
         from app.sim_trader.engine import SimTraderEngine
         from app.sim_trader.store import JsonSimStore
         store = JsonSimStore()

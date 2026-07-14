@@ -9,6 +9,8 @@ import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 import copy
+import threading
+from functools import wraps
 import pandas as pd
 from datetime import date, datetime, timedelta
 from typing import Optional, Dict, List, Tuple
@@ -19,6 +21,18 @@ from app.sim_trader.models import Position, Trade, CycleResult  # 2026-07-14 抽
 from core.logger import get_logger
 
 log = get_logger("SimEngine")
+
+
+def _cycle_locked(method):
+    """H3(2026-07-15 全项目审计): 守护 engine 状态变更方法, 防 cron 与手动 execute/reset 并发踩踏。
+
+    用 RLock(sell_phase→execute_sell 可重入); 锁粒度=整个 cycle 方法。
+    """
+    @wraps(method)
+    def _wrapper(self, *args, **kwargs):
+        with self._cycle_lock:
+            return method(self, *args, **kwargs)
+    return _wrapper
 
 # P0-4: 加载期一致性校验 — 检测到可疑(疑似回测污染)的 equity_curve 时置位，供 API 查询
 _BAD_EQUITY_CURVE_DETECTED = False
@@ -67,6 +81,8 @@ class SimTraderEngine:
     """尾盘模拟交易引擎（含盘中实时监控）"""
 
     def __init__(self, store=None):
+        # H3(2026-07-15): cycle 锁, 守护 sell_phase/execute_buy/execute_sell/record/refresh
+        self._cycle_lock = threading.RLock()
         # L4 修复: 总是初始化 _store, 便于 refresh_trades_from_store 统一判断
         self._store = store
         if store is not None:
@@ -136,6 +152,7 @@ class SimTraderEngine:
         log.info(f"[校验] 风控参数: hard_stop={_sch.hard_stop}%, TP tiers={_sch.take_profit_tiers}, "
                  f"trail_act={_sch.trail_activate}%, trail_dd={_sch.trail_dd}%")
 
+    @_cycle_locked
     def refresh_trades_from_store(self):
         """从 store 重新加载 trades/positions/equity (L4 修复)
         用于回测/手动模式: store 仍持有完整数据, 入口 reporter 调此方法确保读到最新"""
@@ -349,6 +366,7 @@ class SimTraderEngine:
 
     # ── 买入 ──────────────────────────────────
 
+    @_cycle_locked
     def execute_buy(self, today: date, code: str, price: float,
                     strategy_name: str = "") -> Optional[Position]:
         """买入一只股票，收盘价成交"""
@@ -450,6 +468,7 @@ class SimTraderEngine:
 
         return sells
 
+    @_cycle_locked
     def execute_sell(self, pos: Position, exit_price: float, reason: str,
                      partial: Optional[int] = None,
                      exit_date: Optional[date] = None,
@@ -516,6 +535,7 @@ class SimTraderEngine:
 
         return trade
 
+    @_cycle_locked
     def sell_phase(self, today: date, snapshot: dict,
                    trading_dates: List[date]):
         """卖出阶段（先卖后买，回收现金）。仅交易时段内执行。"""
@@ -565,6 +585,7 @@ class SimTraderEngine:
 
     # ── 记录 ──────────────────────────────────
 
+    @_cycle_locked
     def record(self, today: date, snapshot: dict):
         # #8 修复:增量更新所有持仓的 current_price,让 market_value/profit_pct property 反映实时行情
         # 边界保护: bar['close'] 缺失/停牌(为 0)时,保持原值或 fallback 到 entry_price,避免突然归零

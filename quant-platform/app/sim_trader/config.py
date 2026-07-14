@@ -15,26 +15,29 @@ LOSS_STREAK_PAUSE = 5        # 连亏N笔 → 暂停买入
 PAUSE_DAYS        = 3        # 暂停天数（自然日）
 
 # ═══════════ 退出 ═══════════
-# 从配置文件加载，消除硬编码（解决风控参数漂移问题）
-HARD_STOP      = settings.get("backtest", "hard_stop", default=-0.06)        # 硬止损
-TRAIL_ACTIVATE = settings.get("backtest", "trail_activate", default=0.05)    # 移动止盈激活阈值（5轮回测最优）
-TRAIL_DD       = settings.get("backtest", "trail_dd", default=0.02)          # 移动止盈回撤距离（5轮回测最优）
-TIME_EXIT_DAYS = 7            # 时间条件退出天数（盘整突破优化: 3→5→7）
+# H6(2026-07-15 全项目审计): 风控参数单源 — 从 risk_params(读 app_setting.json 的 risk 段)派生,
+# 与实盘(live exit_monitor)/sim_trader check_stops 共用同一真相源, 杜绝回测与实盘参数漂移。
+# 旧版 11 个常量各自硬编码/读 backtest 段, 与 risk 段漂移(USE_ATR_TRAIL True vs False、
+# ATR 倍数 1.0 vs 2.5、TAKE_PROFIT_TIERS 单档 vs 双档)→ 回测结果与实盘不可比。
+from app.config.risk_params import load_risk_params as _load_risk_params
+_RP = _load_risk_params()
+HARD_STOP      = _RP.hard_stop                # 硬止损(小数, 如 -0.046)
+TRAIL_ACTIVATE = _RP.trail_activate            # 移动止盈激活阈值
+TRAIL_DD       = _RP.trail_dd                  # 移动止盈回撤距离
+TIME_EXIT_DAYS = _RP.time_exit_days            # 时间条件退出天数
 
 # ATR 动态移动止盈: 启用后 TRAIL_DD = max(TRAIL_DD, ATR_TRAIL_MUL * ATR(14) / entry_price)
-USE_ATR_TRAIL = True          # 是否用 ATR 动态调整移动止盈回撤
-ATR_TRAIL_MULTIPLIER = 1.0    # ATR 倍数（1.0 = ATR本身作为回撤距离）
-TIME_EXIT_PROFIT = 0.03       # 时间条件退出盈利阈值
-TIME_FORCE_DAYS = 12          # 时间强制退出天数（优化：9→12，赢率+2%）
-SAME_STOCK_COOLDOWN = 20      # 同股票冷却天数
-FIRST_DAY_EXIT_MIN_PROFIT = 0.03  # 首日弱势离场：目标涨幅阈值（0=禁用）
-FIRST_DAY_EXIT_DAYS = 1          # 首日弱势离场：买入后前N个交易日检查（默认仅第1天）
+USE_ATR_TRAIL = _RP.use_atr_trail              # 是否用 ATR 动态调整移动止盈回撤(对齐实盘)
+ATR_TRAIL_MULTIPLIER = _RP.atr_trail_multiplier  # ATR 倍数(对齐实盘)
+TIME_EXIT_PROFIT = _RP.time_exit_profit        # 时间条件退出盈利阈值
+TIME_FORCE_DAYS = _RP.time_force_days          # 时间强制退出天数
+SAME_STOCK_COOLDOWN = 20      # 同股票冷却天数(不在 RiskParams, 保留硬编码; 回测/sim 共用)
+FIRST_DAY_EXIT_MIN_PROFIT = _RP.first_day_exit_min_profit  # 首日弱势离场阈值(0=禁用)
+FIRST_DAY_EXIT_DAYS = _RP.first_day_exit_days  # 首日弱势离场检查天数
 
 # 多档阶梯止盈: 按顺序触发，每档卖出剩余仓位的 sell_ratio%
 # 触发过的不再重复，剩余仓位最终由 TR 移动止盈保护
-TAKE_PROFIT_TIERS = [
-    {"profit_pct": 0.03, "sell_ratio": 0.30},  # TP1: +3% 卖30%，剩余走移动止盈（部分止盈+Trail最优）
-]
+TAKE_PROFIT_TIERS = _RP.take_profit_tiers      # 对齐实盘 risk 段(双档)
 
 # ═══════════ 策略选择 ═══════════
 STRATEGY_NAME = "盘整突破"

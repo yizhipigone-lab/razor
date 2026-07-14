@@ -413,22 +413,22 @@ def _default_bt_config() -> dict:
     }
     # 用系统设置页保存的最新值覆盖（来源: app_setting.json 的 backtest 段，
     # 由 /api/settings/risk-params 与 /api/backtest/apply-to-system 写入）
+    # H7(2026-07-15 全项目审计): 风险键(hard_stop/trail_*/take_profit_tiers/time_exit*/
+    # first_day_exit*/use_atr*)不再从 backtest 段覆盖——它们已由 config.py 从 risk 段
+    # 单源派生(H6), backtest 段重复覆盖会造成"前端改风险档回测仍用旧档"的漂移。
+    # 此处只覆盖回测专属键(资金/仓位/连亏/冷却)。
     try:
         from core.settings import settings
         settings.reload()
         bt = settings.get("backtest", default={}) or {}
         _OVERRIDE_KEYS = (
-            "initial_capital", "position_size", "min_buy_amt", "hard_stop",
-            "trail_activate", "trail_dd", "time_exit_days", "time_exit_profit",
-            "time_force_days", "first_day_exit_min_profit", "first_day_exit_days",
+            "initial_capital", "position_size", "min_buy_amt",
             "same_stock_cooldown", "loss_streak_halve", "loss_streak_pause",
             "pause_days",
         )
         for k in _OVERRIDE_KEYS:
             if k in bt and bt[k] is not None:
                 cfg[k] = bt[k]
-        if bt.get("take_profit_tiers"):
-            cfg["take_profit_tiers"] = copy.deepcopy(bt["take_profit_tiers"])
     except Exception as e:
         log.warning(f"读取系统设置回测默认值失败，回退硬编码默认: {e}")
     return cfg
