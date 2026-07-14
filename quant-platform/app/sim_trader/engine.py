@@ -53,7 +53,6 @@ def _safe_broadcast(data: dict):
 def _write_log(entry: dict):
     """追加一行 JSON 到当日日志文件"""
     import json, os
-    from datetime import date
     try:
         log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'output', 'sim_trader', 'logs')
         os.makedirs(log_dir, exist_ok=True)
@@ -265,17 +264,14 @@ class SimTraderEngine:
 
     @property
     def auto_sell(self) -> bool:
-        from app.sim_trader.config import AUTO_SELL
         return AUTO_SELL
 
     @property
     def auto_buy(self) -> bool:
-        from app.sim_trader.config import AUTO_BUY
         return AUTO_BUY
 
     @property
     def auto_scan(self) -> bool:
-        from app.sim_trader.config import AUTO_SCAN
         return AUTO_SCAN
 
     # ── 仓位管理 ──────────────────────────────
