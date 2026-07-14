@@ -1315,6 +1315,8 @@ async def get_risk_status():
         "use_atr_trail": rp.use_atr_trail,
         "atr_trail_multiplier": rp.atr_trail_multiplier,
     }
+    if rp.use_atr_trail:
+        risk_params["atr_note"] = "移动止盈基于ATR计算，显示与实际触发可能存在偏差"
 
     positions = store.get_positions() or []
     result_positions = []
@@ -1335,27 +1337,44 @@ async def get_risk_status():
         import dataclasses
         risk_items = []
 
+        # 统一计算 holding_days（HS/FD/TF/TC/TP 共用，避免 NameError）
+        holding_days = calc_trading_days(entry_date) if entry_date else 1
+        profit_rate = float(pos.get("profit_rate", 0) or 0)  # 防御 None/"" → 0
+
         # ----- HS 硬止损 -----
         hard_stop_pct = rp.hard_stop * 100  # 如 -6.0
-        profit_rate = float(pos.get("profit_rate", 0))  # 如 -6.7
-        hs_triggered = profit_rate <= hard_stop_pct
-        if hs_triggered:
-            hs_remaining = 0.0
-            hs_status = "danger"
-            hs_message = f"已触发硬止损（当前{profit_rate:.1f}% < 止损线{hard_stop_pct:.1f}%）"
-        else:
-            hs_remaining = abs(hard_stop_pct - profit_rate)  # 离触发还差多少百分点（正数）
+        # T+1 保护：持仓不足2天不触发硬止损
+        if holding_days < 2:
             hs_status = "safe"
-            hs_message = f"距硬止损 {hard_stop_pct:.1f}% 还差 {hs_remaining:.1f}%"
-        risk_items.append({
-            "type": "HS", "label": "硬止损",
-            "trigger_value": hard_stop_pct,
-            "current_pnl": profit_rate,
-            "remaining": hs_remaining,
-            "budget": abs(hard_stop_pct),   # M-V4-2: 进度条分母
-            "status": hs_status,
-            "message": hs_message,
-        })
+            hs_message = "T+1保护，持仓不足2天不触发硬止损"
+            risk_items.append({
+                "type": "HS", "label": "硬止损",
+                "trigger_value": hard_stop_pct,
+                "current_pnl": profit_rate,
+                "remaining": abs(hard_stop_pct),   # safe=0% 进度条
+                "budget": abs(hard_stop_pct),
+                "status": hs_status,
+                "message": hs_message,
+            })
+        else:
+            hs_triggered = profit_rate <= hard_stop_pct
+            if hs_triggered:
+                hs_remaining = 0.0
+                hs_status = "danger"
+                hs_message = f"已触发硬止损（当前{profit_rate:.1f}% < 止损线{hard_stop_pct:.1f}%）"
+            else:
+                hs_remaining = abs(hard_stop_pct - profit_rate)  # 离触发还差多少百分点（正数）
+                hs_status = "safe"
+                hs_message = f"距硬止损 {hard_stop_pct:.1f}% 还差 {hs_remaining:.1f}%"
+            risk_items.append({
+                "type": "HS", "label": "硬止损",
+                "trigger_value": hard_stop_pct,
+                "current_pnl": profit_rate,
+                "remaining": hs_remaining,
+                "budget": abs(hard_stop_pct),
+                "status": hs_status,
+                "message": hs_message,
+            })
 
         # ----- TR 移动止盈 -----
         trail_dd_pct = rp.trail_dd * 100  # 如 2.0
@@ -1391,7 +1410,6 @@ async def get_risk_status():
 
         # ----- TF 强制清仓 -----
         tf_trigger_days = rp.time_force_days
-        holding_days = calc_trading_days(entry_date) if entry_date else 1
         tf_remaining = max(0, tf_trigger_days - holding_days)
         tf_status = "danger" if tf_remaining <= 0 else "safe"
         tf_message = f"持仓第{holding_days}天/{tf_trigger_days}天，{'已到期' if tf_remaining <= 0 else f'距TF到期还{tf_remaining}天'}"
@@ -1451,8 +1469,8 @@ async def get_risk_status():
                     isinstance(t, dict) and t.get("tier") == i
                     for t in triggered_list
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"TP tiers 解析失败 code={code} tp_triggered={tp_triggered!r}: {e}")
             if tp_triggered_flag:
                 tp_remaining = 0.0
                 tp_status = "warning"

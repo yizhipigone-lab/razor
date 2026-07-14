@@ -657,16 +657,40 @@ function renderRiskMonitor(d) {
     tsEl.textContent = '刷新 ' + t;
   }
   const positions = d.positions || [];
+  // ATR 模式提示
+  const atrNote = d.risk_params && d.risk_params.atr_note;
+  const noteHtml = atrNote
+    ? '<div class="muted fs-xs mb-2" style="color:var(--yellow)">' + escHtml(atrNote) + '</div>'
+    : '';
   if (!positions.length) {
-    el.innerHTML = '<div class="muted fs-xs">暂无持仓</div>';
+    el.innerHTML = noteHtml + '<div class="muted fs-xs">暂无持仓</div>';
     return;
   }
   const STATUS_COLOR = { danger: 'var(--red)', warning: 'var(--yellow)', safe: 'var(--green)' };
-  let html = '<table class="data-table" style="font-size:12px"><thead><tr>' +
-    '<th>代码</th><th>现价</th><th>累计</th><th>状态</th><th>详情</th></tr></thead><tbody>';
+  let html = noteHtml + '<table class="data-table" style="font-size:12px"><thead><tr>' +
+    '<th>代码</th><th>现价</th><th>累计</th><th>进度</th><th>状态</th><th>详情</th></tr></thead><tbody>';
   for (const pos of positions) {
     const color = STATUS_COLOR[pos.global_status] || 'var(--text2)';
     const globalLabel = { danger: '⚠️ 危险', warning: '⚡ 激活', safe: '✓ 安全' }[pos.global_status] || '—';
+    // 进度条：选 global_status 最高的 risk_item，跳过 FD（二元触发，无进度条概念）
+    const topItem = (pos.risk_items || [])
+      .filter(it => it.type !== 'FD')
+      .sort((a, b) => {
+        const p = { danger: 3, warning: 2, safe: 1 };
+        return (p[b.status] || 0) - (p[a.status] || 0);
+      })[0];
+    let barHtml = '—';
+    if (topItem) {
+      const pct = topItem.remaining <= 0 ? 100
+        : Math.min(topItem.remaining / topItem.budget * 100, 95);
+      const barColor = topItem.status === 'danger' ? 'var(--red)'
+        : topItem.status === 'warning' ? 'var(--yellow)'
+        : topItem.remaining > 0 ? 'var(--yellow)'
+        : 'var(--green)';
+      barHtml = '<div style="background:var(--bg2);border-radius:3px;height:6px;width:100%">' +
+        '<div style="width:' + pct + '%;background:' + barColor + ';height:6px;border-radius:3px"></div>' +
+        '</div>';
+    }
     // 合并所有 risk_items message 为一行摘要
     const msgs = (pos.risk_items || []).map(function (it) {
       if (it.type === 'HS') return it.message;
@@ -682,6 +706,7 @@ function renderRiskMonitor(d) {
       '<td>' + (pos.current_price > 0 ? pos.current_price.toFixed(2) : '—') + '</td>' +
       '<td style="color:' + (pos.profit_rate >= 0 ? 'var(--red)' : 'var(--green)') + '">' +
         (pos.profit_rate > 0 ? '+' : '') + (pos.profit_rate || 0).toFixed(1) + '%</td>' +
+      '<td>' + barHtml + '</td>' +
       '<td style="color:' + color + ';font-weight:600">' + globalLabel + '</td>' +
       '<td style="color:var(--text2);font-size:11px">' + escHtml(msgs) + '</td>' +
       '</tr>';
