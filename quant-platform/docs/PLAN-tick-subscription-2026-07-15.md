@@ -129,6 +129,13 @@ class TickSubscriber:
 ```
 
 > ⚠️ **回调签名以 Step 0 POC 实测为准**（v2 MEDIUM-2）：设计文档 v1.0:1046 用单 code+count，本计划假设 `codes 列表 + callback(ticks: dict)`。POC 失败则 schema 推倒。
+>
+> ✅ **Step 0 POC 已通过（2026-07-15 凌晨，实测确认）**：
+> - `subscribe_whole_quote(codes, callback=cb)` 可用，回调收 `{code: tick_dict}`
+> - tick_dict 字段：`lastPrice / open / high / low / lastClose / amount / volume / askPrice[5] / bidPrice[5] / ...` —— **完全匹配 §2.1 schema**（price=lastPrice, preClose=lastClose）
+> - 订阅即推缓存末笔（每 code 1 笔），交易时段会有持续推送
+> - **`unsubscribe_quote` 签名是 `(seq: int)`**——接收 subscribe 返回的序列号，非 code 字符串。TickSubscriber 必须存 subscribe 的返回值 seq，unsubscribe 时传 seq。`unsubscribe_whole_quote` 缺失，统一用 `unsubscribe_quote(seq)`。
+> - **go 判定：计划可推进。** POC 脚本：`scripts/poc_subscribe_quote.py`
 
 ### 2.2 live：`exit_monitor` tick 级 HS 即时卖
 
