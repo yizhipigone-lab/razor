@@ -115,3 +115,29 @@ def test_check_position_session_peak_does_not_lower_historic_peak(monitor, fixed
     result = monitor._check_position(pos, 14.8, 14.8)  # session_peak 14.8 < 15
     assert result is None
     assert pos.peak_price == 15.0  # 未被拉低
+
+
+def test_check_position_does_not_mark_tier(monitor, fixed_risk):
+    """HIGH-1 回归: _check_position 是纯检查, 不标记 TP 档位。
+
+    档位由 _check_and_act 在确认卖出时标记, 避免告警模式(close/auto_sell=False)
+    烧掉档位导致 EOD check_stops 跳过 → 漏卖。
+    """
+    pos = _make_pos(10.0)
+    result = monitor._check_position(pos, 10.4, 10.4)  # +4% 触发 TP1
+    assert result is not None
+    assert result[0].startswith("TP")
+    assert pos.tp1_triggered is False  # 未被 _check_position 标记
+
+
+def test_check_position_uses_session_low_not_current(monitor, fixed_risk):
+    """HIGH-2 回归: bar.low 用 session_low(盘中真实最低), 当前价反弹后仍能触发 HS。
+
+    盘中曾跌到 9.0(-10%, 触及 HS 线 9.4), 现反弹到 9.8。
+    用 session_low=9.0 → HS 触发; 若误用 current_price=9.8 当 low → 9.8>9.4 不触发(漏)。
+    """
+    pos = _make_pos(10.0)
+    result = monitor._check_position(pos, current_price=9.8,
+                                     session_peak=9.8, session_low=9.0)
+    assert result is not None
+    assert result[0].startswith("HS")

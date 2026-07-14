@@ -22,6 +22,7 @@ class IntradayMonitor:
         self.enabled = False
         self.mode = "close"          # "intraday"（触发即卖）| "close"（仅告警）
         self._intraday_peak: Dict[str, float] = {}
+        self._intraday_low: Dict[str, float] = {}   # 对称跟踪盘中最低(HS/TR 用真实 low)
         self._lock = threading.Lock()
         self._tick_handler = None
         log.info("盘中监控器已创建（待启动）")
@@ -81,18 +82,27 @@ class IntradayMonitor:
         if not pos or not pos.is_active or pos.remaining_shares <= 0:
             return
 
-        # 更新盘中峰值
+        # 更新盘中峰值 + 盘中最低(对称, HS/TR 用真实 low 而非当前 tick)
         prev_peak = self._intraday_peak.get(code, pos.peak_price)
         if price > prev_peak:
             self._intraday_peak[code] = price
         session_peak = max(prev_peak, price)
 
-        result = self._check_position(pos, price, session_peak)
+        prev_low = self._intraday_low.get(code)
+        if prev_low is None or price < prev_low:
+            self._intraday_low[code] = price
+        session_low = self._intraday_low[code]
+
+        result = self._check_position(pos, price, session_peak, session_low=session_low)
         if not result:
             return
 
         reason, partial_qty = result
         if self.engine.auto_sell and self.mode == "intraday":
+            # 仅在确认卖出时才标记 TP 档位(避免告警模式烧档位导致 EOD 漏卖, HIGH-1 修复)
+            if reason.startswith('TP'):
+                idx = int(reason[2]) - 1
+                pos.mark_tier_triggered(idx)
             self._execute_sell(pos, price, reason, partial_qty)
             # 卖出后更新一次净值快照（同一天只记一次，防重复）
             if not getattr(self, '_recorded_today', False):
@@ -121,9 +131,12 @@ class IntradayMonitor:
     # ── 风控优先级链（与回测 simple_runner 完全一致）──
 
     def _check_position(self, pos, current_price: float, session_peak: float,
-                        daily_atr: float = 0.0):
+                        daily_atr: float = 0.0, session_low: Optional[float] = None):
         """
         用统一规则引擎检查止盈止损，返回 (reason, partial_qty) 或 None。
+
+        纯检查函数, 不修改 pos 状态(TP 档位由 _check_and_act 在确认卖出时标记,
+        避免告警模式烧档位导致 EOD 漏卖, HIGH-1)。
 
         2026-07-14 修复 NameError: v5.5 重构后遗留 ctx/overall_peak 未定义,
         盘中 tick 命中持仓必崩。现对齐 live_trader.exit_monitor._build_context
@@ -132,8 +145,10 @@ class IntradayMonitor:
 
         峰值处理: 不修改 pos.peak_price(对齐 master 盘中从不持久化峰值的行为,
         EOD check_stops 会用当日 high 更新), 而是构建 ctx 后覆盖 ctx.peak_price
-        = max(历史峰值, session_peak), 让盘中检查用真实峰值, 但 pos 状态不变 →
-        EOD trailing 行为零改变。
+        = max(历史峰值, session_peak), 让盘中检查用真实峰值 → EOD 行为零改变。
+
+        bar.low: 用 session_low(盘中真实最低, 由 _check_and_act 对称跟踪),
+        而非当前 tick 价——避免 HS/TR 漏掉盘中早先触及止损/回撤线的瞬时低点(HIGH-2)。
         """
         from app.backtest.exit_rules import exit_rule_engine
         from app.config.risk_params import load_risk_params as _load_risk_params
@@ -141,11 +156,12 @@ class IntradayMonitor:
 
         sim_params = dataclasses.asdict(_load_risk_params())
 
-        # 盘中 bar: close/low/open 用现价, high 用 session_peak(对齐 exit_monitor U1)
+        # 盘中 bar: close/open 用现价, high 用 session_peak, low 用 session_low(真实盘中最低)
+        low_px = session_low if session_low is not None else current_price
         bar = {
             'open': current_price,
             'high': session_peak,
-            'low': current_price,
+            'low': low_px,
             'close': current_price,
             'atr': daily_atr,
         }
@@ -165,8 +181,7 @@ class IntradayMonitor:
             return None
 
         if signal.reason.startswith('TP'):
-            idx = int(signal.reason[2]) - 1
-            pos.mark_tier_triggered(idx)
+            # 不在此标记档位(由 _check_and_act 卖出时标记), 只算部分卖股数
             ss = int(pos.remaining_shares * signal.sell_ratio / 100) * 100
             if ss >= 100:
                 return (signal.reason, ss)
