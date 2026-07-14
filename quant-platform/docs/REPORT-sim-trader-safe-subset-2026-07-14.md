@@ -57,7 +57,7 @@
 
 | 指标 | 基线 | 交付 | 达成 |
 |------|------|------|------|
-| 全量测试 | 360 passed | 390 passed | ✅ +30 新测试，0 回归 |
+| 全量测试 | 360 passed | 392 passed | ✅ +32 新测试，0 回归 |
 | NameError bug | 潜伏 | 修复 + 5 回归测试 | ✅ |
 | engine↔store 循环依赖 | 存在 | models.py 叶子打破 | ✅ |
 | Store 接口契约 | 鸭子类型 | SimStore Protocol | ✅ |

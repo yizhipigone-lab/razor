@@ -164,3 +164,39 @@ signal = exit_rule_engine.check(ctx, skip_eod_only=True)
 安全高价值子集全部交付，🔴 NameError 崩溃 bug 已根治并锁回归，向后兼容经运行时验证，0 回归。分支 `refactor/sim-trader-decompose` 可供明早审查；合并前建议人工跑一次 `sim_trader main.py` 回放对比净值曲线（计划书 DoD 4.3）。
 
 **PASS — 可进入 deferred 步骤审查阶段。**
+
+---
+
+## 8. 二轮交叉验证（python-reviewer，第一轮之后追加）
+
+> 第一轮 code-reviewer PASS 后，按"审阅审视审计然后再迭代"派 python-reviewer 做独立第二视角。**二轮抓到第一轮漏掉的 3 个 HIGH**——正是交叉验证的价值（单次审计错误率高，二次验证抓假阳性/漏网）。
+
+### 8.1 二轮发现
+
+| 编号 | 严重度 | 问题 | 处理 |
+|------|--------|------|------|
+| HIGH-1 | HIGH | `_check_position` 无条件 `mark_tier_triggered`，告警模式（close/auto_sell=False）不卖却烧 TP 档位 → EOD check_stops 跳过 → **漏卖** | ✅ 修复：`_check_position` 改纯检查不标记；`mark_tier_triggered` 移到 `_check_and_act` 确认卖出分支（对齐 EOD `and not readonly` 守卫） |
+| HIGH-2 | HIGH | `bar.low=current_price` 漏掉盘中早先低点，HS/TR 偏迟触发；注释"对齐 exit_monitor U1"对 low 是错误的（exit_monitor U1 恰用真实 low） | ✅ 修复：对称 `_intraday_peak` 维护 `_intraday_low`，`_check_position` 用 `session_low` 作 bar.low |
+| HIGH-3 | HIGH | `use_high_for_tp=True`(sim) vs `False`(live_trader) 盘中 TP 口径分叉 | ⏸ defer：sim=True 符合文件头"与回测 simple_runner 一致"契约；改 live 超范围，改 sim 破坏与回测对齐。记录为 sim/live 设计决策，留待统一 |
+| MEDIUM-2 | MED | docstring"不修改 pos"不准确（mark_tier_triggered 改 pos.tp1） | ✅ 随 HIGH-1 修复自然解决（_check_position 不再标记，docstring 改"不修改 pos.peak_price"） |
+| LOW-1 | LOW | `daily_atr` 形参恒为 0，ATR 动态回撤分支永不生效 | ⏸ 记录：与 EOD 一致（EOD 也不传 ATR），非 bug，留待 ATR 接入 |
+
+### 8.2 二轮确认成立的结论
+
+- **Option B 不改 EOD 行为**：✅ 核心论断成立。EOD check_stops 用当日 high 补更新 pos.peak_price，只要同日 EOD 跑了，trailing 基准不丢。残余边缘：盘中 TP 部分卖后 EOD 前进程被杀且不重启 → 当日 session 高点丢失（概率低，记录）。
+- **T+1 护栏**：✅ hold_days<2 跳过 HS/TR/TP 是预期（A 股 T+1，靠隔夜跳空保护）。
+- **向后兼容**：✅ 14 调用方零改动；`__module__` 变化无调用方依赖；pickle 风险排除（store 显式字段序列化）；循环依赖排除。
+
+### 8.3 修订后总评
+
+| 维度 | 一轮 | 二轮后 |
+|------|------|--------|
+| CRITICAL | 0 | 0 |
+| HIGH | 0 → **3**(漏网) | **0 残留**（2 修复 + 1 defer） |
+| MEDIUM | 2(已修) | 1 残留（LOW-1 ATR 记录） |
+| 回归 | 0 | 0（392 测试通过） |
+
+**修订总评：PASS**——二轮发现的 2 个 HIGH 已修复并加回归测试，1 个 HIGH（sim/live 口径）显式 defer 留待设计决策。**交叉验证强制执行了一次，避免了"告警模式漏卖"这个会比 NameError 更隐蔽的 bug 进实盘。**
+
+> 教训：第一轮 code-reviewer 关注"改了什么 + 向后兼容"，漏了"mutation 时序 + sim/live 口径一致性"；第二轮 python-reviewer 对照 live_trader 范式才抓到。**单视角审计不够，多视角交叉验证是必要的。**
+

@@ -25,6 +25,9 @@
 3. **hold_days 计算**：新增 `_calc_hold_days`（对齐 live_trader.exit_monitor），交易日计数 + 自然日兜底 + 异常返回 1。Step 4 RiskManager.check_stops_intraday 应复用此方法，不要重新发明。
 4. **pos/positions 键**：SimTraderStore 现已同时输出两键。Step 8 config 清理时，建议把全仓消费方统一迁到 `pos` 键后，再考虑删 `positions`（本次保留以保兼容）。
 5. **store.py lazy import 已改指 models**：Step 3 PortfolioManager / Step 5 EquityRecorder 注入 store 时，store 不再反向依赖 engine，循环已断，可顶层 import models。
+6. **二轮复审 HIGH-1 已修**：`_check_position` 改纯检查不标记 TP 档位，`mark_tier_triggered` 移到 `_check_and_act` 确认卖出分支（对齐 EOD `and not readonly`）。Step 4 RiskManager.check_stops_intraday 若重写此逻辑必须保留此"告警模式不烧档位"语义。
+7. **二轮复审 HIGH-2 已修**：盘中 `bar.low` 用 `_intraday_low`（对称 `_intraday_peak` 跟踪的盘中真实最低），不用当前 tick 价。Step 4 check_stops_intraday 须保留 session_low 参数。
+8. **二轮复审 HIGH-3 defer（sim/live 口径决策）**：`use_high_for_tp=True`(sim 盘中) vs `False`(live_trader)。sim=True 符合"与回测 simple_runner 一致"契约，但与 live 分叉。**需用户决策**：盘中 TP 用 high（冲高即卖）还是 close（站上才卖），然后 sim/live 统一。未决策前不动。
 
 ### deferred（明早审查后决定是否做）
 
