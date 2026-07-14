@@ -131,7 +131,7 @@ class SimTraderEngine:
     def _validate_params_against_schema(self):
         """校验 check_stops 使用的风控参数与 config.py schema 一致"""
         try:
-            from app.config.schema import load_risk_params
+            from app.config.risk_params import load_risk_params
             _sch = load_risk_params()
         except Exception as e:
             log.warning(f"[校验] 无法加载风控 schema: {e}，跳过一致性检查")
@@ -405,13 +405,20 @@ class SimTraderEngine:
 
     # ── 卖出（止盈止损） ──────────────────────
 
+    @_cycle_locked
     def check_stops(self, today: date, snapshot: dict,
                     trading_dates: List[date],
                     prev_snap: dict = None,
                     readonly: bool = False) -> List[Tuple]:
         """
         按优先级检查所有持仓的止盈止损。
-        readonly=True 时不修改持仓状态（用于告警模式）。
+
+        ⚠️ readonly=False 时会修改 pos.entry_price/peak_price 和 mark_tier_triggered()。
+        已加 @_cycle_locked 守护(2026-07-15 审计落地),防止 cron + 手动 API 并发踩踏。
+        当前 sell_phase 是唯一非 readonly 调用方(已同步加锁)。
+        新增非 readonly 调用方必须确认不会与 sell_phase 死锁(本锁是 RLock,支持 sell_phase→
+        execute_sell→check_stops 重入,但其他路径需自审)。
+        readonly=True 时不修改状态(供 intraday_monitor 告警模式使用)。
         返回: [(pos, exit_price, reason, partial_shares_or_None), ...]
         """
         from app.backtest.exit_rules import exit_rule_engine

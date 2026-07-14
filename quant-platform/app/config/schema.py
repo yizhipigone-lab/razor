@@ -61,6 +61,6 @@ def load_risk_params():
         take_profit_tiers=list(p.take_profit_tiers),
         use_atr_trail=p.use_atr_trail,
         atr_trail_multiplier=p.atr_trail_multiplier,
-        breakeven_threshold=0.0,
-        breakeven_stop=0.0,
+        breakeven_threshold=p.breakeven_threshold_pct,
+        breakeven_stop=p.breakeven_stop_pnl_pct,
     )
