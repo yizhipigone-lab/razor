@@ -168,7 +168,7 @@ def _ai_params_to_tdx_params(ai_params: dict, base_params: dict) -> dict:
         p["trail_dd"] = ai_params["trailing_drawdown_pct"] / 100.0
     if "time_exit_days" in ai_params:
         p["time_exit_days"] = int(ai_params["time_exit_days"])
-    # breakeven_* exit_rules 内部 _pct() 自动转，直接透传
+    # breakeven_* 已统一为小数(2026-07-15 ADR-001),直接透传
     for k in ("breakeven_threshold_pct", "breakeven_stop_pnl_pct"):
         if k in ai_params:
             p[k] = ai_params[k]

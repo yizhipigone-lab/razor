@@ -311,3 +311,41 @@ class TestRiskParamsCriticalBugRepro:
                 f"C1 bug 复活: day_high_pct=0.05 > fd 但仍触发 FD, "
                 f"说明 fd={rp.first_day_exit_min_profit} 实际仍是 3.0(C1 bug 路径)"
             )
+
+
+class TestSettingsPropertyUnits:
+    """settings.py property 单位约定(2026-07-15 第三轮迭代加)
+
+    ADR-001 约定: settings.xxx 永远返回百分比数(与 settings.json 一致),
+    不做 *100 转换(防止 settings 改成小数时静默出错)。
+    本测试 grep 所有 settings property,断言它们的值与 settings.json 直接读一致。
+    """
+    PROPERTIES_TO_TEST = [
+        ("trailing_activate_pct", "trailing_stop_activate_pct"),
+        ("trailing_drawdown_pct", "trailing_stop_drawdown_pct"),
+        ("hard_stop_loss_pct", "hard_stop_loss_pct"),
+        ("breakeven_threshold_pct", "breakeven_threshold_pct"),
+        ("breakeven_stop_pnl_pct", "breakeven_stop_pnl_pct"),
+        ("time_exit_days", "time_exit_days"),
+        ("time_exit_min_profit_pct", "time_exit_min_pnl_pct"),
+        ("time_exit_force_days", "time_exit_force_days"),
+        ("first_day_exit_min_profit", "first_day_exit_min_profit"),
+        ("first_day_exit_days", "first_day_exit_days"),
+    ]
+
+    def test_settings_property_returns_percentage_number(self):
+        """settings.xxx 的返回值必须 = settings.json 中同名 key 的值(单位 %)。"""
+        from core.settings import settings
+        data = settings._data if hasattr(settings, '_data') else {}
+        risk = data.get("risk", {})
+
+        for prop_name, settings_key in self.PROPERTIES_TO_TEST:
+            if settings_key not in risk:
+                continue  # 缺键时 settings 走 risk_params fallback,跳过
+            expected = risk[settings_key]
+            actual = getattr(settings, prop_name)
+            assert actual == expected, (
+                f"settings.{prop_name} 应等于 settings.json 的 {settings_key}(% 单位), "
+                f"实际 settings.{prop_name}={actual} ≠ {settings_key}={expected}。"
+                f"如果值不同,说明 property 做了 *100 转换(违反 ADR-001 约定)。"
+            )
