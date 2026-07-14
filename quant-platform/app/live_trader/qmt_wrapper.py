@@ -111,8 +111,32 @@ class QmtWrapper:
             logger.error(f"获取行情失败: {e}")
             return {}
 
-    # ===== 行情扩展(从 qmt_proxy_server.py 迁移) =====
+    # ===== Tick 订阅(2026-07-15 PLAN-tick-subscription Step 1) =====
 
+    def subscribe_quote(self, codes: List[str], callback) -> int:
+        """订阅实时 tick 推送(批量)。返回订阅 seq(int),供 unsubscribe 用。
+
+        用 subscribe_whole_quote(批量); POC 实测回调收 {code: tick_dict}。
+        tick_dict 字段: lastPrice/open/high/low/lastClose/askPrice/bidPrice/...
+        """
+        if not _xtquant_available:
+            return 0
+        codes_fmt = [format_code(c) if '.' not in c else c for c in codes]
+        seq = xtdata.subscribe_whole_quote(codes_fmt, callback=callback)
+        logger.info(f"subscribe_whole_quote({codes_fmt}) seq={seq}")
+        return seq
+
+    def unsubscribe_quote(self, seq: int) -> None:
+        """取消 tick 订阅。POC 实测 unsubscribe_quote 签名是 (seq: int) 非 code。"""
+        if not _xtquant_available or not seq:
+            return
+        try:
+            xtdata.unsubscribe_quote(seq)
+            logger.info(f"unsubscribe_quote(seq={seq})")
+        except Exception as e:
+            logger.warning(f"unsubscribe_quote(seq={seq}) 失败(可忽略): {e}")
+
+    # ===== 行情扩展(从 qmt_proxy_server.py 迁移) =====
     def get_stock_list_in_sector(self, market_name: str) -> List[str]:
         """获取板块/指数成分股代码列表(如 '上证A股', '沪深300')"""
         if not _xtquant_available:
