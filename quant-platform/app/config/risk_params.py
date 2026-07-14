@@ -68,3 +68,62 @@ def load_risk_params() -> RiskParams:
         use_atr_trail=_g("use_atr_stop", False),
         atr_trail_multiplier=_g("atr_stop_multiplier", 1.0),
     )
+
+
+@dataclass(frozen=True)
+class PositionParams:
+    """资金 + 单票仓位控制参数。
+
+    与 RiskParams 同源:settings[risk] + settings[run] 两段平级。
+    旧 sim_trader/config.py:8-10 硬编码 7 个常量中 3 个资金参数迁到这里。
+    """
+    initial_capital: float      # 默认本金,如 1_000_000
+    position_size: float        # 单票仓位上限,如 50_000
+    min_buy_amt: float          # 最小买入金额,如 5_000
+
+
+@dataclass(frozen=True)
+class StreakParams:
+    """连亏保护 + 冷却。
+
+    旧 sim_trader/config.py:13-15, 34 硬编码的 4 个连亏/冷却常量迁到这里。
+    """
+    loss_streak_halve: int      # 连亏 N 笔仓位减半
+    loss_streak_pause: int      # 连亏 N 笔暂停
+    pause_days: int             # 暂停自然日
+    same_stock_cooldown: int    # 同股票冷却天数
+
+
+def _g_run(key: str, default):
+    """读 settings[run] 段 → default 兜底。
+
+    Settings.get 的 default 是 keyword-only,位置传参会被当成第 3 个 key。
+    """
+    val = _settings.get("run", key)
+    return val if val is not None else default
+
+
+def load_position_params() -> PositionParams:
+    """唯一推荐入口:返回 PositionParams frozen dataclass。
+
+    默认值与 app/sim_trader/config.py:8-10 现有硬编码一致,
+    不破坏现有调用方。后续 Task 2 让 tdx_runner 改用本函数。
+    """
+    return PositionParams(
+        initial_capital=_g_run("initial_capital", 1_000_000),
+        position_size=_g_run("position_size", 50_000),
+        min_buy_amt=_g_run("min_buy_amt", 5_000),
+    )
+
+
+def load_streak_params() -> StreakParams:
+    """唯一推荐入口:返回 StreakParams frozen dataclass。
+
+    默认值与 app/sim_trader/config.py:13-15, 34 现有硬编码一致。
+    """
+    return StreakParams(
+        loss_streak_halve=_g_run("loss_streak_halve", 3),
+        loss_streak_pause=_g_run("loss_streak_pause", 5),
+        pause_days=_g_run("pause_days", 3),
+        same_stock_cooldown=_g_run("same_stock_cooldown", 20),
+    )
