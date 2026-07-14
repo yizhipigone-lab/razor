@@ -169,7 +169,10 @@ class ExitMonitor:
             }
 
             params = self._load_risk_params()
-            ctx = exit_rule_engine.build_context(pos_obj, bar, hold_days, params)
+            # use_high_for_tp=True: 盘中冲高到 TP 目标即触发(用当日 high, 非 close),
+            # 与 sim_trader/intraday_monitor + 回测 simple_runner 统一口径(2026-07-14 用户决策)。
+            ctx = exit_rule_engine.build_context(pos_obj, bar, hold_days, params,
+                                                 use_high_for_tp=True)
             return ctx
         except Exception as e:
             logger.error(f"构造 RuleContext 失败 {qmt_pos.get('code','')}: {e}")
