@@ -402,6 +402,7 @@ def run_backtest(
     max_positions: int = 5,
     params: Optional[dict] = None,
     params_overrides: Optional[dict] = None,
+    use_all_stocks: bool = False,
     progress_cb: Optional[Callable] = None,
 ) -> dict:
     if params is None:
@@ -441,9 +442,14 @@ def run_backtest(
     print(f"      实际有 OHLCV: {len(prices_full)} 只")
 
     # ── 构造 universe + 索引加速 ──
-    universe = set(signals_full.keys())
-    universe = sorted(universe)[:300]
-    print(f"      实际交易股票池: {len(universe)} 只")
+    # 默认前 300(字母排序);use_all_stocks=True 用全部
+    all_codes = sorted(signals_full.keys())
+    if use_all_stocks:
+        universe = all_codes
+        print(f"      实际交易股票池: 全 A {len(universe)} 只 (--all-stocks)")
+    else:
+        universe = all_codes[:300]
+        print(f"      实际交易股票池: 前 300 只 (默认字母排序)")
     date_index: Dict[str, Dict[date, int]] = {}
     for code, df in prices_full.items():
         date_index[code] = {d: i for i, d in enumerate(df["date"].tolist())}
@@ -697,6 +703,8 @@ def main():
                         help="印花税(仅卖,默认 0.1%%)")
     parser.add_argument("--commission", type=float, default=0.00025,
                         help="双边佣金率(默认 0.025%%)")
+    parser.add_argument("--all-stocks", action="store_true",
+                        help="用全部 A 股信号(默认前 300 按字母排序)")
     args = parser.parse_args()
     t0 = time.time()
     # 把 CLI 参数注入到 load_default_params 之上(覆盖默认)
@@ -712,6 +720,7 @@ def main():
         capital=args.capital,
         max_positions=args.max_positions,
         params_overrides=params_overrides,
+        use_all_stocks=args.all_stocks,
     )
     print(f"\n回测耗时: {time.time() - t0:.1f}s")
     print_report(report)
