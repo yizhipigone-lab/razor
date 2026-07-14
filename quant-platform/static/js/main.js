@@ -55,8 +55,13 @@ function _sendQuoteSubscribe() {
     var c = tr.getAttribute('data-code');
     if (c) codes.push(c);
   });
-  // 持仓
+  // 持仓(模拟盘)
   document.querySelectorAll('#sim-pos-tbody tr.pos-row').forEach(function(tr) {
+    var c = tr.getAttribute('data-code');
+    if (c) codes.push(c);
+  });
+  // 持仓(实盘 A2:复用订阅通道到实盘)
+  document.querySelectorAll('#live-positions-tbody tr.lt-pos-row').forEach(function(tr) {
     var c = tr.getAttribute('data-code');
     if (c) codes.push(c);
   });
@@ -1823,8 +1828,14 @@ function switchTab(name) {
   if (name === 'ai-backtest') { loadBacktestCapitalDefaults(); initAIBacktest(); }
   if (name === 'radar') loadHotSectorData();
   if (name === 'sim-trader') { loadSimTraderStatus(); initLogDates(); loadSimLogs(); loadSimRiskParams(); loadSimSwitches(); loadSimMonitor(); loadSimStrategy(); loadSimTrades(); renderSimEquityChart(); renderSimCalendar(); renderSimStockAnalysis(); }
-  if (name === 'live-trader') { loadLiveAll(); }
+  if (name === 'live-trader') { loadLiveAll(); if (window.resizeLiveEquityChart) window.resizeLiveEquityChart(); }
   if (name === 'tqsdk') { initTqsdkTab(); }
+  // 告警中心(v6.0)
+  if (name === 'alerts') {
+    if (typeof startAlertsPolling === 'function') startAlertsPolling();
+  } else {
+    if (typeof stopAlertsPolling === 'function') stopAlertsPolling();
+  }
 }
 
 // ─── AI 回测 JS ────────────────────────────────────────────
@@ -1951,7 +1962,7 @@ function startQuotePolling() {
 async function pollLiveQuotes() {
   try {
     var codes = [];
-    document.querySelectorAll('#watchlist-tbody tr.wl-row, #sim-pos-tbody tr.pos-row').forEach(function(tr) {
+    document.querySelectorAll('#watchlist-tbody tr.wl-row, #sim-pos-tbody tr.pos-row, #live-positions-tbody tr.lt-pos-row').forEach(function(tr) {
       var c = tr.getAttribute('data-code');
       if (c) codes.push(c);
     });
@@ -1990,6 +2001,8 @@ async function pollLiveQuotes() {
         pctEl.style.color = q.change_pct >= 0 ? '#ef232a' : '#14b143';
       }
     });
+    // A4: ws 断开兜底时也刷新实盘持仓现价/浮盈/市值(用上面 window._lastQuotes)
+    if (typeof applyLiveQuotes === 'function') applyLiveQuotes();
     // 更新总净值和持仓盈亏汇总
     var totalMv = 0; var totalPnl = 0; var totalCost = 0;
     document.querySelectorAll('#sim-pos-tbody tr.pos-row').forEach(function(tr) {
@@ -2758,6 +2771,8 @@ function handleWS(msg) {
     processRows(document.querySelectorAll('.radar-stock-link'));
     processPosRows(document.querySelectorAll('#sim-pos-tbody tr.pos-row'));
     processPosRows(document.querySelectorAll('#sim-trade-tbody tr.pos-row'));
+    // A4: 实盘持仓复用 market_quotes 通道实时刷新现价/浮盈/市值/KPI
+    if (typeof applyLiveQuotes === 'function') applyLiveQuotes();
   } else if (msg.type === 'portfolio_snapshot') {
     // 服务端 10s 计算的实时投资组合快照
     window._portfolioSeen = true;
@@ -2789,6 +2804,34 @@ function handleWS(msg) {
         }
         if (mvEl) mvEl.textContent = Math.round(ps.market_value).toLocaleString();
       });
+    }
+  } else if (msg.type === 'live_trader_snapshot') {
+    // B3: 实盘快照(主服务 10s 推送:持仓/资产/委托/成交);仅实盘 tab active 时处理
+    const ltPanel = document.getElementById('tab-live-trader');
+    if (!ltPanel || !ltPanel.classList.contains('active')) return;
+    const d = msg.data || {};
+    // 资产(含 A5 现金/冻结缓存) + 委托/成交
+    if (d.asset && typeof _renderLiveAsset === 'function') _renderLiveAsset(d.asset);
+    if (d.orders && typeof _renderLiveOrders === 'function') _renderLiveOrders(d.orders);
+    if (d.deals && typeof _renderLiveDeals === 'function') _renderLiveDeals(d.deals);
+    // 持仓:仅结构变化(code 增删/volume 变)才重渲染,否则让 applyLiveQuotes 继续管现价
+    if (d.positions && typeof _renderLivePositions === 'function') {
+      const newPos = {};
+      d.positions.forEach(function(p) { if (p.code) newPos[p.code] = Number(p.volume) || 0; });
+      const rows = document.querySelectorAll('#live-positions-tbody tr.lt-pos-row');
+      let structChanged = rows.length !== d.positions.length;
+      if (!structChanged) {
+        for (const tr of rows) {
+          const bare = tr.getAttribute('data-code');
+          let matched = null;
+          for (const k in newPos) { if (k.split('.')[0] === bare) { matched = k; break; } }
+          if (!matched || newPos[matched] !== Number(tr.getAttribute('data-vol') || 0)) { structChanged = true; break; }
+          if (matched) delete newPos[matched];
+        }
+      }
+      if (structChanged) {
+        _renderLivePositions(d.positions);  // 内部会调 applyLiveQuotes 刷现价
+      }
     }
   }
 }
@@ -2888,9 +2931,8 @@ function updatePositionRow(tr, info, entryPrice, shares) {
     if (mv2El) {
         mv2El.textContent = Math.round(price * shares).toLocaleString();
     }
-    // 今日盈亏（基于今日基准价 data-basepx: 当日买入=买入价, 过夜=昨收）
-    const basePx = parseFloat(tr.getAttribute('data-basepx') || 0)
-                   || parseFloat(info.lastClose || info.preClose || info.last_close || 0);
+    // 今日盈亏（CARD4 后端算基准 + 实时价前端乘: data-basepx 严格来自后端 today_base）
+    const basePx = parseFloat(tr.getAttribute('data-basepx') || 0);
     // 实时涨跌：始终以昨收价为基准（市场概念，与个人买入价无关）
     const prevClose = parseFloat(info.lastClose || info.preClose || info.last_close || 0);
     const tpEl = tr.querySelector('.today-pnl');

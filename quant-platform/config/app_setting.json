@@ -188,7 +188,7 @@
     "redis_ttl_seconds": 600,
     "enable_ths_concepts": true,
     "enable_tushare_concepts": true,
-    "last_updated": "07/13 13:15"
+    "last_updated": "07/14 15:30"
   },
   "tqsdk": {
     "formula_name": "QUANTQQ"
@@ -208,10 +208,21 @@
     "buy_signal_enabled": true,
     "buy_signal_cutoff": "14:59",
     "exit_scan_interval_sec": 60,
+    "auto_buy_enabled": false,
+    "auto_buy_time": "14:50",
+    "auto_buy_lookback_days": 500,
     "runtime": {
       "mode": "live",
       "buy_enabled": true,
-      "sell_enabled": true
+      "sell_enabled": true,
+      "auto_buy_enabled": false
     }
+  },
+  "notify": {
+    "wework_webhook": "",
+    "feishu_webhook": "https://open.feishu.cn/open-apis/bot/v2/hook/0a0f2284-2506-4b23-9fff-a2e8a4afbfcf",
+    "channel": "feishu",
+    "daily_summary_enabled": true,
+    "daily_summary_time": "15:30"
   }
 }
