@@ -83,6 +83,8 @@ class DatabaseManager:
 
     def _init(self):
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        # P0-ops: 启动前检测 stale .wal/.lock(历史根因: stop.sh/taskkill/F 绕过优雅关闭导致 WAL 损坏)
+        self._check_stale_locks()
         # 性能/并发(审计 P0): 只读模式开关。DuckDB 同一文件不允许多个读写连接共存,
         # 这是"基线 diff 脚本与运行中服务争用 DB"的根因。只读进程(回测脚本/盘中API)
         # 设环境变量 DUCKDB_READ_ONLY=1 即可与写进程共存; 写进程(task worker/数据收割)默认读写。
@@ -109,6 +111,52 @@ class DatabaseManager:
             except Exception:
                 pass
         log.info(f"DuckDB 核心就绪: {DB_PATH} (read_only={self._read_only})")
+
+    @staticmethod
+    def _check_stale_locks():
+        """P0-ops: 启动前检测 stale .wal/.lock 文件(防 WAL 损坏复发)。
+        背景: 2026-07 stop.sh/taskkill /F 绕过优雅关闭 → 残留 .wal/.lock → 下次启动连接失败。
+        策略: mtime > 24h 且无 python 进程持有 → 告警 + 备份为 .corrupt_TS, 不自动删(留证据)。"""
+        import os as _os
+        import time as _time
+        now = _time.time()
+        stale_threshold = 24 * 3600  # 24 小时
+        for suffix in (".wal", ".lock"):
+            fpath = DB_PATH.with_suffix(DB_PATH.suffix + suffix)
+            if not fpath.exists():
+                continue
+            try:
+                mtime = fpath.stat().st_mtime
+                age_h = (now - mtime) / 3600
+                if age_h > 24:
+                    # 备份为 .corrupt_TS, 不自动删(留证据供事后排查)
+                    ts = _time.strftime("%Y%m%d_%H%M%S", _time.localtime(mtime))
+                    bak = fpath.with_suffix(fpath.suffix + f".corrupt_{ts}")
+                    try:
+                        fpath.rename(bak)
+                        log.warning(
+                            f"DuckDB | 检测到 stale {suffix} 文件(age={age_h:.0f}h > 24h), "
+                            f"已备份到 {bak.name}。上次可能非正常退出(taskkill/F), "
+                            f"若问题反复出现请检查 stop.sh 是否走了 /shutdown 端点。")
+                    except OSError as e:
+                        log.warning(f"DuckDB | 无法重命名 stale {suffix}({e}), 跳过")
+                else:
+                    log.info(f"DuckDB | {suffix} 文件存在(age={age_h:.1f}h < 24h), "
+                             f"可能仍有运行中进程, 跳过清理")
+            except OSError:
+                pass
+        # 同时检测 live_trader deals.wal
+        from pathlib import Path as _Path
+        deals_db = _Path(DB_PATH.parent.parent) / "live_trader" / "deals.db"
+        for suffix in (".wal", ".lock"):
+            fpath = deals_db.with_suffix(deals_db.suffix + suffix)
+            if fpath.exists():
+                try:
+                    age_h = (now - fpath.stat().st_mtime) / 3600
+                    if age_h > 24:
+                        log.warning(f"DuckDB | live_trader {suffix} stale(age={age_h:.0f}h), 建议手动检查")
+                except OSError:
+                    pass
 
     @property
     def conn(self):
