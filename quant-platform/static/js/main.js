@@ -1,4 +1,18 @@
-﻿// ─── WebSocket ────────────────────────────────────────────────
+﻿// ─── 颜色 token 工具(读 CSS 自定义属性, 禁止硬编码 hex) ──────
+function cssVar(name, fallback) {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback || '';
+}
+const COLOR = {
+  get up()    { return cssVar('--up',    '#f85149'); },
+  get down()  { return cssVar('--down',  '#3fb950'); },
+  get accent(){ return cssVar('--accent','#f0b429'); },
+  get text()  { return cssVar('--text',  '#e6edf3'); },
+  get text2() { return cssVar('--text2', '#7d8590'); },
+  get text3() { return cssVar('--text3', '#4d5566'); },
+  get bg3()   { return cssVar('--bg3',   '#1a212e'); },
+};
+// ─── WebSocket ────────────────────────────────────────────────
 let ws, wsReady = false;
 const wsDot = document.getElementById('ws-dot');
 
@@ -418,10 +432,10 @@ async function renderSimEquityChart() {
         }
         return s;
       }},
-      legend: { top: 5, textStyle: { color: '#aaa', fontSize: 10 } },
+      legend: { top: 5, textStyle: { color: COLOR.text2, fontSize: 10 } },
       grid: { top: 40, right: 20, bottom: 30, left: 55 },
-      xAxis: { type: 'category', data: eqDates, axisLabel: { color: '#888', fontSize: 10, rotate: 30 } },
-      yAxis: { type: 'value', axisLabel: { color: '#888', formatter: function(v) { return ((v-1)*100).toFixed(0)+'%'; } } },
+      xAxis: { type: 'category', data: eqDates, axisLabel: { color: COLOR.text3, fontSize: 10, rotate: 30 } },
+      yAxis: { type: 'value', axisLabel: { color: COLOR.text3, formatter: function(v) { return ((v-1)*100).toFixed(0)+'%'; } } },
       series: series,
     });
 
@@ -3897,7 +3911,7 @@ async function showChart(tradeJson) {
         markPointData.push({
             name: '买入', xAxis: buyDate, yAxis: yPrice,
             value: `B ${trade.entry_price || trade.close || yPrice}`,
-            itemStyle: { color: '#ef232a' },
+            itemStyle: { color: COLOR.up },
             label: { formatter: 'B', color: '#fff', fontSize: 11, fontWeight: 'bold' }
         });
     }
@@ -3914,7 +3928,7 @@ async function showChart(tradeJson) {
         markPointData.push({
             name: '卖出', xAxis: sellDate, yAxis: yPrice,
             value: `S ${trade.exit_price || yPrice}`, 
-            itemStyle: { color: '#14b143' },
+            itemStyle: { color: COLOR.down },
             label: { formatter: 'S', color: '#fff', fontSize: 11, fontWeight: 'bold' }
         });
     }
