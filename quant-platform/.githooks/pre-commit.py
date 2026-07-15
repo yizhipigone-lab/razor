@@ -7,7 +7,7 @@ from pathlib import Path
 
 MAX_FILE_LINES = 800
 FORBIDDEN_PATTERNS = [
-    (re.compile(r"https://open\.feishu\.cn/open-apis/bots/v2/hook/[a-f0-9-]{20,}"), "feishu webhook URL"),
+    (re.compile(r"https://open\.feishu\.cn/open-apis/bot/v2/hook/[a-f0-9-]{20,}"), "feishu webhook URL"),
     (re.compile(r"wh-[a-f0-9]{20,}"), "Microsoft Teams webhook"),
     (re.compile(r"hooks\.slack\.com/services/T[a-zA-Z0-9_]+/B[a-zA-Z0-9_]+/[a-zA-Z0-9_]+"), "Slack webhook"),
     (re.compile(r"AKID[A-Z0-9]{20,}"), "Aliyun AccessKey"),

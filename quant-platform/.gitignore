@@ -12,6 +12,9 @@ __pycache__/
 dist/
 build/
 
+# Wheels (离线包,download_wheels.sh 可重建,不入库)
+wheels/
+
 # 日志和崩溃转储
 logs/
 *.log
