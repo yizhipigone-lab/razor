@@ -255,11 +255,11 @@ class TestTokenVerification:
         assert _verify_token("", config) is False
 
     def test_no_token_configured(self):
-        """未配置 token 则不鉴权(向后兼容)"""
+        """未配置 token → fail-closed(安全修复)"""
         from app.live_trader.main import _verify_token
         from app.live_trader.config import LiveTraderConfig
         config = LiveTraderConfig(qmt_account_id="test", buy_signal_token="")
-        assert _verify_token("", config) is True
+        assert _verify_token("", config) is False
 
 
 # ===== 6. 清仓锁等待 =====

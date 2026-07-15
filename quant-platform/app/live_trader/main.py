@@ -756,9 +756,10 @@ async def process_buy_signals(
 # ===== 信号桥接端点(v1.2.2 §5.2) =====
 
 def _verify_token(auth_header: str, config) -> bool:
-    """验证 Bearer token"""
+    """验证 Bearer token（C1 修复: 未配 token → fail-closed, 拒所有请求）"""
     if not config or not config.buy_signal_token:
-        return True  # 未配置 token 则不鉴权(向后兼容)
+        logger.error("buy_signal_token 未配置, 所有 buy-signal 请求已被拒绝。请在 app_setting.json[live_trader] 中设置 buy_signal_token。")
+        return False
     if not auth_header:
         return False
     parts = auth_header.split(" ")
@@ -999,8 +1000,7 @@ _last_test_notify = {"ts": 0.0, "_lock": threading.Lock()}
 @app.post("/live/notifications/test")
 async def test_notification(request: Request, body: dict | None = None):
     """手动触发测试通知(仅本地,60 秒冷却)"""
-    if not _is_local(request):
-        raise HTTPException(403, "仅允许本地调用")
+    _require_admin(request)
     import time
     now = time.time()
     with _last_test_notify["_lock"]:
@@ -1026,8 +1026,7 @@ async def shutdown_service(request: Request):
     Windows 下 SIGINT 不能可靠触发 uvicorn lifespan shutdown(实测日志无"已关闭"),
     故在此显式 store.close() 触发 live_trader.duckdb 的 WAL checkpoint, 不依赖 lifespan。
     """
-    if not _is_local(request):
-        raise HTTPException(403, "仅允许本地调用")
+    _require_admin(request)
     logger.info("/shutdown 收到请求, 准备优雅关闭 (显式 store.close + SIGINT)...")
 
     # 显式关 store: 停 flusher + 最后 flush + close 连接(= checkpoint WAL)
@@ -1061,8 +1060,7 @@ async def get_scan_interval():
 @app.put("/live/config/scan-interval")
 async def set_scan_interval(request: Request, body: dict):
     """设置离场扫描间隔(秒,仅本地)。保存后立即生效,不阻塞。范围:10~300"""
-    if not _is_local(request):
-        raise HTTPException(403, "仅允许本地调用")
+    _require_admin(request)
     scheduler = _state.get("scheduler")
     if not scheduler:
         raise HTTPException(503, "调度服务未启动")
@@ -1095,8 +1093,7 @@ async def get_auto_buy_time():
 @app.put("/live/config/auto-buy-time")
 async def set_auto_buy_time(request: Request, body: dict):
     """设置自动选股触发时点(仅本地)。格式 HH:MM，保存后当日已触发则次日生效。"""
-    if not _is_local(request):
-        raise HTTPException(403, "仅允许本地调用")
+    _require_admin(request)
     scheduler = _state.get("scheduler")
     if not scheduler:
         raise HTTPException(503, "调度服务未启动")
@@ -1128,8 +1125,7 @@ async def get_buy_ratio():
 @app.put("/live/config/buy-ratio")
 async def set_buy_ratio(request: Request, body: dict):
     """设置单只占本金比例(仅本地)。内存立即生效 + 持久化到 live_trader.buy_position_ratio 顶层。范围:(0,1]"""
-    if not _is_local(request):
-        raise HTTPException(403, "仅允许本地调用")
+    _require_admin(request)
     rs = _state.get("runtime_state")
     if not rs:
         raise HTTPException(503, "未初始化")
@@ -1161,6 +1157,22 @@ def _is_local(request) -> bool:
     return request.client.host in ("127.0.0.1", "::1", "localhost")
 
 
+def _verify_admin(request) -> bool:
+    """C1 修复: admin 端点除本机外还需 token 鉴权(复用 buy_signal_token)。"""
+    from .config import load_config
+    cfg = load_config()
+    auth = request.headers.get("Authorization", "")
+    return _verify_token(auth, cfg)
+
+
+def _require_admin(request):
+    """admin 端点统一护栏: 本机 + token 双重校验。"""
+    if not _is_local(request):
+        raise HTTPException(403, "仅允许本地访问")
+    if not _verify_admin(request):
+        raise HTTPException(401, "admin token 无效或未配置")
+
+
 @app.get("/live/config/switches")
 async def get_switches():
     """读取买入/卖出开关状态"""
@@ -1173,8 +1185,7 @@ async def get_switches():
 @app.put("/live/config/switches")
 async def set_switches(request: Request, body: dict):
     """切换买入/卖出开关(仅本地)"""
-    if not _is_local(request):
-        raise HTTPException(403, "仅允许本地调用")
+    _require_admin(request)
     rs = _state.get("runtime_state")
     if not rs:
         raise HTTPException(503, "未初始化")
@@ -1201,8 +1212,7 @@ async def get_mode():
 @app.post("/live/config/mode")
 async def set_mode(request: Request, body: dict):
     """切换模式(仅本地)。live→dry-run 撤在途单等终态;dry-run→live 清残留+QMT检查"""
-    if not _is_local(request):
-        raise HTTPException(403, "仅允许本地调用")
+    _require_admin(request)
     rs = _state.get("runtime_state")
     if not rs:
         raise HTTPException(503, "未初始化")
