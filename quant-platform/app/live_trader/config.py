@@ -34,6 +34,7 @@ class LiveTraderConfig:
     max_total_position_pct: float = 0.90      # 闸门4 总仓 ≤90%(含在途预扣)
     daily_loss_halt_pct: float = 0.03         # 闸门5a 日亏 3% 禁buy
     max_single_loss_pct: float = 0.05         # 闸门5b 单笔浮亏 5% 禁该只再买
+    limit_up_gate_enabled: bool = True       # 闸门5c 涨停封板拒买开关
     max_consecutive_rejections: int = 5       # 闸门7 连续5次risk/broker拒→kill
     rejection_window_sec: float = 300.0       # 闸门7 5分钟时间窗(H4)
 
@@ -136,6 +137,7 @@ def load_config() -> LiveTraderConfig:
         max_total_position_pct=float(cfg_dict.get("max_total_position_pct", 0.90)),
         daily_loss_halt_pct=float(cfg_dict.get("daily_loss_halt_pct", 0.03)),
         max_single_loss_pct=float(cfg_dict.get("max_single_loss_pct", 0.05)),
+        limit_up_gate_enabled=cfg_dict.get("limit_up_gate_enabled", True),
         wework_webhook=wework_webhook,
         feishu_webhook=feishu_webhook,
         notify_channel=notify_channel,

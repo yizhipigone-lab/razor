@@ -189,6 +189,70 @@ def test_risk_gate_t1_sell_check(tmp_config, store):
     assert "T+1" in reason or "可卖" in reason
 
 
+def test_risk_gate_5c_limit_up_blocks(tmp_config, store):
+    """闸门5c:涨停股买入被拒,且不计入连续拒绝"""
+    from app.live_trader.risk_gate import RiskGate
+    from app.live_trader.kill_switch import KillSwitch
+    from app.live_trader.schemas import OrderIntent
+
+    ks = KillSwitch(tmp_config, store)
+    rg = RiskGate(tmp_config, store, ks, qmt_wrapper=MagicMock(connected=True))
+
+    intent = OrderIntent(code="600000.SH", direction="buy", volume=100, price=11.0)
+    # total_asset 必须给,否则闸门5a 先拒(日亏-100%),到不了 5c
+    passed, gates, reason = rg.check(
+        intent,
+        asset={"cash": 500000, "total_asset": 500000},
+        quote={"lastClose": 10.0, "lastPrice": 11.0},
+    )
+    assert passed is False
+    assert "涨停" in reason
+    assert not rg._check_consecutive_rejection()
+
+
+def test_risk_gate_5c_limit_up_disabled(tmp_config, store):
+    """闸门5c:开关关闭时放行"""
+    from app.live_trader.config import LiveTraderConfig
+    from app.live_trader.risk_gate import RiskGate
+    from app.live_trader.kill_switch import KillSwitch
+    from app.live_trader.schemas import OrderIntent
+
+    cfg = LiveTraderConfig(**{**tmp_config.__dict__, "limit_up_gate_enabled": False})
+    ks = KillSwitch(cfg, store)
+    rg = RiskGate(cfg, store, ks, qmt_wrapper=MagicMock(connected=True))
+
+    intent = OrderIntent(code="600000.SH", direction="buy", volume=100, price=11.0)
+    passed, gates, reason = rg.check(
+        intent,
+        asset={"cash": 500000, "total_asset": 500000},
+        quote={"lastClose": 10.0, "lastPrice": 11.0},
+    )
+    assert passed is True
+
+
+def test_risk_gate_5c_missing_quote_failsafe(tmp_config, store):
+    """闸门5c:quote 缺失价格时 fail-closed 拒买"""
+    from app.live_trader.risk_gate import RiskGate
+    from app.live_trader.kill_switch import KillSwitch
+    from app.live_trader.schemas import OrderIntent
+
+    ks = KillSwitch(tmp_config, store)
+    rg = RiskGate(tmp_config, store, ks, qmt_wrapper=MagicMock(connected=True))
+
+    intent = OrderIntent(code="600000.SH", direction="buy", volume=100, price=11.0)
+    # 降级源 patch 成抛异常,保证 fail-safe 路径确定性(不依赖本机网络/QMT/Parquet)
+    # 注:quote=None 而非 lastPrice=None(后者会让闸门3 的 quote.get("lastPrice",0) 拿到 None 崩溃,存量问题)
+    with patch("app.data_manager.quote_source.get_realtime_quotes",
+               side_effect=RuntimeError("no network in test")):
+        passed, gates, reason = rg.check(
+            intent,
+            asset={"cash": 500000, "total_asset": 500000},
+            quote=None,
+        )
+    assert passed is False
+    assert "fail-safe" in reason or "缺行情" in reason
+
+
 def test_risk_gate_c1_pending_buy(tmp_config, store):
     """C1:在途预扣防超买"""
     from app.live_trader.risk_gate import RiskGate

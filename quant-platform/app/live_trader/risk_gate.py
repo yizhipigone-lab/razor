@@ -7,12 +7,15 @@ C1:闸门 3/4 含在途买入预扣,防异步撮合超买。
 H1:QMT 缺价时闸门5a fail-safe 禁买。
 H4:闸门7 5分钟时间窗 + risk/broker 分类。
 H6:闸门9 T+1 can_use_volume。
+2026-07-18:闸门5c 涨停封板拒买(buy-only,缺价 fail-safe 拒买,不计入连续拒绝计数)。
 """
 import time
 from datetime import date, timedelta
 from typing import Dict, List, Optional, Tuple
 
 from core.logger import get_logger
+
+from app.utils.limit_up import _is_valid_price, is_limit_up
 
 from .config import LiveTraderConfig
 from .schemas import OrderIntent
@@ -132,6 +135,35 @@ class RiskGate:
                         self._record_rejection("risk")
                         return (False, gates, f"单只浮亏 {single_loss*100:.2f}% 禁该只再买")
             gates.append(self._gate("5b", "单笔最大亏损", True, f"≥-{self.config.max_single_loss_pct*100:.1f}%", "OK"))
+
+            # 闸门 5c:涨停封板拒买(故意不 _record_rejection:涨停是常态市场状态,不计入连续拒绝)
+            if is_buy and self.config.limit_up_gate_enabled:
+                prev_close, price = None, None
+                if quote:
+                    prev_close = quote.get("lastClose") or quote.get("preClose")
+                    price = quote.get("lastPrice")
+
+                if not (_is_valid_price(prev_close) and _is_valid_price(price)):
+                    # 优先复用 quote 失败,尝试 quote_source 降级
+                    try:
+                        from app.data_manager.quote_source import get_realtime_quotes
+                        df = get_realtime_quotes([intent.code])
+                        if df is not None and not df.empty:
+                            row = df.iloc[0]
+                            prev_close = row.get("last_close")
+                            price = row.get("price")
+                    except Exception as e:
+                        logger.warning(f"闸门5c quote_source 降级失败: {e}")
+
+                if not (_is_valid_price(prev_close) and _is_valid_price(price)):
+                    gates.append(self._gate("5c", "涨停拒买", False, "有效行情", "缺价fail-safe"))
+                    return (False, gates, "涨停判断缺行情,fail-safe拒买")
+
+                is_limit, reason = is_limit_up(intent.code, prev_close, price, strict=True)
+                if is_limit:
+                    gates.append(self._gate("5c", "涨停拒买", False, "未涨停", f"涨停{reason}"))
+                    return (False, gates, f"涨停封板拒买: {reason}")
+                gates.append(self._gate("5c", "涨停拒买", True, "未涨停", "OK"))
 
         # 闸门 9:T+1 可卖校验(仅 sell,H6)
         if not is_buy:
