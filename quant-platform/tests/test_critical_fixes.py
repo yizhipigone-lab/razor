@@ -32,13 +32,34 @@ def test_can_buy_rejects_limit_up_with_real_prev_close():
     assert reason and ("涨停" in reason or "limit" in reason.lower())
 
 
-def test_simple_runner_buy_without_prev_close_warns_skips_filter(caplog):
-    """HIGH-3 (compat 4b) 回归测试 - 缺 prev_close → logger.warning + 走无涨停过滤路径
+def test_simple_runner_buy_without_prev_close_warns_compat(caplog):
+    """HIGH-3 (compat 4b) 回归测试 - 旧三参缺 prev_close 仍放行,但加 deprecation warning
 
-    上一版该测试断言 raise,现改为 assert warning 日志出现 + 不崩。
-    raise-严格模式不在 buy() 内部做,留给主回测路径(传入真实 prev_close)。
     scripts/ 下 22 个 CLI 用旧三参 eng.buy(d, code, px) 不应崩 — 此测试守住兼容降级。
     """
+    import logging
+    import warnings
+    import pytest
+    from app.backtest.simple_runner import FastEngine
+    td_list = [date(2024, 1, d) for d in range(2, 11)]
+    params = {
+        "initial_capital": 1_000_000,
+        "position_size": 50_000,
+        "min_buy_amt": 5_000,
+    }
+    eng = FastEngine(td_list, params)
+
+    with caplog.at_level(logging.WARNING, logger="FastEngine"):
+        with pytest.warns(DeprecationWarning, match="prev_close"):
+            res = eng.buy(date(2024, 1, 3), "600000", 10.0, prev_close=None)
+
+    assert res is not None
+    assert getattr(res, "code", None) == "600000"
+    assert any("缺 prev_close" in r.message for r in caplog.records)
+
+
+def test_simple_runner_buy_with_prev_close_strict_rejects_limit_up(caplog):
+    """HIGH-3 回归测试 - 主回测路径传真实 prev_close 时,涨停日应被拒"""
     import logging
     from app.backtest.simple_runner import FastEngine
     td_list = [date(2024, 1, d) for d in range(2, 11)]
@@ -50,12 +71,9 @@ def test_simple_runner_buy_without_prev_close_warns_skips_filter(caplog):
     eng = FastEngine(td_list, params)
 
     with caplog.at_level(logging.WARNING, logger="FastEngine"):
-        res = eng.buy(date(2024, 1, 3), "600000", 11.5, prev_close=None)
-    # 缺 prev_close 时 buy 不应该崩,且能"模拟买入"或拒(取决于其它约束)
-    assert res is None or getattr(res, "code", None) == "600000", \
-        "降级路径应静默继续,不 raise"
-    assert any("缺 prev_close" in r.message for r in caplog.records), \
-        "应 logger.warning 显式记录"
+        res = eng.buy(date(2024, 1, 3), "600000", 11.0, prev_close=10.0)
+    assert res is None, "涨停日应被拒"
+    assert not any("缺 prev_close" in r.message for r in caplog.records)
 
 
 def test_simple_runner_main_loop_passes_prev_close(caplog):

@@ -9,8 +9,10 @@ from collections import defaultdict, Counter
 from pathlib import Path
 from typing import Callable, Optional
 import json
+import warnings
 from core.logger import get_logger
 from app.backtest.execution import can_buy, calc_buy_cost, calc_sell_revenue, realized_pnl
+from app.utils.limit_up import _is_valid_price
 
 log = get_logger("SimpleBT")
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -96,25 +98,28 @@ class FastEngine:
     def buy(self, d, code, px, prev_close=None):
         """d 当前日, code 股票, px 当前价, prev_close 昨日真实收盘价(可选)
 
-        2026-07-15 HIGH-3 (compat 4b): 涨停过滤必须用真实前收,不再 'px=prev_close' 默认静默失效。
-        - prev_close 提供时:用真实前收严查涨停(can_buy 真实前收 → 拒涨停日)。
-        - prev_close 缺省(<=0):logger.warning + can_buy 走"无涨停过滤"路径(等同 Task 4 改前的旧行为)
-                       —— 这是给 scripts/*.py 旧 CLI 调用的兼容降级路径,
-                           主回测(simple_runner.py 主循环 / tdx_runner.py:803)始终传 prev_close。
-        不 raise 的原因:scripts/ 下 22 个 CLI 旧三参调用 eng.buy(d, code, px) 不应崩。
-        副作用:旧脚本的涨停过滤暂时降级为无(等同改前) — 用户已接受。
+        2026-07-18: 缺 prev_close 时走 strict=False 兼容路径(旧 scripts/ CLI 不崩),
+        但加 DeprecationWarning 提示迁移到四参调用。
+        主回测路径始终传真实 prev_close,走 strict=True fail-closed。
         """
         if code in self.positions: return None
-        if prev_close is None or prev_close <= 0:
-            # 兼容降级路径 — 不 raise 以保护 scripts/ 下 22 个 CLI 不崩
+
+        if _is_valid_price(prev_close):
+            can_buy_ok, _ = can_buy(code, prev_close, px, strict=True)
+        else:
+            warnings.warn(
+                f"eng.buy(d, code, px) 缺 prev_close，涨停过滤降级。"
+                f"请改为 eng.buy(d, code, px, prev_close=...)。",
+                DeprecationWarning,
+                stacklevel=2,
+            )
             import logging
             logging.getLogger("FastEngine").warning(
                 f"buy() 缺 prev_close (code={code} d={d}),涨停过滤降级 — "
                 "建议调用方从 closes 取前一个交易日"
             )
-            can_buy_ok, _ = can_buy(code, px, px)  # 故意 (px, px):永远 0% 涨,等价无过滤
-        else:
-            can_buy_ok, _ = can_buy(code, prev_close, px)
+            can_buy_ok, _ = can_buy(code, px, px, strict=False)
+
         if not can_buy_ok:
             return None
         ma = min(self.max_pos(), self.cash)
