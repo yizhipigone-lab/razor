@@ -413,6 +413,15 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
             b.setdefault("low", b.get("close", 0))
             b.setdefault("open", b.get("close", 0))
 
+        # 2026-07-18 性能(P1-3): 预建 (code,date) 索引, 买入/估值 O(1) 查表,
+        # 替代原先每个买入/每持仓每天对 bars_intra 的线性扫描(O(天数×持仓×K线数))。
+        # bars 已按 datetime 升序: 首次出现即当天第一根 bar, 最后赋值即当天最后收盘价。
+        first_bar_of_day = {}
+        for b in bars_intra:
+            _k = (b["code"], str(b["date"]))
+            if _k not in first_bar_of_day:
+                first_bar_of_day[_k] = b
+
         # ── 引擎状态 ─────────────────────────────────
         cash = params["initial_capital"]
         position_ratio = params["position_ratio"]
