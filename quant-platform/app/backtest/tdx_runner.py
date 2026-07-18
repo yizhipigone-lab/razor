@@ -415,7 +415,7 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
 
         # 2026-07-18 性能(P1-3): 预建 (code,date) 索引, 买入/估值 O(1) 查表,
         # 替代原先每个买入/每持仓每天对 bars_intra 的线性扫描(O(天数×持仓×K线数))。
-        # bars 已按 datetime 升序: 首次出现即当天第一根 bar, 最后赋值即当天最后收盘价。
+        # bars 已按 datetime 升序: 首次出现即当天第一根 bar。
         first_bar_of_day = {}
         for b in bars_intra:
             _k = (b["code"], str(b["date"]))
@@ -712,7 +712,7 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
                                total_buy_signals, start, end, indices)
         result["summary"]["exit_reasons"] = dict(sell_reasons)
         result["summary"]["data_source"] = f"hybrid({period}:{len(stocks_with_intraday)}/dl:{len(no_intraday_codes)})"
-        result["intraday_window_fallback_count"] = fallback_count
+        result["summary"]["intraday_window_fallback_count"] = fallback_count
 
         if progress_cb:
             progress_cb(3, 4, f"{period}回测完成")
