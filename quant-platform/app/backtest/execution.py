@@ -9,42 +9,28 @@
 from datetime import date
 from typing import Tuple
 
-
-# 涨幅表
-LIMIT_UP_MAP = {
-    '300': 0.20, '301': 0.20, '688': 0.20,  # 创业/科创 ±20%
-    '8': 0.30, '4': 0.30,                    # 北证 ±30%
-}
-DEFAULT_LIMIT_UP = 0.10  # 主板 ±10%
+from app.utils.limit_up import get_limit_up_pct as _limit_up_get_limit_up_pct, is_limit_up
 
 
 def get_limit_up_pct(code: str) -> float:
-    """根据股票代码前缀返回涨停幅度"""
-    if code.startswith(('300', '301', '688')):
-        return LIMIT_UP_MAP['300']
-    if code.startswith(('8', '4')):
-        return LIMIT_UP_MAP['8']
-    return DEFAULT_LIMIT_UP
+    """根据股票代码前缀返回涨停幅度（兼容旧导入）。"""
+    return _limit_up_get_limit_up_pct(code)
 
 
-def can_buy(code: str, prev_close: float, today_high: float) -> Tuple[bool, str]:
+def can_buy(code: str, prev_close: float, today_high: float, strict: bool = True) -> Tuple[bool, str]:
     """涨停封板不能买入
 
     Args:
         code: 股票代码
         prev_close: 昨日收盘价
-        today_high: 今日最高价
+        today_high: 今日最高价或当前拟成交价
+        strict: True=缺数据按涨停处理（fail-closed）;False=兼容旧三参调用
 
     Returns:
-        (ok, reason): ok=True 可买,ok=False 不可买及原因
+        (ok, reason): ok=True 可买, ok=False 不可买及原因
     """
-    if prev_close <= 0 or today_high <= 0:
-        return True, "OK"
-    change = (today_high - prev_close) / prev_close
-    limit = get_limit_up_pct(code)
-    if change >= limit * 0.995:  # 0.5% 容差(向上,接近 limit 视为涨停)
-        return False, f"涨停封板({change*100:.1f}%)"
-    return True, "OK"
+    is_limit, reason = is_limit_up(code, prev_close, today_high, strict=strict)
+    return (not is_limit, reason)
 
 
 def can_sell_today(entry_date: date, today: date) -> bool:

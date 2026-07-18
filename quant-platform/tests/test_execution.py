@@ -32,11 +32,27 @@ class TestCanBuy:
     def test_limit_up_blocked(self):
         ok, msg = can_buy("300750", 100.0, 120.0)
         assert not ok
-        assert "涨停" in msg
+        assert "涨停" in msg or "limit_up" in msg
 
-    def test_prev_close_zero_skips(self):
-        ok, _ = can_buy("000001", 0, 110.0)
+    def test_strict_prev_close_zero_rejects(self):
+        ok, msg = can_buy("000001", 0, 110.0, strict=True)
+        assert not ok
+        assert msg == "missing_price_data"
+
+    def test_non_strict_prev_close_zero_ok(self):
+        ok, msg = can_buy("000001", 0, 110.0, strict=False)
         assert ok
+        assert msg == "missing_price_data_ok"
+
+    def test_strict_nan_rejects(self):
+        ok, msg = can_buy("000001", float("nan"), 110.0, strict=True)
+        assert not ok
+        assert msg == "missing_price_data"
+
+    def test_strict_none_rejects(self):
+        ok, msg = can_buy("000001", None, 110.0, strict=True)
+        assert not ok
+        assert msg == "missing_price_data"
 
 
 class TestCanSellToday:
