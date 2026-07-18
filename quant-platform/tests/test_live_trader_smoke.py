@@ -253,6 +253,46 @@ def test_risk_gate_5c_missing_quote_failsafe(tmp_config, store):
     assert "fail-safe" in reason or "缺行情" in reason
 
 
+def test_risk_gate_5c_normal_buy_passes(tmp_config, store):
+    """闸门5c:开关开启(默认)+ 非涨停 quote → 放行且 5c 条目 passed=True"""
+    from app.live_trader.risk_gate import RiskGate
+    from app.live_trader.kill_switch import KillSwitch
+    from app.live_trader.schemas import OrderIntent
+
+    ks = KillSwitch(tmp_config, store)
+    rg = RiskGate(tmp_config, store, ks, qmt_wrapper=MagicMock(connected=True))
+
+    intent = OrderIntent(code="600000.SH", direction="buy", volume=100, price=10.2)
+    passed, gates, reason = rg.check(
+        intent,
+        asset={"cash": 500000, "total_asset": 500000},
+        quote={"lastClose": 10.0, "lastPrice": 10.2},
+    )
+    assert passed is True
+    gate_5c = [g for g in gates if g.get("gate") == "5c"]
+    assert gate_5c, "应有 5c 闸门记录"
+    assert gate_5c[0]["passed"] is True
+
+
+def test_risk_gate_5c_preclose_fallback_blocks(tmp_config, store):
+    """闸门5c:quote 缺 lastClose 但有 preClose → 走 preClose 分支判涨停并拒买"""
+    from app.live_trader.risk_gate import RiskGate
+    from app.live_trader.kill_switch import KillSwitch
+    from app.live_trader.schemas import OrderIntent
+
+    ks = KillSwitch(tmp_config, store)
+    rg = RiskGate(tmp_config, store, ks, qmt_wrapper=MagicMock(connected=True))
+
+    intent = OrderIntent(code="600000.SH", direction="buy", volume=100, price=11.0)
+    passed, gates, reason = rg.check(
+        intent,
+        asset={"cash": 500000, "total_asset": 500000},
+        quote={"preClose": 10.0, "lastPrice": 11.0},
+    )
+    assert passed is False
+    assert "涨停" in reason
+
+
 def test_risk_gate_c1_pending_buy(tmp_config, store):
     """C1:在途预扣防超买"""
     from app.live_trader.risk_gate import RiskGate
