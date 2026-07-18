@@ -50,7 +50,11 @@ log = get_logger("TdxBT")
 @lru_cache(maxsize=128)
 def _load_daily_parquet(code: str, parquet_dir: Optional[str] = None):
     """按 code 缓存读取 parquet 日线文件。返回 DataFrame 供只读使用。"""
-    path = f"{parquet_dir or 'data/parquet/daily'}/{code}.parquet"
+    if parquet_dir is None:
+        # 默认路径基于 __file__ 解析为绝对路径, 与 :371/:828 惯例一致,
+        # 避免进程从非 quant-platform CWD 启动时读不到数据(静默 fail-closed)。
+        parquet_dir = str(Path(__file__).parent.parent.parent / "data" / "parquet" / "daily")
+    path = f"{parquet_dir}/{code}.parquet"
     try:
         return pd.read_parquet(path)
     except Exception:
