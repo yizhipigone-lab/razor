@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from datetime import date, timedelta
 from collections import defaultdict, Counter
+from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -41,8 +42,41 @@ def _is_signal_value(value_str) -> bool:
 from core.logger import get_logger
 from app.backtest.simple_runner import FastEngine, Position, Trade, load_index_data
 from app.backtest.execution import can_buy, can_sell_today, calc_buy_cost, calc_sell_revenue, realized_pnl
+from app.utils.limit_up import _is_valid_price
 
 log = get_logger("TdxBT")
+
+
+@lru_cache(maxsize=128)
+def _load_daily_parquet(code: str, parquet_dir: Optional[str] = None):
+    """按 code 缓存读取 parquet 日线文件。返回 DataFrame 供只读使用。"""
+    path = f"{parquet_dir or 'data/parquet/daily'}/{code}.parquet"
+    try:
+        return pd.read_parquet(path)
+    except Exception:
+        return None
+
+
+def get_prev_close_from_parquet(
+    code: str, trade_date: str, parquet_dir: Optional[str] = None
+) -> Optional[float]:
+    """从 code 的 parquet 日线文件中，读取 trade_date 前一交易日的 close。"""
+    df = _load_daily_parquet(code, parquet_dir=parquet_dir)
+    if df is None or df.empty:
+        return None
+    if "date" in df.columns:
+        df = df.sort_values("date")
+        prev_rows = df[df["date"] < trade_date]
+        if prev_rows.empty:
+            return None
+        return float(prev_rows.iloc[-1]["close"])
+    if isinstance(df.index, pd.DatetimeIndex):
+        trade_dt = pd.to_datetime(trade_date)
+        prev_rows = df[df.index < trade_dt]
+        if prev_rows.empty:
+            return None
+        return float(prev_rows.iloc[-1]["close"])
+    return None
 
 def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
                      stop_event=None, stock_names: Optional[dict] = None) -> dict:
@@ -428,17 +462,20 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
                     if px <= 0:
                         continue
                     # L29 修复: 涨停买入过滤 - 委托给 execution.can_buy
-                    # 优先从 prices_by_date 取前收(昨日 close), 取不到 prev_close=0。
-                    # 过渡兼容: strict=False 保持旧 fail-open 行为(prev_close=0 时放过),
-                    # 避免回测第一天(prev_day=None)所有买入被静默跳过;
-                    # Task 4 将重写本调用点为 parquet 兜底 + strict=True(fail-closed)。
-                    prev_close = 0
+                    prev_close = None
                     if prev_day is not None:
                         prev_snap = prices_by_date.get(str(prev_day), {})
                         prev_bar = prev_snap.get(code, {})
                         if isinstance(prev_bar, dict):
-                            prev_close = prev_bar.get("close", 0) or 0
-                    can_buy_ok, _ = can_buy(code, prev_close, px, strict=False)
+                            prev_close = prev_bar.get("close")
+                    if not _is_valid_price(prev_close):
+                        prev_close = get_prev_close_from_parquet(code, d_str)
+                    if not _is_valid_price(prev_close):
+                        log.warning(
+                            "涨停判断缺 prev_close，跳过买入: code=%s date=%s", code, d_str
+                        )
+                        continue
+                    can_buy_ok, _ = can_buy(code, prev_close, px, strict=True)
                     if not can_buy_ok:
                         continue
                     sh = int(dyn_size / px / 100) * 100
@@ -809,6 +846,13 @@ def _run_daily_backtest(sig_result: dict, params: dict, start: date, end: date,
                 _prev_bar = _prev_snap.get(code, {})
                 if isinstance(_prev_bar, dict):
                     prev_close_for_buy = _prev_bar.get("close")
+            if not _is_valid_price(prev_close_for_buy):
+                prev_close_for_buy = get_prev_close_from_parquet(code, d_str)
+            if not _is_valid_price(prev_close_for_buy):
+                log.warning(
+                    "日线回测涨停判断缺 prev_close，跳过买入: code=%s date=%s", code, d_str
+                )
+                continue
             if eng.buy(d_obj, code, px, prev_close=prev_close_for_buy):
                 pass
 
