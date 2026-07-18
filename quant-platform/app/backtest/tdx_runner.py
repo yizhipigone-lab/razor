@@ -257,6 +257,37 @@ def _check_stops_daily(pos, close_p, high_p, hold_days, params, low_p=None, open
     return (signal.reason, signal.sell_price, None) if signal.sell_ratio >= 1.0 else None
 
 
+def _resolve_intraday_buy_price(
+    code: str,
+    d_str: str,
+    stocks_with_intraday: set,
+    first_bar_of_day: dict,
+    prices_by_date: dict,
+):
+    """解析日内回测买入价。
+
+    Returns:
+        (price, source, fallback_increment)
+        source: "intraday" / "daily_fallback" / "daily" / None
+    """
+    if code in stocks_with_intraday:
+        bar_for_code = first_bar_of_day.get((code, d_str))
+        if bar_for_code is not None:
+            return bar_for_code["close"], "intraday", 0
+        px = prices_by_date.get(d_str, {}).get(code, {}).get("close")
+        if _is_valid_price(px):
+            return px, "daily_fallback", 1
+        return None, None, 0
+
+    day_price = prices_by_date.get(d_str, {}).get(code)
+    if day_price is None:
+        return None, None, 0
+    px = day_price["close"]
+    if _is_valid_price(px):
+        return px, "daily", 0
+    return None, None, 0
+
+
 def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: date,
                             progress_cb, stop_event, stock_names: dict,
                             stocks_with_intraday: set, period: str = "5m") -> dict | None:
@@ -392,6 +423,8 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
         pending_buys = defaultdict(list)
         sell_reasons = Counter()
         total_buy_signals = 0
+        skipped_count = 0
+        fallback_count = 0
         prev_day = None
 
         for code in sorted(sig_by_code.keys()):
@@ -444,23 +477,22 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
                     if cash < dyn_size * 0.5:
                         break
 
-                    if code in stocks_with_intraday:
-                        # 有5m数据：用当天第一根bar的close买入
-                        bar_for_code = next(
-                            (b for b in bars_intra[bar_idx:] if b["code"] == code and str(b["date"]) == d_str), None
-                        )
-                        if bar_for_code is None:
-                            continue
-                        px = bar_for_code["close"]
-                    else:
-                        # 无5m数据：用日线收盘价买入
-                        day_price = prices_by_date.get(d_str, {}).get(code)
-                        if day_price is None:
-                            continue
-                        px = day_price["close"]
-
-                    if px <= 0:
+                    px, source, fb_inc = _resolve_intraday_buy_price(
+                        code, d_str, stocks_with_intraday, first_bar_of_day, prices_by_date
+                    )
+                    if px is None:
+                        skipped_count += 1
+                        if source is None:
+                            log.warning(
+                                "无有效买入价，跳过买入: code=%s date=%s", code, d_str
+                            )
                         continue
+                    fallback_count += fb_inc
+                    if source == "daily_fallback":
+                        log.info(
+                            "5m bar 缺失，降级日线 close 买入: code=%s date=%s px=%s",
+                            code, d_str, px,
+                        )
                     # L29 修复: 涨停买入过滤 - 委托给 execution.can_buy
                     prev_close = None
                     if prev_day is not None:
@@ -671,6 +703,7 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
                                total_buy_signals, start, end, indices)
         result["summary"]["exit_reasons"] = dict(sell_reasons)
         result["summary"]["data_source"] = f"hybrid({period}:{len(stocks_with_intraday)}/dl:{len(no_intraday_codes)})"
+        result["intraday_window_fallback_count"] = fallback_count
 
         if progress_cb:
             progress_cb(3, 4, f"{period}回测完成")
