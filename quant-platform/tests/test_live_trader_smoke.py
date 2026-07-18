@@ -199,12 +199,13 @@ def test_risk_gate_5c_limit_up_blocks(tmp_config, store):
     rg = RiskGate(tmp_config, store, ks, qmt_wrapper=MagicMock(connected=True))
 
     intent = OrderIntent(code="600000.SH", direction="buy", volume=100, price=11.0)
-    # total_asset 必须给,否则闸门5a 先拒(日亏-100%),到不了 5c
-    passed, gates, reason = rg.check(
-        intent,
-        asset={"cash": 500000, "total_asset": 500000},
-        quote={"lastClose": 10.0, "lastPrice": 11.0},
-    )
+    # 与 5a 实现解耦:patch 基准使日亏=0,保证 5c 真实执行(HEAD/工作区均确定)
+    with patch.object(RiskGate, "_get_open_asset", return_value=500000):
+        passed, gates, reason = rg.check(
+            intent,
+            asset={"cash": 500000, "total_asset": 500000},
+            quote={"lastClose": 10.0, "lastPrice": 11.0},
+        )
     assert passed is False
     assert "涨停" in reason
     assert not rg._check_consecutive_rejection()
@@ -222,11 +223,12 @@ def test_risk_gate_5c_limit_up_disabled(tmp_config, store):
     rg = RiskGate(cfg, store, ks, qmt_wrapper=MagicMock(connected=True))
 
     intent = OrderIntent(code="600000.SH", direction="buy", volume=100, price=11.0)
-    passed, gates, reason = rg.check(
-        intent,
-        asset={"cash": 500000, "total_asset": 500000},
-        quote={"lastClose": 10.0, "lastPrice": 11.0},
-    )
+    with patch.object(RiskGate, "_get_open_asset", return_value=500000):
+        passed, gates, reason = rg.check(
+            intent,
+            asset={"cash": 500000, "total_asset": 500000},
+            quote={"lastClose": 10.0, "lastPrice": 11.0},
+        )
     assert passed is True
 
 
@@ -242,8 +244,10 @@ def test_risk_gate_5c_missing_quote_failsafe(tmp_config, store):
     intent = OrderIntent(code="600000.SH", direction="buy", volume=100, price=11.0)
     # 降级源 patch 成抛异常,保证 fail-safe 路径确定性(不依赖本机网络/QMT/Parquet)
     # 注:quote=None 而非 lastPrice=None(后者会让闸门3 的 quote.get("lastPrice",0) 拿到 None 崩溃,存量问题)
-    with patch("app.data_manager.quote_source.get_realtime_quotes",
-               side_effect=RuntimeError("no network in test")):
+    # 同时 patch 5a 基准使日亏=0:确保拒买来自 5c 的 fail-safe,而非 5a(HEAD 上 5a 会先拒)
+    with patch.object(RiskGate, "_get_open_asset", return_value=500000), \
+            patch("app.data_manager.quote_source.get_realtime_quotes",
+                  side_effect=RuntimeError("no network in test")):
         passed, gates, reason = rg.check(
             intent,
             asset={"cash": 500000, "total_asset": 500000},
@@ -251,6 +255,9 @@ def test_risk_gate_5c_missing_quote_failsafe(tmp_config, store):
         )
     assert passed is False
     assert "fail-safe" in reason or "缺行情" in reason
+    # 确认是 5c 拒的(而非 5a):5c 条目存在且未通过
+    gate_5c = [g for g in gates if g.get("gate") == "5c"]
+    assert gate_5c and gate_5c[0]["passed"] is False
 
 
 def test_risk_gate_5c_normal_buy_passes(tmp_config, store):
@@ -263,11 +270,12 @@ def test_risk_gate_5c_normal_buy_passes(tmp_config, store):
     rg = RiskGate(tmp_config, store, ks, qmt_wrapper=MagicMock(connected=True))
 
     intent = OrderIntent(code="600000.SH", direction="buy", volume=100, price=10.2)
-    passed, gates, reason = rg.check(
-        intent,
-        asset={"cash": 500000, "total_asset": 500000},
-        quote={"lastClose": 10.0, "lastPrice": 10.2},
-    )
+    with patch.object(RiskGate, "_get_open_asset", return_value=500000):
+        passed, gates, reason = rg.check(
+            intent,
+            asset={"cash": 500000, "total_asset": 500000},
+            quote={"lastClose": 10.0, "lastPrice": 10.2},
+        )
     assert passed is True
     gate_5c = [g for g in gates if g.get("gate") == "5c"]
     assert gate_5c, "应有 5c 闸门记录"
@@ -284,11 +292,12 @@ def test_risk_gate_5c_preclose_fallback_blocks(tmp_config, store):
     rg = RiskGate(tmp_config, store, ks, qmt_wrapper=MagicMock(connected=True))
 
     intent = OrderIntent(code="600000.SH", direction="buy", volume=100, price=11.0)
-    passed, gates, reason = rg.check(
-        intent,
-        asset={"cash": 500000, "total_asset": 500000},
-        quote={"preClose": 10.0, "lastPrice": 11.0},
-    )
+    with patch.object(RiskGate, "_get_open_asset", return_value=500000):
+        passed, gates, reason = rg.check(
+            intent,
+            asset={"cash": 500000, "total_asset": 500000},
+            quote={"preClose": 10.0, "lastPrice": 11.0},
+        )
     assert passed is False
     assert "涨停" in reason
 
