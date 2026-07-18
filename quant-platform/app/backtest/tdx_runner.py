@@ -428,14 +428,17 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
                     if px <= 0:
                         continue
                     # L29 修复: 涨停买入过滤 - 委托给 execution.can_buy
-                    # 优先从 prices_by_date 取前收(昨日 close), 取不到 fallback 0(放过)
+                    # 优先从 prices_by_date 取前收(昨日 close), 取不到 prev_close=0。
+                    # 过渡兼容: strict=False 保持旧 fail-open 行为(prev_close=0 时放过),
+                    # 避免回测第一天(prev_day=None)所有买入被静默跳过;
+                    # Task 4 将重写本调用点为 parquet 兜底 + strict=True(fail-closed)。
                     prev_close = 0
                     if prev_day is not None:
                         prev_snap = prices_by_date.get(str(prev_day), {})
                         prev_bar = prev_snap.get(code, {})
                         if isinstance(prev_bar, dict):
                             prev_close = prev_bar.get("close", 0) or 0
-                    can_buy_ok, _ = can_buy(code, prev_close, px)
+                    can_buy_ok, _ = can_buy(code, prev_close, px, strict=False)
                     if not can_buy_ok:
                         continue
                     sh = int(dyn_size / px / 100) * 100
