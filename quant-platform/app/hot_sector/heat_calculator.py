@@ -76,15 +76,13 @@ class HeatCalculator:
             code = row['stock_code']
             bar = bars_dict.get(code)
             if bar is None:
-                # 尝试加后缀匹配
-                for suffix in ('.SH', '.SZ', '.BJ'):
-                    if code.endswith(suffix):
-                        break
-                else:
-                    for prefix, suffix in [('6', '.SH'), ('0', '.SZ'), ('3', '.SZ'), ('4', '.BJ'), ('8', '.BJ')]:
-                        if code.startswith(prefix):
-                            bar = bars_dict.get(f"{code}{suffix}")
-                            break
+                # M-1 修复(审计):原 for-else 在 code 已带后缀时 break 但 bar 未赋值 → 漏算成分股涨幅。
+                # 统一按裸码 + 各后缀依次尝试
+                bare = code.split('.')[0]
+                bar = (bars_dict.get(bare)
+                       or bars_dict.get(f"{bare}.SH")
+                       or bars_dict.get(f"{bare}.SZ")
+                       or bars_dict.get(f"{bare}.BJ"))
             if bar:
                 chg = bar['change_pct']
                 changes.append(chg)

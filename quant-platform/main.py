@@ -100,7 +100,13 @@ register_limiter(app)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    # C2 修复(2026-07-19 审计):禁用 "*" + credentials 组合(等于任意源+凭据)。
+    # 只本机访问,白名单 localhost 各端口。
+    allow_origins=[
+        "http://localhost:8888", "http://127.0.0.1:8888",
+        "http://localhost:5173", "http://127.0.0.1:5173",
+        "http://localhost:8001", "http://127.0.0.1:8001",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -206,4 +212,4 @@ app.include_router(settings_extra_router)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8888)
+    uvicorn.run("main:app", host="127.0.0.1", port=8888)  # C3 修复(审计):只本机访问,避免对外暴露写端点

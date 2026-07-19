@@ -7,6 +7,12 @@ from server.market.broadcaster import MarketBroadcaster
 market_broadcaster = MarketBroadcaster()
 
 async def websocket_endpoint(ws: WebSocket):
+    # H2 修复(2026-07-19 审计):WS 鉴权,只允许本机连接(服务已绑 127.0.0.1,纵深防御
+    # 防远程客户端接收实盘持仓/盈亏/回测金额等广播)
+    client_host = ws.client.host if ws.client else None
+    if client_host not in ("127.0.0.1", "::1", "localhost"):
+        await ws.close(code=4403)
+        return
     await manager.connect(ws)
     try:
         while True:
