@@ -14,9 +14,9 @@ logger = get_logger("live_trader.main")
 # ===== 全局组件(生命周期管理)=====
 # _state 抽离到 _state.py(阶段0a, 2026-07-19):避免后续 routers/ 拆分时 main↔routers 循环 import
 from ._state import state as _state
-# 鉴权工具抽到 auth.py(阶段0b, 2026-07-19):纯函数,routers 拆分时共享依赖,不绕回 main
-# _is_local 不 re-export:main 内部零使用(_require_admin 在 auth 内部闭环调 auth._is_local)
-from .auth import _verify_token, _require_admin
+# 鉴权工具(阶段0b 抽到 auth.py):只 re-export _verify_token(test_buy_signal_bridge 用);
+# _require_admin 外部零引用(grep 确认) + main 内部零用,不 re-export
+from .auth import _verify_token
 # system 路由器抽到 routers/system.py(阶段1第1步, 2026-07-19)
 from .routers.system import router as system_router
 # market 路由器抽到 routers/market.py(阶段1第2步, 2026-07-19)
