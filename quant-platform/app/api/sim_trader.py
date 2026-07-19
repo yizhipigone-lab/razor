@@ -570,9 +570,13 @@ async def sim_trader_logs(log_date: str = "", limit: int = 200):
     """读取指定日期的交易日志"""
     if not log_date:
         log_date = str(date.today())
-    log_dir = ROOT_DIR / "output" / "sim_trader" / "logs"
-    log_file = log_dir / f"{log_date}.jsonl"
-    if not log_file.exists():
+    # H4 修复(2026-07-19 审计):log_date 正则 + is_relative_to 双防路径穿越
+    import re
+    if not re.match(r'^\d{4}-\d{2}-\d{2}$', log_date):
+        return {'status': 'error', 'message': 'log_date 须为 YYYY-MM-DD'}
+    log_dir = (ROOT_DIR / "output" / "sim_trader" / "logs").resolve()
+    log_file = (log_dir / f"{log_date}.jsonl").resolve()
+    if not log_file.is_relative_to(log_dir) or not log_file.exists():
         return {'status': 'ok', 'entries': []}
     entries = []
     with open(log_file, 'r', encoding='utf-8') as f:
@@ -671,6 +675,8 @@ async def sim_trader_set_config(data: dict):
 @router.post("/api/quotes/live")
 async def get_live_quotes(body: dict):
     """批量获取实时行情（自选股+持仓轮询用）"""
+    import math
+
     codes = body.get("codes", [])
     if not codes:
         return {"status": "ok", "data": {}}
@@ -685,15 +691,19 @@ async def get_live_quotes(body: dict):
         for _, row in df.iterrows():
             code = str(row.get("code", ""))
             price = float(row.get("price", 0))
-            if not code or not (price > 0):  # NaN/<=0 跳过(委托 quote_source 后缺价行 price=NaN)
+            if not code or math.isnan(price) or not (price > 0):
                 continue
             last_close = float(row.get("last_close", 0))
+            if math.isnan(last_close):
+                last_close = price  # 无昨收兜底用现价,chang_pct=0
+            high = float(row.get("high", price))
+            low = float(row.get("low", price))
             result[code] = {
                 "price": round(price, 2),
                 "last_close": round(last_close, 2),
                 "change_pct": round((price - last_close) / last_close * 100, 2) if last_close > 0 else 0,
-                "high": round(float(row.get("high", price)), 2),
-                "low": round(float(row.get("low", price)), 2),
+                "high": round(high if not math.isnan(high) else price, 2),
+                "low": round(low if not math.isnan(low) else price, 2),
             }
         return {"status": "ok", "data": result}
     except Exception as e:

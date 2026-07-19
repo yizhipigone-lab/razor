@@ -80,11 +80,12 @@ class SignalPicker:
             return [], fname, meta
 
         # 2. 配价:进程内 QMT 取 lastPrice(注意是 lastPrice 非 close)
-        #    matched 可能带后缀(600000.SH)或裸码,统一转 QMT 格式去重后批量取价
+        #    matched 可能带后缀或裸码;统一去后缀后用 format_code 重加(禁止信任传入后缀,
+        #    防 TDX 返回 000001.SH(上证指数)被当成平安银行(.SZ) 或反之)
         codes_fmt_unique: List[str] = []
         for code in matched:
             bare = code.split(".")[0] if "." in code else code
-            fmt = format_code(bare) if "." not in code else code
+            fmt = format_code(bare)
             if fmt not in codes_fmt_unique:
                 codes_fmt_unique.append(fmt)
 
@@ -99,7 +100,7 @@ class SignalPicker:
         signals: List[SignalItem] = []
         for code in matched:
             bare = code.split(".")[0] if "." in code else code
-            code_fmt = format_code(bare) if "." not in code else code
+            code_fmt = format_code(bare)
             q = quotes.get(code_fmt) or {}
             try:
                 price = float(q.get("lastPrice", 0) or 0)

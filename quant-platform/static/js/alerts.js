@@ -42,7 +42,7 @@
       var qmtOk = !!d.qmt_connected;
       setBadge('alerts-qmt', qmtOk, qmtOk ? '已连接' : '未连接');
       setBadge('alerts-mode', true, d.mode || '—');
-      var ks = d.killswitch;
+      var ks = d.kill_switch;  // H2 修复(审计):后端字段是 kill_switch(带下划线),原 killswitch 永远 undefined
       var ksOk = !ks || !ks.activated;
       setBadge('alerts-ks', ksOk, ksOk ? '正常' : '激活');
       var card = document.getElementById('alerts-status-card');
@@ -149,10 +149,10 @@
         loadList(_currentLevel);
         loadStatus();
       } else {
-        alert(d.msg || '发送失败');
+        alert(d.msg || d.detail || '发送失败');
       }
     } catch (e) {
-      alert('发送异常');
+      alert('发送异常: ' + (e && e.message ? e.message : e));
     } finally {
       if (btn) {
         setTimeout(function () {

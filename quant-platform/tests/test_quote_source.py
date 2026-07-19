@@ -280,6 +280,26 @@ class TestAdapterTranslation:
         raw = TencentAdapter.parse_response(text, {})  # lookup 空 → 用裸 code
         assert "600000" in raw
 
+    # ── 代码→腾讯代码 映射(2026-07-16:修 000001.SZ 被当成上证指数)──
+    def test_tencent_respects_sz_suffix_for_000001(self):
+        # ★核心★ 000001.SZ=平安银行 → s_sz000001(深市股票),不得映射成 s_sh000001(上证指数)
+        assert TencentAdapter._tenc_code("000001.SZ") == "s_sz000001"
+
+    def test_tencent_respects_sh_suffix_for_index(self):
+        # 000001.SH=上证指数 → s_sh000001(沪市指数),后缀 .SH 时走沪市
+        assert TencentAdapter._tenc_code("000001.SH") == "s_sh000001"
+
+    def test_tencent_bare_000001_defaults_to_sz_stock(self):
+        # 裸码 000001 默认按深市股票(平安银行);指数查询走 .SH 后缀路径
+        assert TencentAdapter._tenc_code("000001") == "s_sz000001"
+
+    def test_tencent_bare_600000_goes_sh(self):
+        assert TencentAdapter._tenc_code("600000") == "s_sh600000"
+
+    def test_tencent_etf_keeps_sz(self):
+        assert TencentAdapter._tenc_code("159226.SZ") == "s_sz159226"
+        assert TencentAdapter._tenc_code("510300.SH") == "s_sh510300"
+
     def test_tdx_parse_quotes(self):
         # 复刻 engine.py:269-285 的 TdxHq.get_security_quotes 返回结构
         quotes = [{"code": "600000", "price": 10.5, "last_close": 10.2,

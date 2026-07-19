@@ -20,13 +20,15 @@ class RuntimeState:
     def __init__(self, initial_mode: str = "dry-run",
                  initial_buy: bool = True, initial_sell: bool = True,
                  initial_ratio: float = 0.05,
-                 initial_auto_buy: bool = False):
+                 initial_auto_buy: bool = False,
+                 initial_kill_switch: bool = True):
         self._lock = threading.Lock()
         self._mode = initial_mode
         self._buy_enabled = initial_buy
         self._sell_enabled = initial_sell
         self._buy_position_ratio = initial_ratio
         self._auto_buy_enabled = initial_auto_buy  # 实盘自给自足选股(默认关,真钱安全)
+        self._kill_switch_enabled = initial_kill_switch  # 急停主开关(默认开,安全)
 
     # ===== mode =====
     @property
@@ -59,6 +61,12 @@ class RuntimeState:
         with self._lock:
             return self._auto_buy_enabled
 
+    @property
+    def kill_switch_enabled(self) -> bool:
+        """急停主开关(KillSwitch.is_enabled 读);False=整个急停机制禁用"""
+        with self._lock:
+            return self._kill_switch_enabled
+
     # ===== 单只占本金比例(实盘 tab 热配;不进 _persist,由专用端点写 settings 顶层) =====
     @property
     def buy_position_ratio(self) -> float:
@@ -83,6 +91,7 @@ class RuntimeState:
                 "buy_enabled": self._buy_enabled,
                 "sell_enabled": self._sell_enabled,
                 "auto_buy_enabled": self._auto_buy_enabled,
+                "kill_switch_enabled": self._kill_switch_enabled,
             }
 
     # ===== 变更(持久化 + 审计由调用方记) =====
@@ -101,16 +110,19 @@ class RuntimeState:
 
     def set_switches(self, buy_enabled: Optional[bool] = None,
                      sell_enabled: Optional[bool] = None,
-                     auto_buy_enabled: Optional[bool] = None) -> dict:
-        """切换买入/卖出/auto_buy 开关。返回旧状态(供 audit)。
+                     auto_buy_enabled: Optional[bool] = None,
+                     kill_switch_enabled: Optional[bool] = None) -> dict:
+        """切换买入/卖出/auto_buy/kill_switch 开关。返回旧状态(供 audit)。
 
         auto_buy_enabled 控制实盘自给自足尾盘选股;真钱系统可在此一秒热关。
+        kill_switch_enabled 控制急停机制总开关;False=禁用整个急停(activate 空操作、is_active 恒 False)。
         """
         with self._lock:
             old = {
                 "buy_enabled": self._buy_enabled,
                 "sell_enabled": self._sell_enabled,
                 "auto_buy_enabled": self._auto_buy_enabled,
+                "kill_switch_enabled": self._kill_switch_enabled,
             }
             if buy_enabled is not None:
                 self._buy_enabled = buy_enabled
@@ -118,8 +130,11 @@ class RuntimeState:
                 self._sell_enabled = sell_enabled
             if auto_buy_enabled is not None:
                 self._auto_buy_enabled = auto_buy_enabled
+            if kill_switch_enabled is not None:
+                self._kill_switch_enabled = kill_switch_enabled
         self._persist()
-        logger.info(f"开关切换: {old} -> buy={buy_enabled} sell={sell_enabled} auto_buy={auto_buy_enabled}")
+        logger.info(f"开关切换: {old} -> buy={buy_enabled} sell={sell_enabled} "
+                    f"auto_buy={auto_buy_enabled} kill_switch={kill_switch_enabled}")
         return old
 
     def _persist(self) -> None:
@@ -131,6 +146,7 @@ class RuntimeState:
                     "buy_enabled": self._buy_enabled,
                     "sell_enabled": self._sell_enabled,
                     "auto_buy_enabled": self._auto_buy_enabled,
+                    "kill_switch_enabled": self._kill_switch_enabled,
                 }
             settings.set("live_trader", "runtime", state, save=True)
         except Exception as e:
@@ -155,6 +171,10 @@ def load_runtime_state(config) -> RuntimeState:
             initial_auto_buy=rt.get(
                 "auto_buy_enabled",
                 getattr(config, "auto_buy_enabled", False),
+            ),
+            initial_kill_switch=rt.get(
+                "kill_switch_enabled",
+                getattr(config, "kill_switch_enabled", True),
             ),
         )
     except Exception as e:

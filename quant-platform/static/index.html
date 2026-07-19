@@ -1545,7 +1545,7 @@
             <div class="lt-chart__title">
               <svg class="nav-ico"><use href="#i-trend"/></svg>
               <span class="fs-13">净值曲线</span>
-              <span class="muted fs-xs">当日 5min 快照 · 总资产</span>
+              <span class="muted fs-xs">日收盘净值 · 总资产</span>
             </div>
             <div class="lt-chart__range" id="lt-equity-range">
               <span class="chip active" data-days="1" onclick="loadLiveEquity(1)">1日</span>
@@ -1564,12 +1564,13 @@
             <span class="muted fs-xs">汇总浮盈 <b id="lt-positions-summary" class="tc-red">—</b></span>
           </div>
           <table class="data-table">
-            <thead><tr><th>代码</th><th>简称</th><th>股数</th><th>可卖</th><th>均价</th><th>现价</th><th>市值</th><th>浮盈</th><th>类型</th></tr></thead>
+            <thead><tr><th>代码</th><th>简称</th><th>股数</th><th>可卖</th><th>均价</th><th>现价</th><th>市值</th><th>浮盈</th><th>盈亏%</th><th>类型</th></tr></thead>
             <tbody id="live-positions-tbody"></tbody>
             <tfoot><tr>
               <td colspan="6" style="text-align:right;color:var(--text2);border-top:1px solid var(--border);">总计</td>
               <td id="lt-total-mv" style="font-weight:600;border-top:1px solid var(--border);">—</td>
               <td id="lt-total-fp" style="font-weight:600;border-top:1px solid var(--border);">—</td>
+              <td style="border-top:1px solid var(--border);"></td>
               <td style="border-top:1px solid var(--border);"></td>
             </tr></tfoot>
           </table>
@@ -1585,22 +1586,20 @@
           <div class="muted fs-xs mt-1">单次扫描卖出上限3只，超出部分下次扫描处理</div>
         </div>
 
-        <!-- ⑤ 委托 + 成交 -->
-        <div class="grid-2">
-          <div class="card">
-            <h4 class="mb-2">委托 <span class="muted fs-xs">(最近 50 笔)</span></h4>
-            <table class="data-table">
-              <thead><tr><th>时间</th><th>代码</th><th>方向</th><th>价格</th><th>股数</th><th>状态</th><th>模式</th></tr></thead>
-              <tbody id="live-orders-tbody"></tbody>
-            </table>
-          </div>
-          <div class="card">
-            <h4 class="mb-2">成交 <span class="muted fs-xs">(最近 50 笔)</span></h4>
-            <table class="data-table">
-              <thead><tr><th>时间</th><th>代码</th><th>方向</th><th>成交价</th><th>股数</th><th>模式</th></tr></thead>
-              <tbody id="live-deals-tbody"></tbody>
-            </table>
-          </div>
+        <!-- ⑤ 委托 + 成交（各自一行） -->
+        <div class="card">
+          <h4 class="mb-2">委托 <span class="muted fs-xs">(最近 50 笔)</span></h4>
+          <table class="data-table">
+            <thead><tr><th>时间</th><th>代码</th><th>方向</th><th>价格</th><th>股数</th><th>状态</th><th>模式</th><th>操作</th></tr></thead>
+            <tbody id="live-orders-tbody"></tbody>
+          </table>
+        </div>
+        <div class="card" style="margin-top:var(--gap)">
+          <h4 class="mb-2">成交 <span class="muted fs-xs">(最近 50 笔)</span></h4>
+          <table class="data-table">
+            <thead><tr><th>时间</th><th>持仓天数</th><th>代码</th><th>方向</th><th>成交价</th><th>股数</th><th>模式</th></tr></thead>
+            <tbody id="live-deals-tbody"></tbody>
+          </table>
         </div>
 
         <!-- ⑥ 折叠区（手风琴） -->
@@ -1610,7 +1609,7 @@
           <div class="lt-accordion__item">
             <div class="lt-accordion__header" onclick="toggleAccordion(this)">
               <span class="lt-accordion__head-left"><span class="lt-accordion__arrow">▸</span>执行开关 / 模式</span>
-              <span class="lt-accordion__summary">买入 <b id="lt-sum-buy">—</b> · 卖出 <b id="lt-sum-sell">—</b> · 自动选股 <b id="lt-sum-auto-buy">—</b> · <b id="lt-sum-mode">—</b></span>
+              <span class="lt-accordion__summary">买入 <b id="lt-sum-buy">—</b> · 卖出 <b id="lt-sum-sell">—</b> · 自动选股 <b id="lt-sum-auto-buy">—</b> · 急停 <b id="lt-sum-ks">—</b> · <b id="lt-sum-mode">—</b></span>
             </div>
             <div class="lt-accordion__body">
               <div class="fs-13 lt-lh-2">
@@ -1620,15 +1619,43 @@
                   <button class="btn btn-sm btn-ghost" onclick="toggleLiveSwitch('sell')">切换</button></div>
                 <div>自动选股: <b id="live-auto-buy-switch">—</b>
                   <button class="btn btn-sm btn-ghost" onclick="toggleLiveSwitch('auto')">切换</button></div>
+                <div>急停功能: <b id="live-ks-switch">—</b>
+                  <button class="btn btn-sm btn-ghost" onclick="toggleLiveSwitch('ks')">切换</button></div>
                 <div class="mt-4">自动选股时间:
                   <input type="time" id="lt-auto-buy-time" step="300" value="14:50">
                   <button class="btn btn-sm btn-ghost" onclick="saveAutoBuyTime()">保存</button>
                   <span id="lt-auto-buy-time-msg" class="muted fs-xs ml-6"></span>
                 </div>
                 <div class="muted fs-xs mt-1">关闭后仅接收外部推送信号。保存后当日已触发则次日生效。</div>
+                <div class="muted fs-xs mt-1">急停功能关闭后:急停永不自动激活、闸门7 不熔断、当前残留急停一并清除(真钱交易失去急停保险,慎用)。</div>
                 <div class="mt-6">当前模式: <b id="live-mode-display">—</b>
                   <button class="btn btn-sm btn-ghost" onclick="switchLiveMode()">切换模式</button></div>
                 <div id="live-switch-msg" class="muted fs-xs mt-1">切 live 开始真钱交易(live→dry-run 会先撤在途单等终态)</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lt-accordion__item">
+            <div class="lt-accordion__header" onclick="toggleAccordion(this)">
+              <span class="lt-accordion__head-left"><span class="lt-accordion__arrow">▸</span>手工下单</span>
+              <span class="lt-accordion__summary muted" id="lt-sum-manual-order">dry-run 禁用</span>
+            </div>
+            <div class="lt-accordion__body">
+              <div class="fs-13 lt-lh-2" id="manual-order-form">
+                <div class="flex-gap-c mb-2">
+                  <button class="btn btn-sm" id="mo-dir-buy" onclick="setManualOrderDir('buy')">买入</button>
+                  <button class="btn btn-sm btn-ghost" id="mo-dir-sell" onclick="setManualOrderDir('sell')">卖出</button>
+                </div>
+                <div>代码: <input type="text" id="mo-code" maxlength="6" placeholder="600000" style="width:90px" oninput="onManualOrderCodeChange()"></div>
+                <div>价格类型: <select id="mo-price-type" onchange="onManualOrderPriceTypeChange()"></select></div>
+                <div id="mo-price-row">价格: <input type="number" id="mo-price" step="0.01" min="0" style="width:90px" oninput="updateManualOrderEstimate()"></div>
+                <div>数量: <input type="number" id="mo-volume" step="100" min="0" style="width:90px" oninput="updateManualOrderEstimate()"></div>
+                <div class="fs-xs muted mt-1">可用资金: <b id="mo-cash">—</b> | 预估金额: <b id="mo-estimate">—</b></div>
+                <div class="mt-2">
+                  <button class="btn btn-sm" id="mo-submit" onclick="submitManualOrder()">确认下单</button>
+                  <span id="mo-msg" class="fs-xs ml-6"></span>
+                </div>
+                <div class="muted fs-xs mt-1">dry-run 模式手工下单禁用(防误下真单);市价单不保证成交价,按 QMT 实时价估算风控金额</div>
               </div>
             </div>
           </div>
@@ -1844,9 +1871,9 @@
   </div>
 </div>
 
-    <script src="/static/js/main.js?v=44"></script>
-    <script src="/static/js/live_trader.js?v=10"></script>
-    <script src="/static/js/alerts.js?v=1"></script>
+    <script src="/static/js/main.js?v=45"></script>
+    <script src="/static/js/live_trader.js?v=21"></script>
+    <script src="/static/js/alerts.js?v=2"></script>
 </body>
 </html>
 

@@ -289,17 +289,36 @@ class TencentAdapter:
                 continue
         return out
 
+    @staticmethod
+    def _tenc_code(code: str) -> str:
+        """代码 → 腾讯行情代码(s_ 前缀)。尊重入参后缀,不再用数字猜市场。
+
+        旧实现剥后缀后把 000 开头一律判沪市,导致 000001.SZ(平安银行)被查成
+        s_sh000001(上证指数 ~3955 点)。现规则:带后缀按后缀;裸码按数字
+        (6→沪,8/4→北,其余 0/3→深)。裸 000001 默认深市股票(平安银行),
+        指数查询走 .SH 后缀路径(engine.get_index_realtime 用 '000001.SH')。
+        """
+        c = str(code)
+        if "." in c:
+            bare, suffix = c.split(".", 1)
+            prefix = {"SH": "sh", "SZ": "sz", "BJ": "bj"}.get(suffix.upper(), "sz")
+        else:
+            bare = c
+            if c.startswith("6"):
+                prefix = "sh"
+            elif c.startswith(("8", "4")):
+                prefix = "bj"
+            else:  # 0/3 开头 → 深市(含 000001 平安银行)
+                prefix = "sz"
+        return f"s_{prefix}{bare}"
+
     def fetch(self, codes: list[str]) -> dict:
         import requests
 
         if not codes:
             return {}
         code_lookup = {str(c).split(".")[0]: str(c) for c in codes}
-        tenc_codes = []
-        for c in codes:
-            clean = str(c).split(".")[0]
-            prefix = "sh" if clean.startswith(("6", "000")) else "sz"
-            tenc_codes.append(f"s_{prefix}{clean}")
+        tenc_codes = [self._tenc_code(c) for c in codes]
         out: dict[str, dict] = {}
         for i in range(0, len(tenc_codes), 300):
             batch = tenc_codes[i:i + 300]

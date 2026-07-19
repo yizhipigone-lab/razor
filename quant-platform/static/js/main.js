@@ -5464,9 +5464,13 @@ async function deleteSimpleBtHistory(id) {
     if (data.status === 'ok') {
       addLog('ok', '已删除');
       loadSimpleBtHistory();
+    } else {
+      addLog('error', '删除失败: ' + (data.message || '未知错误'));
+      alert('删除失败: ' + (data.message || '未知错误'));
     }
   } catch (e) {
     addLog('error', '删除失败: ' + e.message);
+    alert('删除失败: ' + e.message);
   }
 }
 

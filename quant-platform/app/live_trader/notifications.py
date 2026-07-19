@@ -31,9 +31,10 @@ class NotificationStore:
     def _init_schema(self) -> None:
         """建表 + 索引(幂等)"""
         con = self._conn
+        con.execute("CREATE SEQUENCE IF NOT EXISTS notifications_seq START 1")
         con.execute("""
             CREATE TABLE IF NOT EXISTS live_notifications (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id BIGINT PRIMARY KEY DEFAULT nextval('notifications_seq'),
                 ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 level TEXT NOT NULL,
                 channel TEXT NOT NULL DEFAULT 'feishu',
@@ -76,14 +77,17 @@ class NotificationStore:
             content = content[:500]
         with self._lock:
             try:
-                result = self._conn.execute(
+                # DuckDB 没有 result.last_id (那是 SQLite/MySQL API)。
+                # 用 RETURNING id + fetchone() 取自增主键。
+                row = self._conn.execute(
                     """
                     INSERT INTO live_notifications (level, title, content, source, channel)
                     VALUES (?, ?, ?, ?, ?)
+                    RETURNING id
                     """,
                     [level, title, content, source, channel],
-                )
-                return result.last_id
+                ).fetchone()
+                return int(row[0]) if row else -1
             except Exception as e:
                 logger.warning(f"通知历史写入失败: {e}")
                 return -1
@@ -171,15 +175,22 @@ class NotificationStore:
         """
         with self._lock:
             try:
-                result = self._conn.execute(
-                    """
-                    DELETE FROM live_notifications
-                    WHERE ts < CURRENT_TIMESTAMP - INTERVAL '1 day' * ?
-                    """,
+                # H1 修复(审计):DuckDB DELETE 的 rowcount 恒返回 -1,
+                # 改为先 COUNT 再 DELETE(两次查询但跨版本安全,返回真实删除条数)
+                cnt_row = self._conn.execute(
+                    "SELECT COUNT(*) FROM live_notifications "
+                    "WHERE ts < CURRENT_TIMESTAMP - INTERVAL '1 day' * ?",
                     [retention_days],
-                )
-                deleted = result.rowcount
+                ).fetchone()
+                deleted = int(cnt_row[0]) if cnt_row else 0
                 if deleted:
+                    self._conn.execute(
+                        """
+                        DELETE FROM live_notifications
+                        WHERE ts < CURRENT_TIMESTAMP - INTERVAL '1 day' * ?
+                        """,
+                        [retention_days],
+                    )
                     logger.info(f"通知历史清理: 删除 {deleted} 条")
                 return deleted
             except Exception as e:

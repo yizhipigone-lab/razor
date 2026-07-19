@@ -109,7 +109,8 @@ async def lifespan(app: FastAPI):
     notifier = Notifier(config.wework_webhook, config.multi_channel_alert,
                         feishu_webhook=config.feishu_webhook, channel=config.notify_channel,
                         notif_store=notif_store)
-    kill_switch = KillSwitch(config, store, notifier)
+    kill_switch = KillSwitch(config, store, notifier,
+                             enabled_check=lambda: runtime_state.kill_switch_enabled)
     clearance_lock = ClearanceLock(config)
     pnl_engine = PnlEngine(store)
     audit = AuditLogger(store)
@@ -158,11 +159,19 @@ async def lifespan(app: FastAPI):
         # 清理 dry-run 残留(§18.3 严格保护:live 启动时校验无 dry-run 残留)
         _cleanup_dryrun_residue(store, config, audit, confirmed_qmt_codes=confirmed_qmt_codes)
         # 写入当日首条资产备份(为闸门5a日亏计算提供基准,§16.4)
+        # 2026-07-16:加守卫——非交易时段且今日已有快照时跳过,避免夜间反复重启
+        # 写入 00:17/01:00 等 stray 点污染净值曲线(盘中聚合已过滤,此处从源头少写)
         if qmt.connected:
             asset_data = qmt.query_asset()
             if asset_data:
-                store.backup_asset(asset_data)
-                logger.info(f"资产备份(闸门5a基准): total_asset={asset_data.get('total_asset', 0):.2f}")
+                _now_hhmm = datetime.now().strftime("%H:%M")
+                _trading_hours = "09:25" <= _now_hhmm <= "15:05"
+                _has_today = store.get_open_asset() is not None  # 今日是否已有快照
+                if _trading_hours or not _has_today:
+                    store.backup_asset(asset_data)
+                    logger.info(f"资产备份(闸门5a基准): total_asset={asset_data.get('total_asset', 0):.2f}")
+                else:
+                    logger.info("启动资产备份跳过(非交易时段且今日已有快照,避免 stray 点)")
         # 2026-07-04 修复:启动时若 QMT 连接+持仓接管成功,自动解除残留 kill_switch
         # 场景:周末 QMT 服务端维护期间,旧版本因 status=3 误激活 kill_switch,
         #       维护结束后新进程启动时,残留 .kill_switch 文件导致系统一直处于停机状态。
@@ -204,9 +213,10 @@ async def lifespan(app: FastAPI):
             logger.warning("冷启动 refresh 跳过:QMT 未连接,等首次行情回调")
     except Exception as e:
         logger.error(f"QMT 连接失败: {e}")
-        kill_switch.activate(reason=f"QMT连接失败: {e}", source="startup")
-        if notifier:
-            notifier.kill_switch_activated(f"QMT连接失败: {e}", "startup")
+        # 主开关禁用时 activate 空操作(返回 False),不发"已激活"通知,防幽灵告警
+        if kill_switch.activate(reason=f"QMT连接失败: {e}", source="startup"):
+            if notifier:
+                notifier.kill_switch_activated(f"QMT连接失败: {e}", "startup")
 
     _state.update({
         "store": store, "notifier": notifier, "notif_store": notif_store,
@@ -261,8 +271,11 @@ async def lifespan(app: FastAPI):
     logger.info("live_trader 已关闭")
 
 
-def _takeover_positions(store, qmt, config, audit) -> set:
+def _takeover_positions(store, qmt, config, audit, code: str = None) -> set:
     """持仓接管(§3.3.1):分类 managed=true/false
+
+    Args:
+        code: 可选,只同步单只(2026-07-18 手工下单 M4);None=全量接管(默认,旧行为)
 
     Returns:
         QMT 实际持仓代码集合(供后续残留检查复用,避免重复查询 xtquant 抖动)
@@ -274,6 +287,12 @@ def _takeover_positions(store, qmt, config, audit) -> set:
         logger.info("持仓接管:QMT 无持仓")
         return set()
 
+    # 单 code 过滤(格式归一后比对)
+    code_filter = None
+    if code:
+        from app.utils.xtquant_compat import format_code as _fmt
+        code_filter = _fmt(code.split(".")[0])
+
     qmt_codes = set()
     preserved = set(config.preserved_codes)
     for pos in qmt_positions:
@@ -282,10 +301,18 @@ def _takeover_positions(store, qmt, config, audit) -> set:
             continue
         from app.utils.xtquant_compat import format_code, strip_code_suffix
         code_fmt = format_code(code) if '.' not in code else code
+        if code_filter and code_fmt != code_filter:
+            continue
         qmt_codes.add(code_fmt)
         managed = code_fmt not in preserved and strip_code_suffix(code_fmt) not in [strip_code_suffix(p) for p in preserved]
 
         existing = store.get_position(code_fmt)
+        _avg = float(pos.get("avg_cost", 0) or 0)
+        _last = float(pos.get("last_price", 0) or 0)
+        _vol = float(pos.get("volume", 0) or 0)
+        _mv = _last * _vol
+        _fp = (_last - _avg) * _vol
+        _pr = (_fp / (_avg * _vol) * 100) if (_avg * _vol) > 0 else 0.0
         pos_data = {
             "code": code_fmt,
             "volume": pos.get("volume", 0),
@@ -294,12 +321,16 @@ def _takeover_positions(store, qmt, config, audit) -> set:
             "pending_buy_volume": (existing or {}).get("pending_buy_volume", 0),
             "avg_cost": pos.get("avg_cost", 0),
             "last_price": pos.get("last_price", 0),
-            "market_value": pos.get("market_value", 0),
-            "float_profit": pos.get("profit", 0),
-            "profit_rate": 0,
+            "market_value": _mv,
+            "float_profit": _fp,
+            "profit_rate": _pr,
             "peak_price": (existing or {}).get("peak_price", 0) or pos.get("last_price", 0),
             "sell_count": (existing or {}).get("sell_count", 0),
-            "entry_date": (existing or {}).get("entry_date"),
+            "entry_date": (existing or {}).get("entry_date") or (
+                # 2026-07-16: 新持仓 entry_date 缺失时优先从成交记录回填,
+                # 否则冷启动后 hold_days 永远=1(exit_monitor 当 None→today→len=0→max(1,0))
+                store._get_earliest_buy_date(code_fmt) or date.today()
+            ),
             "managed": managed,
             "strategy_name": (existing or {}).get("strategy_name", ""),
         }
@@ -405,14 +436,18 @@ def _cleanup_dryrun_residue(store, config, audit, confirmed_qmt_codes: set = Non
         kill_switch = _state.get("kill_switch")
         reason = (f"live启动发现{len(residue)}个疑似残留持仓(未自动删除): "
                   f"{', '.join(residue)}。QMT三次查询未覆盖,需人工核查")
-        if notifier:
+        # 主开关禁用时 activate 空操作(返回 False),不发"kill switch 已激活"通知,
+        # 但残留持仓这一真实状况仍经 logger.error 记录(仅修正文案,不谎报急停)。
+        activated = False
+        if kill_switch and not kill_switch.is_active():
+            activated = kill_switch.activate(reason=reason, source="live_residue_check")
+        if activated and notifier:
             try:
                 notifier.kill_switch_activated(reason, "live_residue_check")
             except Exception:
                 pass
-        if kill_switch and not kill_switch.is_active():
-            kill_switch.activate(reason=reason, source="live_residue_check")
-        logger.error(f"live 模式发现 {len(residue)} 个疑似残留持仓(未自动删除,已激活 kill switch,需人工核查): {residue}")
+        _ks_note = "已激活 kill switch" if activated else "kill switch 主开关已禁用未激活"
+        logger.error(f"live 模式发现 {len(residue)} 个疑似残留持仓(未自动删除,{_ks_note},需人工核查): {residue}")
     except Exception as e:
         logger.error(f"dry-run 残留清理失败: {e}")
 
@@ -470,6 +505,27 @@ async def asset():
 # 只缓存非空结果,空结果不缓存(防 xtquant 抖动时永久踩死,下次轮询自动重试)
 _instrument_name_cache: dict = {}
 
+
+def _resolve_instrument_name(code: str, qmt) -> str:
+    """补股票简称(xtdata.get_instrument_detail + 进程内缓存,只缓存非空)。
+    /live/positions 与 get_risk_status 共用,避免名称解析逻辑重复。"""
+    if not code:
+        return ""
+    name = _instrument_name_cache.get(code)
+    if name is not None:
+        return name
+    if not qmt:
+        return ""
+    try:
+        detail = qmt.get_instrument_detail(code) or {}
+        n = str(detail.get("InstrumentName") or "").strip()
+        if n:
+            _instrument_name_cache[code] = n
+        return n
+    except Exception:
+        return ""
+
+
 @app.get("/live/positions")
 async def positions():
     """持仓查询(含 managed 标记 + today_buy_volume + 简称)"""
@@ -493,21 +549,36 @@ async def positions():
     # 补股票简称(stocks 基础表不含 ETF,改用 xtdata.get_instrument_detail 全覆盖)
     qmt = _state.get("qmt")
     for p in positions:
-        code = p.get('code', '')
-        if not code:
-            p['name'] = ''
-            continue
-        name = _instrument_name_cache.get(code)
-        if name is None and qmt:
-            try:
-                detail = qmt.get_instrument_detail(code) or {}
-                name = str(detail.get('InstrumentName') or '').strip()
-                if name:
-                    _instrument_name_cache[code] = name
-            except Exception:
-                name = ''
-        p['name'] = name or ''
+        p['name'] = _resolve_instrument_name(p.get('code', ''), qmt)
     return positions
+
+
+@app.post("/live/positions/sync")
+async def sync_positions(request: Request, body: dict = None):
+    """持仓同步(2026-07-18 手工下单 M4):本地持仓立即与 QMT 对齐
+
+    - body.code 可选:只同步单只;不传=全量
+    - 复用 _takeover_positions(upsert 保留 peak_price/sell_count/entry_date 等扩展字段)
+    - 语义:只刷新数量/价格,不删本地行(卖出全平靠成交回调置零;物理删除归 _cleanup_dryrun_residue)
+    """
+    _require_admin(request)
+    store = _state.get("store")
+    qmt = _state.get("qmt")
+    config = _state.get("config")
+    audit = _state.get("audit")
+    if not store or not config:
+        raise HTTPException(503, "未初始化")
+    if not qmt or not qmt.connected:
+        raise HTTPException(503, "QMT 未连接,无法同步持仓")
+
+    code = (body or {}).get("code")
+    try:
+        codes = _takeover_positions(store, qmt, config, audit, code=code)
+    except Exception as e:
+        logger.error(f"持仓同步失败 code={code}: {e}")
+        raise HTTPException(500, f"持仓同步失败: {e}")
+    logger.info(f"持仓同步完成: code={code or '全量'} synced={len(codes)}")
+    return {"synced": len(codes), "codes": sorted(codes)}
 
 
 @app.get("/live/orders")
@@ -525,9 +596,55 @@ async def orders(limit: int = 50):
 
 @app.get("/live/deals")
 async def deals(limit: int = 50):
-    """成交查询"""
+    """成交查询(每条附 entry_date/hold_days,便于前端展示持仓天数)
+    hold_days 算法:买入后第二天起算第1天(交易日计数)
+    """
     store = _state.get("store")
-    return store.get_deals(limit=limit) if store else []
+    if not store:
+        return []
+    deals = store.get_deals(limit=limit)
+    if not deals:
+        return deals
+    from datetime import date as _date, datetime as _dt
+    from app.api.sim_trader import _load_trading_calendar
+    cal = _load_trading_calendar() or set()
+    today = _date.today()
+
+    def _calc_hold(entry_d: _date) -> int:
+        # 买入后第二天起算第1天:只算 entry_d 之后的交易日
+        if not cal:
+            return max(0, (today - entry_d).days - 1) if entry_d else 0
+        window = sorted(d for d in cal if entry_d < d <= today)
+        return len(window)
+
+    # 一次性批量查 entry_date(避免逐只 SQL)
+    entry_map = {}
+    try:
+        rows = store._conn.execute(
+            "SELECT code, entry_date FROM live_positions"
+        ).fetchall()
+        entry_map = {r[0]: r[1] for r in rows if r[1]}
+    except Exception:
+        pass
+    for d in deals:
+        entry = entry_map.get(d.get("code"))
+        if entry is None:
+            # 成交记录里若有 traded_at 兜底(买入成交)
+            ta = d.get("traded_at")
+            try:
+                if isinstance(ta, str):
+                    entry = _dt.fromisoformat(ta).date()
+                elif isinstance(ta, _dt):
+                    entry = ta.date()
+            except Exception:
+                entry = None
+        if entry:
+            d["entry_date"] = entry.isoformat()
+            d["hold_days"] = _calc_hold(entry)
+        else:
+            d["entry_date"] = None
+            d["hold_days"] = 0
+    return deals
 
 
 @app.get("/live/quotes")
@@ -542,10 +659,12 @@ async def quotes(codes: str):
 
 @app.post("/live/kill-switch/activate")
 async def activate_killswitch(reason: str = "manual_web"):
-    """激活 kill switch(Web 人工)"""
+    """激活 kill switch(Web 人工)。主开关禁用时拒绝激活。"""
     ks = _state.get("kill_switch")
     if not ks:
         raise HTTPException(503, "未初始化")
+    if not ks.is_enabled():
+        raise HTTPException(409, "kill switch 主开关已禁用,无法激活;先在控制面板开启急停功能")
     ks.activate(reason=reason, source="web")
     return {"activated": True, "reason": reason}
 
@@ -592,13 +711,22 @@ async def audit_replay(order_id: int):
 async def place_order(req: dict):
     """手动下单(薄壳,调用 place_order_service)
 
-    仅 live 模式允许;dry-run 模式走 mock 回报。
+    2026-07-18 变更:
+    - dry-run 模式硬拒 403(原为 mock 回报;buy-signal 链路走独立端点不受影响)
+    - 支持 price_type_key 市价键(price_type.py 市场感知映射,warning 透传)
+    - 市价单(price=0)先用 QMT 实时价回填估算基准,取不到行情 fail-closed 拒绝
+      (防闸门1/2/3/4 按 volume×100 低估金额,风控形同虚设)
     """
     from .schemas import OrderIntent, OrderRequest
 
     config = _state.get("config")
     if not config:
         raise HTTPException(503, "未初始化")
+
+    # dry-run 硬拒(2026-07-18 用户确认:防模拟模式误下真单)
+    runtime_state = _state.get("runtime_state")
+    if runtime_state and not runtime_state.is_live():
+        raise HTTPException(403, "dry-run 模式手工下单禁用(防误下真单)")
 
     # 参数校验
     try:
@@ -611,6 +739,39 @@ async def place_order(req: dict):
     if kill_switch and kill_switch.is_active():
         raise HTTPException(403, "kill switch 已激活,禁止下单")
 
+    # 市价键映射(2026-07-18 M1):有 key 时优先,市场感知降级 + warning
+    price_type = order_req.price_type
+    price_type_warning = None
+    if order_req.price_type_key:
+        from .price_type import map_price_type
+        try:
+            price_type, price_type_warning = map_price_type(
+                order_req.price_type_key, order_req.code)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    # 市价单金额估算(HIGH-1 修复):price=0 时用 QMT 实时价回填估算基准
+    price = order_req.price
+    if price_type == 11 and price <= 0:
+        # 限价单必须给价(前端有校验,这里是后端兜底)
+        raise HTTPException(400, "限价单必须填写价格(price > 0)")
+    if price_type != 11 and price <= 0:  # 非限价且未给价
+        qmt = _state.get("qmt")
+        from app.utils.xtquant_compat import format_code
+        code_fmt = format_code(order_req.code.split(".")[0])
+        last_price = 0.0
+        if qmt and qmt.connected:
+            try:
+                quotes = qmt.get_realtime_quotes([code_fmt])
+                last_price = float(quotes.get(code_fmt, {}).get("lastPrice", 0) or 0)
+            except Exception:
+                last_price = 0.0
+        if last_price <= 0:
+            raise HTTPException(
+                503, f"市价单无法取得 {code_fmt} 实时行情,fail-closed 拒绝下单")
+        price = last_price
+        logger.info(f"市价单金额估算基准: {code_fmt} QMT实时价 {price}")
+
     # 构造 OrderIntent
     import hashlib
     client_order_id = hashlib.md5(
@@ -622,8 +783,8 @@ async def place_order(req: dict):
         code=order_req.code,
         direction=order_req.direction,
         volume=order_req.volume,
-        price=order_req.price,
-        price_type=order_req.price_type,
+        price=price,
+        price_type=price_type,
         strategy_name=order_req.strategy_name or "manual",
         terminal=order_req.terminal,
         client_order_id=client_order_id,
@@ -631,7 +792,10 @@ async def place_order(req: dict):
     )
 
     # 调用 service(手动模式:source=WEB, lock_wait=30s)
-    return place_order_service(intent, source="WEB", lock_wait_sec=30)
+    result = place_order_service(intent, source="WEB", lock_wait_sec=30)
+    if price_type_warning:
+        result["price_type_warning"] = price_type_warning
+    return result
 
 
 def place_order_service(intent, source: str = "WEB", lock_wait_sec: int = 30) -> dict:
@@ -652,6 +816,45 @@ def place_order_service(intent, source: str = "WEB", lock_wait_sec: int = 30) ->
     if not executor:
         return {"ok": False, "status": "error", "reason": "OrderExecutor 未初始化"}
     return executor.execute(intent, source=source, lock_wait_sec=lock_wait_sec)
+
+
+@app.post("/live/order/cancel")
+async def cancel_order(request: Request, body: dict):
+    """撤单(2026-07-18 手工下单功能 M3)
+
+    - dry-run → 403(与手工单一致)
+    - kill_switch 激活 → 放行:撤单是减风险操作,不在"停新单"语义内
+    - qmt.cancel_order → 0 成功 / -1 断开 / -3 未找到
+    """
+    _require_admin(request)
+    runtime_state = _state.get("runtime_state")
+    if runtime_state and not runtime_state.is_live():
+        raise HTTPException(403, "dry-run 模式撤单禁用")
+    qmt = _state.get("qmt")
+    if not qmt or not qmt.connected:
+        raise HTTPException(503, "QMT 未连接,无法撤单")
+
+    order_id = body.get("order_id")
+    if not order_id:
+        raise HTTPException(400, "缺少 order_id")
+    try:
+        order_id = int(order_id)
+    except (TypeError, ValueError):
+        raise HTTPException(400, f"order_id 非法: {order_id}")
+
+    try:
+        ret = qmt.cancel_order(order_id)
+    except Exception as e:
+        logger.error(f"撤单异常 oid={order_id}: {e}")
+        raise HTTPException(500, f"撤单异常: {e}")
+
+    ok = (ret == 0)
+    reason = {0: "撤单成功", -1: "QMT 连接断开", -3: "未找到订单"}.get(ret, f"QMT 返回 {ret}")
+    audit = _state.get("audit")
+    if audit:
+        audit.log("order_cancel", order_id=order_id, reason=reason)
+    logger.info(f"撤单 oid={order_id} ret={ret} {reason}")
+    return {"ok": ok, "order_id": order_id, "reason": reason}
 
 
 async def process_buy_signals(
@@ -765,7 +968,9 @@ def _verify_token(auth_header: str, config) -> bool:
     parts = auth_header.split(" ")
     if len(parts) != 2 or parts[0] != "Bearer":
         return False
-    return parts[1] == config.buy_signal_token
+    # H5 修复(审计):常量时间比较,防时序攻击逐字节探测 token
+    import hmac
+    return hmac.compare_digest(parts[1], config.buy_signal_token)
 
 
 async def _process_one_signal(signal, semaphore, lock_wait_sec: int = 5, strategy_name: str = "QUANTQQ") -> dict:
@@ -1157,20 +1362,16 @@ def _is_local(request) -> bool:
     return request.client.host in ("127.0.0.1", "::1", "localhost")
 
 
-def _verify_admin(request) -> bool:
-    """C1 修复: admin 端点除本机外还需 token 鉴权(复用 buy_signal_token)。"""
-    from .config import load_config
-    cfg = load_config()
-    auth = request.headers.get("Authorization", "")
-    return _verify_token(auth, cfg)
-
-
 def _require_admin(request):
-    """admin 端点统一护栏: 本机 + token 双重校验。"""
+    """admin 端点护栏: 仅允许本机调用(浏览器 UI 同机访问)。
+
+    浏览器前端无法持有服务端 buy_signal_token, 故本机写操作(测试通知/切换开关/
+    改比例/改模式/优雅关闭等)仅靠 _is_local 防护——live_trader 仅监听 127.0.0.1,
+    远程不可达。外部 API 调用(如 /live/buy-signal)不经过本函数, 仍由 _verify_token
+    强制 Bearer token 校验, 保持 fail-closed。
+    """
     if not _is_local(request):
         raise HTTPException(403, "仅允许本地访问")
-    if not _verify_admin(request):
-        raise HTTPException(401, "admin token 无效或未配置")
 
 
 @app.get("/live/config/switches")
@@ -1184,7 +1385,7 @@ async def get_switches():
 
 @app.put("/live/config/switches")
 async def set_switches(request: Request, body: dict):
-    """切换买入/卖出开关(仅本地)"""
+    """切换买入/卖出/auto_buy/kill_switch 开关(仅本地)"""
     _require_admin(request)
     rs = _state.get("runtime_state")
     if not rs:
@@ -1192,11 +1393,23 @@ async def set_switches(request: Request, body: dict):
     buy = body.get("buy_enabled")
     sell = body.get("sell_enabled")
     auto_buy = body.get("auto_buy_enabled")
-    old = rs.set_switches(buy_enabled=buy, sell_enabled=sell, auto_buy_enabled=auto_buy)
+    kill_switch_en = body.get("kill_switch_enabled")
+    old = rs.set_switches(buy_enabled=buy, sell_enabled=sell,
+                          auto_buy_enabled=auto_buy, kill_switch_enabled=kill_switch_en)
+    # 关闭急停主开关时,顺带清理当前激活态(内存+文件+DB),使重新启用时是干净状态。
+    # 注意:此时 is_active() 已因主开关关闭而短路返回 False,故不能用它判断,需直接 deactivate()
+    # (deactivate 本身不检查 is_enabled,且对无激活态是安全 no-op)。
+    if kill_switch_en is False:
+        ks = _state.get("kill_switch")
+        if ks:
+            ks.deactivate()
+            logger.warning("kill_switch 主开关已关闭,并清理残留激活态(若有)")
     audit = _state.get("audit")
     if audit:
-        audit.log("switch_changed", snapshot={"old": old, "new": {"buy_enabled": buy, "sell_enabled": sell, "auto_buy_enabled": auto_buy}})
-    logger.info(f"开关切换: {old} -> buy={buy} sell={sell} auto_buy={auto_buy}")
+        audit.log("switch_changed", snapshot={"old": old, "new": {
+            "buy_enabled": buy, "sell_enabled": sell,
+            "auto_buy_enabled": auto_buy, "kill_switch_enabled": kill_switch_en}})
+    logger.info(f"开关切换: {old} -> buy={buy} sell={sell} auto_buy={auto_buy} kill_switch={kill_switch_en}")
     return rs.get_state()
 
 
@@ -1330,6 +1543,8 @@ async def get_risk_status():
 
     positions = store.get_positions() or []
     result_positions = []
+
+    qmt = _state.get("qmt")
 
     for pos in positions:
         code = pos.get("code") or ""
@@ -1508,8 +1723,8 @@ async def get_risk_status():
 
         result_positions.append({
             "code": code,
-            "name": pos.get("name") or "",
-            "current_price": float(pos.get("last_close") or 0),  # 实时价由前端 applyLiveQuotes 填入
+            "name": _resolve_instrument_name(code, qmt),
+            "current_price": float(pos.get("last_price") or 0),  # 实时价:refresh_quotes 3s 写 + WS 覆盖,严格对齐持仓卡片现价列
             "avg_cost": avg_cost,
             "last_close": last_close,
             "volume": volume,
@@ -1533,22 +1748,16 @@ async def get_risk_status():
 
 @app.get("/live/equity")
 async def get_equity(days: int = 1):
-    """净值曲线数据(从 live_assets_backup 5min 快照,v2 §3.5)"""
+    """净值曲线数据(从 live_assets_backup 快照)。
+
+    days<=1: 最近交易日盘中分时(09:25-15:05);days>=2: 每日 EOD 点。
+    聚合逻辑见 store.get_equity_points(2026-07-16 修:按档聚合+过滤 stray 点)。
+    """
     store = _state.get("store")
     if not store:
         raise HTTPException(503, "未初始化")
     try:
-        assert store._conn is not None
-        from datetime import date as _date, timedelta
-        start = _date.today() - timedelta(days=int(days))
-        rows = store._conn.execute(
-            "SELECT backup_date, backup_time, cash, market_value, total_asset "
-            "FROM live_assets_backup WHERE backup_date >= ? "
-            "ORDER BY backup_date, backup_time",
-            [start]
-        ).fetchall()
-        pts = [{"date": str(r[0]), "time": r[1], "cash": float(r[2] or 0),
-                "market_value": float(r[3] or 0), "total": float(r[4] or 0)} for r in rows]
+        pts = store.get_equity_points(int(days))
         return {"points": pts}
     except Exception as e:
         logger.error(f"净值查询失败: {e}")

@@ -93,8 +93,9 @@ class OrderExecutor:
                     "status": "duplicate", "reason": "幂等命中,不重复下单",
                 }
 
-        # 3. 格式化代码
-        code_fmt = format_code(intent.code) if "." not in intent.code else intent.code
+        # 3. 格式化代码(去后缀后重加,禁止信任传入后缀)
+        bare = intent.code.split(".")[0] if "." in intent.code else intent.code
+        code_fmt = format_code(bare)
 
         # 4. TDX source:用 QMT 实时价覆盖信号源传的价格
         actual_price = intent.price
@@ -207,6 +208,10 @@ class OrderExecutor:
                         "code": code_fmt, "client_order_id": intent.client_order_id,
                         "reason": f"QMT 下单未接受 seq={seq}",
                     }
+                # H1 修复(2026-07-19 审计):下单成功拿到 order_id 后补建清仓锁反查索引,
+                # 否则成交回调 release_by_order_id 找不到 → 锁持有到 TTL(300s) → 止损/止盈延迟
+                if self.clearance_lock and lock_acquired and order_id:
+                    self.clearance_lock.rebind_order_id(code_fmt, order_id)
                 # C1:买入成功后冻在途预扣
                 if intent.direction == "buy" and self.risk_gate:
                     self.risk_gate.freeze_pending_buy(code_fmt, intent.volume)

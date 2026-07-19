@@ -401,7 +401,7 @@ class CallbackHandler:
             client_order_id = order.get("client_order_id", "")
             # pending_buy_volume 释放由 risk_gate 在下单时冻结,这里通知释放
             # H1:传 trade_id 让 apply_buy_fill 幂等(防重复回报双扣持仓)
-            self._release_pending_buy(code, filled_volume, trade_id=trade_id)
+            self._release_pending_buy(code, filled_volume, filled_price=filled_price, trade_id=trade_id)
 
         # v2(F4/H1):卖出成交递减持仓,清仓则重置;trade_id 幂等防重复回报双扣
         # H3(2026-07-14):apply_sell_fill 现在会抛(不再静默吞)。同 deal 写入处理:
@@ -449,18 +449,22 @@ class CallbackHandler:
                 code, direction, filled_volume, filled_price, mode, tag, avg_cost=avg_cost
             )
 
-    def _release_pending_buy(self, code: str, filled_volume: int, trade_id: int = None) -> None:
+    def _release_pending_buy(self, code: str, filled_volume: int,
+                             filled_price: float = 0.0,
+                             trade_id: int = None) -> None:
         """C1:成交后释放在途预扣 + 首次建仓写 entry_date
 
         v2(审计H2/H3):改调 store.apply_buy_fill 原子SQL,避免全字段 upsert 覆盖
         tp_triggered/sell_count/peak_price,并补写 entry_date(修 hold_days 恒=1)。
         v3(2026-07-14 审计H1):传 trade_id 给 apply_buy_fill,防重复回报双扣持仓。
         v3(2026-07-14 审计H3):异常向上抛,不再吞。调用方 _on_deal_callback 需 try/except 接。
+        v4(2026-07-19 code-review):透传 filled_price 给 apply_buy_fill(修 NameError:
+            原引用未定义的 filled_price,买入成交回调崩、持仓不更新)。
         """
         if not self.store:
             return
         # H3: 异常向上抛(让 _on_deal_callback 接住 + 告警)
-        self.store.apply_buy_fill(code, filled_volume, trade_id=trade_id)
+        self.store.apply_buy_fill(code, filled_volume, filled_price=filled_price, trade_id=trade_id)
 
     def _handle_order_error(self, order_id: int, error_id: int, error_msg: str) -> None:
         if not self.store:

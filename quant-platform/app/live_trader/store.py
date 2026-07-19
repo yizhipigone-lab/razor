@@ -10,7 +10,7 @@ import threading
 import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import duckdb
@@ -21,6 +21,9 @@ from .config import LiveTraderConfig
 from app.utils.xtquant_compat import format_code
 
 logger = get_logger("live_trader.store")
+
+# EOD 收盘口径阈值:净值曲线取 <= 该时间的最后一条快照当作当日收盘点
+_EOD_CUTOFF = "15:30"
 
 
 class LiveTraderStore:
@@ -367,9 +370,12 @@ class LiveTraderStore:
             )
 
     def apply_buy_fill(self, code: str, filled_volume: int,
+                        filled_price: float = 0.0,
                         trade_id: int = None) -> None:
         """v2(审计H2/H3):买入成交原子递增 volume + 释放在途预扣 + 首次建仓写 entry_date
         v3(2026-07-14 审计H1):加 trade_id 幂等,防重复回报双扣持仓(对齐 apply_sell_fill)。
+        v4(2026-07-15):新增 filled_price,首次建仓用买入价兜底算 avg_cost/profit_rate/market_value/float_profit,
+        避免 QMT 报价格 0 时 refresh_quotes 跳过,profit_rate 永远是 0。
 
         原子 SQL(不读改写),避免 _release_pending_buy 全字段 upsert 覆盖 tp_triggered/sell_count(H3)。
         首次建仓(entry_date 为空)写 today,修 hold_days 恒=1 问题(H2)。
@@ -402,11 +408,17 @@ class LiveTraderStore:
             ).fetchone()
             if not row:
                 # 新建持仓(本地无行,QMT 已成交)
+                # 用 filled_price 兜底算 avg_cost / profit_rate / market_value / float_profit,
+                # 防止 refresh_quotes 拿不到价时 profit_rate 长期为 0
+                _fp = float(filled_price or 0)
+                _avg_cost = _fp if _fp > 0 else None  # QMT 回报无价时成本未确认,留 NULL(不写 0 冒充,防 refresh 浮盈虚高)
+                _mv = _fp * filled_volume
                 self._conn.execute(
                     "INSERT INTO live_positions (code, volume, can_use_volume, "
-                    "pending_buy_volume, entry_date, managed, tp_triggered) "
-                    "VALUES (?, ?, 0, 0, ?, TRUE, '[]')",
-                    [code, filled_volume, today]
+                    "pending_buy_volume, avg_cost, last_price, market_value, "
+                    "float_profit, profit_rate, entry_date, managed, tp_triggered) "
+                    "VALUES (?, ?, 0, 0, ?, ?, ?, 0, 0, ?, TRUE, '[]')",
+                    [code, filled_volume, _avg_cost, _fp, _mv, today]
                 )
                 return
             new_volume = int(row[0] or 0) + filled_volume
@@ -491,13 +503,14 @@ class LiveTraderStore:
     def get_order_by_seq(self, seq: int) -> Optional[Dict[str, Any]]:
         """按 seq 查委托(下单时用 seq 做临时 order_id,callback 需反查)"""
         assert self._conn is not None
-        rows = self._conn.execute(
-            "SELECT * FROM live_orders WHERE seq = ?", [seq]
-        ).fetchone()
-        if not rows:
-            return None
-        cols = [d[0] for d in self._conn.description]
-        return dict(zip(cols, rows))
+        with self._db_lock:  # C1 修复(2026-07-19 审计):查询持锁防单连接并发段错误
+            rows = self._conn.execute(
+                "SELECT * FROM live_orders WHERE seq = ?", [seq]
+            ).fetchone()
+            if not rows:
+                return None
+            cols = [d[0] for d in self._conn.description]
+            return dict(zip(cols, rows))
 
     def update_order_id(self, old_id: int, new_id: int) -> bool:
         """将临时 order_id(seq) 更新为 QMT 真实 order_id"""
@@ -512,24 +525,26 @@ class LiveTraderStore:
     def get_order_by_client_id(self, client_order_id: str) -> Optional[Dict[str, Any]]:
         """C3 幂等检查:按 client_order_id 查"""
         assert self._conn is not None
-        rows = self._conn.execute(
-            "SELECT * FROM live_orders WHERE client_order_id = ?",
-            [client_order_id]
-        ).fetchone()
-        if not rows:
-            return None
-        cols = [d[0] for d in self._conn.description]
-        return dict(zip(cols, rows))
+        with self._db_lock:  # C1 修复(审计):查询持锁防并发段错误
+            rows = self._conn.execute(
+                "SELECT * FROM live_orders WHERE client_order_id = ?",
+                [client_order_id]
+            ).fetchone()
+            if not rows:
+                return None
+            cols = [d[0] for d in self._conn.description]
+            return dict(zip(cols, rows))
 
     def get_order(self, order_id: int) -> Optional[Dict[str, Any]]:
         assert self._conn is not None
-        rows = self._conn.execute(
-            "SELECT * FROM live_orders WHERE order_id = ?", [order_id]
-        ).fetchone()
-        if not rows:
-            return None
-        cols = [d[0] for d in self._conn.description]
-        return dict(zip(cols, rows))
+        with self._db_lock:  # C1 修复(审计)
+            rows = self._conn.execute(
+                "SELECT * FROM live_orders WHERE order_id = ?", [order_id]
+            ).fetchone()
+            if not rows:
+                return None
+            cols = [d[0] for d in self._conn.description]
+            return dict(zip(cols, rows))
 
     def get_deal_by_trade_id(self, trade_id: int) -> Optional[Dict[str, Any]]:
         """H1(2026-07-14):按 trade_id 查成交记录,供 callback_handler 入口幂等检查用。
@@ -540,13 +555,14 @@ class LiveTraderStore:
         assert self._conn is not None
         if trade_id is None or trade_id == 0:
             return None
-        rows = self._conn.execute(
-            "SELECT * FROM live_deals WHERE trade_id = ?", [trade_id]
-        ).fetchone()
-        if not rows:
-            return None
-        cols = [d[0] for d in self._conn.description]
-        return dict(zip(cols, rows))
+        with self._db_lock:  # C1 修复(审计)
+            rows = self._conn.execute(
+                "SELECT * FROM live_deals WHERE trade_id = ?", [trade_id]
+            ).fetchone()
+            if not rows:
+                return None
+            cols = [d[0] for d in self._conn.description]
+            return dict(zip(cols, rows))
 
     def get_inflight_orders(self, live_only: bool = False) -> List[Dict[str, Any]]:
         """获取在途订单(非终态,§17.1 启动恢复)
@@ -560,51 +576,82 @@ class LiveTraderStore:
         sql = f"SELECT * FROM live_orders WHERE status NOT IN ({placeholders})"
         if live_only:
             sql += " AND mode = 'live'"
-        rows = self._conn.execute(sql, list(ORDER_STATUS_TERMINAL)).fetchall()
-        if not rows:
-            return []
-        cols = [d[0] for d in self._conn.description]
-        return [dict(zip(cols, r)) for r in rows]
+        with self._db_lock:  # C1 修复(审计):查询持锁防并发段错误
+            rows = self._conn.execute(sql, list(ORDER_STATUS_TERMINAL)).fetchall()
+            if not rows:
+                return []
+            cols = [d[0] for d in self._conn.description]
+            return [dict(zip(cols, r)) for r in rows]
 
     def get_positions(self, managed_only: bool = False) -> List[Dict[str, Any]]:
         assert self._conn is not None
-        if managed_only:
-            rows = self._conn.execute(
-                "SELECT * FROM live_positions WHERE managed = TRUE"
-            ).fetchall()
-        else:
-            rows = self._conn.execute("SELECT * FROM live_positions").fetchall()
-        if not rows:
-            return []
-        cols = [d[0] for d in self._conn.description]
-        return [dict(zip(cols, r)) for r in rows]
+        with self._db_lock:  # C1 修复(审计)
+            if managed_only:
+                rows = self._conn.execute(
+                    "SELECT * FROM live_positions WHERE managed = TRUE"
+                ).fetchall()
+            else:
+                rows = self._conn.execute("SELECT * FROM live_positions").fetchall()
+            if not rows:
+                return []
+            cols = [d[0] for d in self._conn.description]
+            return [dict(zip(cols, r)) for r in rows]
 
     def get_position(self, code: str) -> Optional[Dict[str, Any]]:
         assert self._conn is not None
-        rows = self._conn.execute(
-            "SELECT * FROM live_positions WHERE code = ?", [code]
-        ).fetchone()
-        if not rows:
-            return None
-        cols = [d[0] for d in self._conn.description]
-        return dict(zip(cols, rows))
+        with self._db_lock:  # C1 修复(审计)
+            rows = self._conn.execute(
+                "SELECT * FROM live_positions WHERE code = ?", [code]
+            ).fetchone()
+            if not rows:
+                return None
+            cols = [d[0] for d in self._conn.description]
+            return dict(zip(cols, rows))
+
+    def _get_earliest_buy_date(self, code: str) -> Optional[date]:
+        """从成交记录回填最早买入日期(2026-07-16: 修 _takeover_positions entry_date=NULL)
+
+        返回 None 表示无成交记录,调用方应回退到 date.today()。
+        """
+        assert self._conn is not None
+        with self._db_lock:  # C1 修复(审计)
+            try:
+                row = self._conn.execute(
+                    "SELECT MIN(traded_at) FROM live_deals "
+                    "WHERE code = ? AND direction = 'buy'",
+                    [code]
+                ).fetchone()
+                if row and row[0]:
+                    val = row[0]
+                    if isinstance(val, datetime):
+                        return val.date()
+                    if isinstance(val, date):
+                        return val
+                    try:
+                        return datetime.fromisoformat(str(val)).date()
+                    except Exception:
+                        return None
+                return None
+            except Exception:
+                return None
 
     def get_deals(self, code: Optional[str] = None, limit: int = 500) -> List[Dict[str, Any]]:
         """获取成交(盈亏重算数据源,§18.7 内存缓存)"""
         assert self._conn is not None
-        if code:
-            rows = self._conn.execute(
-                "SELECT * FROM live_deals WHERE code = ? ORDER BY traded_at DESC LIMIT ?",
-                [code, limit]
-            ).fetchall()
-        else:
-            rows = self._conn.execute(
-                "SELECT * FROM live_deals ORDER BY traded_at DESC LIMIT ?", [limit]
-            ).fetchall()
-        if not rows:
-            return []
-        cols = [d[0] for d in self._conn.description]
-        return [dict(zip(cols, r)) for r in rows]
+        with self._db_lock:  # C1 修复(审计)
+            if code:
+                rows = self._conn.execute(
+                    "SELECT * FROM live_deals WHERE code = ? ORDER BY traded_at DESC LIMIT ?",
+                    [code, limit]
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    "SELECT * FROM live_deals ORDER BY traded_at DESC LIMIT ?", [limit]
+                ).fetchall()
+            if not rows:
+                return []
+            cols = [d[0] for d in self._conn.description]
+            return [dict(zip(cols, r)) for r in rows]
 
     def upsert_position(self, pos: Dict[str, Any]) -> None:
         """直接更新持仓(非 buffer 路径,如启动接管)"""
@@ -629,13 +676,14 @@ class LiveTraderStore:
 
     def get_killswitch(self) -> Dict[str, Any]:
         assert self._conn is not None
-        rows = self._conn.execute(
-            "SELECT * FROM live_killswitch WHERE id = 1"
-        ).fetchone()
-        if not rows:
-            return {"activated": False}
-        cols = [d[0] for d in self._conn.description]
-        return dict(zip(cols, rows))
+        with self._db_lock:  # C1 修复(审计)
+            rows = self._conn.execute(
+                "SELECT * FROM live_killswitch WHERE id = 1"
+            ).fetchone()
+            if not rows:
+                return {"activated": False}
+            cols = [d[0] for d in self._conn.description]
+            return dict(zip(cols, rows))
 
     def set_killswitch(self, activated: bool, reason: str = "", source: str = "",
                        activated_at: Optional[datetime] = None) -> None:
@@ -656,14 +704,46 @@ class LiveTraderStore:
         assert self._conn is not None
         from datetime import date as date_type
         today = date_type.today()
-        row = self._conn.execute(
-            "SELECT total_asset FROM live_assets_backup "
-            "WHERE backup_date = ? ORDER BY backup_time ASC LIMIT 1",
-            [today]
-        ).fetchone()
-        if row and row[0] is not None:
-            return float(row[0])
-        return None
+        with self._db_lock:  # C1 修复(审计)
+            row = self._conn.execute(
+                "SELECT total_asset FROM live_assets_backup "
+                "WHERE backup_date = ? ORDER BY backup_time ASC LIMIT 1",
+                [today]
+            ).fetchone()
+            if row and row[0] is not None:
+                return float(row[0])
+            return None
+
+    def get_daily_baseline(self) -> Optional[float]:
+        """日亏基准(闸门5a 专用,带兜底链)。
+
+        2026-07-16 根因修复:QMT 开盘未连上 → 今日无快照 → 旧逻辑闸门5a 全天 fail-safe
+        误禁买。兜底链:
+          1. 今日首条快照(与 get_open_asset 相同)
+          2. 最近一条早于今日的快照(昨收≈今开,标准日盈亏基准)
+          3. 仍无 → None(由调用方兜底 live_capital)
+
+        注意:不改 get_open_asset 语义(它还被 main.py 启动备份守卫/daily_summary 用)。
+        """
+        assert self._conn is not None
+        today = date.today()
+        with self._db_lock:  # C1 修复(审计)
+            row = self._conn.execute(
+                "SELECT total_asset FROM live_assets_backup "
+                "WHERE backup_date = ? ORDER BY backup_time ASC LIMIT 1",
+                [today]
+            ).fetchone()
+            if row and row[0] is not None:
+                return float(row[0])
+            # 今日无快照 → 兜底:昨收(最近一条早于今日的快照)
+            row = self._conn.execute(
+                "SELECT total_asset FROM live_assets_backup "
+                "WHERE backup_date < ? ORDER BY backup_date DESC, backup_time DESC LIMIT 1",
+                [today]
+            ).fetchone()
+            if row and row[0] is not None:
+                return float(row[0])
+            return None
 
     def backup_asset(self, asset_data: Dict[str, Any]) -> None:
         """写入资产快照到 live_assets_backup(闸门5a 基准 + EOD 归档)"""
@@ -684,6 +764,61 @@ class LiveTraderStore:
                 asset_data.get("cash", 0), asset_data.get("frozen_cash", 0),
                 asset_data.get("market_value", 0), asset_data.get("total_asset", 0),
             ])
+
+    def get_equity_points(self, days: int) -> list:
+        """净值曲线数据(从 live_assets_backup 快照),统一日收盘口径。
+
+        - days<=1: **最近 2 个交易日的日 EOD 折线**(昨天收盘 + 今天收盘/实时),
+          体现最近 1 日的净值变化。粒度按日(每天 1 个点),非 5min 分时,非当日单点。
+        - days>=2: **每日一个 EOD 点**(优先取 <=15:30 的最后一条=收盘;当日无收盘点
+          才退到当日最后一条),过滤掉启动重启写入的 stray 点。
+
+        返回 [{date, time, cash, market_value, total}] 按 date 升序。
+        口径统一为日净值:1日=最近2日折线,5/30/1年=多日 EOD。
+
+        修 2026-07-16(3):1日档经历 分时→当日单点→最近2日折线。
+        用户要求:不是1个点、要有折线、粒度按1日(非当日/非分时)。
+        取最近2个交易日 EOD 点连线,即"最近1日的净值变化"。
+        """
+        assert self._conn is not None
+        with self._db_lock:  # C1 修复(审计):查询持锁防并发段错误
+            start = date.today() - timedelta(days=int(days))
+            if days <= 1:
+                # 最近 2 个交易日的日 EOD 折线:用 09:25-15:05 锁交易日(避开夜间重启
+                # stray),每天取 <=15:30 的最后一条(收盘;最新一天盘中则为最新一条)
+                rows = self._conn.execute(
+                    "WITH recent_dates AS ("
+                    "  SELECT backup_date FROM live_assets_backup "
+                    "  WHERE backup_time BETWEEN '09:25' AND '15:05' "
+                    "  GROUP BY backup_date ORDER BY backup_date DESC LIMIT 2"
+                    "), eod AS ("
+                    "  SELECT backup_date, backup_time, cash, market_value, total_asset, "
+                    "    ROW_NUMBER() OVER ("
+                    "      PARTITION BY backup_date ORDER BY "
+                    f"        CASE WHEN backup_time <= '{_EOD_CUTOFF}' THEN 0 ELSE 1 END, "
+                    "        backup_time DESC) AS rn "
+                    "  FROM live_assets_backup "
+                    "  WHERE backup_date IN (SELECT backup_date FROM recent_dates)"
+                    ") "
+                    "SELECT backup_date, backup_time, cash, market_value, total_asset "
+                    "FROM eod WHERE rn = 1 ORDER BY backup_date",
+                ).fetchall()
+            else:
+                # 每日 EOD:同日多条快照取"<=15:30 的最后一条"(收盘),无则取当日最后一条
+                rows = self._conn.execute(
+                    "SELECT backup_date, backup_time, cash, market_value, total_asset FROM ("
+                    "  SELECT backup_date, backup_time, cash, market_value, total_asset, "
+                    "    ROW_NUMBER() OVER ("
+                    "      PARTITION BY backup_date ORDER BY "
+                    f"        CASE WHEN backup_time <= '{_EOD_CUTOFF}' THEN 0 ELSE 1 END, "
+                    "        backup_time DESC) AS rn "
+                    "  FROM live_assets_backup WHERE backup_date >= ?"
+                    ") WHERE rn = 1 ORDER BY backup_date",
+                    [start]
+                ).fetchall()
+            return [{"date": str(r[0]), "time": r[1],
+                     "cash": float(r[2] or 0), "market_value": float(r[3] or 0),
+                     "total": float(r[4] or 0)} for r in rows]
 
     def eod_archive(self, qmt_wrapper=None) -> None:
         """EOD 归档:持仓/成交/资产写入 backup 表(§6 EOD 归档)"""
@@ -824,14 +959,22 @@ class LiveTraderStore:
                 volume = int(row[0] or 0)
                 avg_cost = float(row[1] or 0)
                 market_value = last * volume
-                float_profit = (last - avg_cost) * volume
+                if avg_cost > 0:
+                    float_profit = (last - avg_cost) * volume
+                    cost_basis = avg_cost * volume
+                    profit_rate = (float_profit / cost_basis * 100) if cost_basis > 0 else 0.0
+                else:
+                    # 成本未确认(apply_buy_fill 遇 QMT 回报无 filled_price 写 NULL):
+                    # 不瞎算浮盈,避免 (last-0)*volume 虚高;待持仓同步用 QMT avg_cost 覆盖后再算
+                    float_profit = 0.0
+                    profit_rate = 0.0
                 last_close = float(q.get("lastClose", 0) or 0)
                 self._conn.execute(
                     "UPDATE live_positions SET last_price = ?, "
-                    "market_value = ?, float_profit = ?, "
+                    "market_value = ?, float_profit = ?, profit_rate = ?, "
                     "last_close = CASE WHEN ? > 0 THEN ? ELSE last_close END, "
                     "peak_price = GREATEST(COALESCE(peak_price, 0), ?) WHERE code = ?",
-                    [last, market_value, float_profit, last_close, last_close, last, code],
+                    [last, market_value, float_profit, profit_rate, last_close, last_close, last, code],
                 )
                 updated += 1
         if updated:
@@ -843,13 +986,14 @@ class LiveTraderStore:
         """获取指定 source 当日最新心跳(看门狗用)"""
         assert self._conn is not None
         from datetime import date as date_type
-        rows = self._conn.execute(
-            "SELECT * FROM live_signal_heartbeat "
-            "WHERE signal_date = ? AND source = ? "
-            "ORDER BY received_at DESC LIMIT 1",
-            [date_type.today(), source]
-        ).fetchone()
-        if not rows:
-            return None
-        cols = [d[0] for d in self._conn.description]
-        return dict(zip(cols, rows))
+        with self._db_lock:  # C1 修复(审计)
+            rows = self._conn.execute(
+                "SELECT * FROM live_signal_heartbeat "
+                "WHERE signal_date = ? AND source = ? "
+                "ORDER BY received_at DESC LIMIT 1",
+                [date_type.today(), source]
+            ).fetchone()
+            if not rows:
+                return None
+            cols = [d[0] for d in self._conn.description]
+            return dict(zip(cols, rows))

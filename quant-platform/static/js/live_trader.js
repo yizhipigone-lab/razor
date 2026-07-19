@@ -28,10 +28,15 @@ async function loadLiveStatus() {
     setBadge('live-conn', d.qmt_connected ? 'QMT 已连接' : 'QMT 未连接', d.qmt_connected ? 'lt-badge--ok' : 'lt-badge--danger');
     const _modeText = d.mode === 'live' ? '实盘·真钱' : (d.mode === 'dry-run' ? '模拟·不下单' : (d.mode || '—'));
     setBadge('live-mode', _modeText, d.mode === 'live' ? 'lt-badge--danger' : 'lt-badge--warn');
+    _updateManualOrderAvailability(d.mode);
     const acc = document.getElementById('live-account'); if (acc) acc.textContent = d.account_id || '—';
     const cap = document.getElementById('live-capital'); if (cap) cap.textContent = fmtCapital(_liveCapital);
     const ks = d.kill_switch || {};
-    setBadge('live-ks', ks.activated ? 'KS 已激活' : 'KS 未激活', ks.activated ? 'lt-badge--danger' : 'lt-badge--success');
+    if (ks.enabled === false) {
+      setBadge('live-ks', 'KS 已禁用', 'lt-badge--warn');
+    } else {
+      setBadge('live-ks', ks.activated ? 'KS 已激活' : 'KS 未激活', ks.activated ? 'lt-badge--danger' : 'lt-badge--success');
+    }
   } catch (e) {
     setBadge('live-conn', '服务未启动(8001)', 'lt-badge--danger');
     resetBadge('live-mode', 'lt-badge--warn');
@@ -81,7 +86,7 @@ async function loadLivePositions() {
     const data = await _liveFetch('/live/positions');
     _renderLivePositions(data);
   } catch (e) {
-    tbody.innerHTML = '<tr><td colspan=9 class="tc-red">加载失败(服务未启动?)</td></tr>';
+    tbody.innerHTML = '<tr><td colspan=10 class="tc-red">加载失败(服务未启动?)</td></tr>';
   }
 }
 
@@ -90,7 +95,7 @@ function _renderLivePositions(data) {
   const tbody = document.getElementById('live-positions-tbody');
   if (!tbody) return;
   if (!data || data.length === 0) {
-    tbody.innerHTML = '<tr><td colspan=9 class="ta-c muted">无持仓</td></tr>';
+    tbody.innerHTML = '<tr><td colspan=10 class="ta-c muted">无持仓</td></tr>';
     const sumEl = document.getElementById('lt-positions-summary');
     if (sumEl) { sumEl.textContent = '¥0'; sumEl.style.color = 'var(--text2)'; }
     const pnlEl = document.getElementById('lt-kpi-pnl');
@@ -117,6 +122,7 @@ function _renderLivePositions(data) {
   const fmtInt = v => (Number(v) || 0).toLocaleString(void 0, { maximumFractionDigits: 0 });
   tbody.innerHTML = data.map(p => {
     const fp = Number(p.float_profit) || 0;
+    const pr = Number(p.profit_rate) || 0;
     totalFloat += fp;
     totalMv += Number(p.market_value) || 0;
     const last = Number(p.last_price) || 0;
@@ -143,6 +149,7 @@ function _renderLivePositions(data) {
       '<td>' + avgCost.toFixed(3) + '</td><td class="pos-price lt-cur">' + last.toFixed(3) + '</td>' +
       '<td class="lt-mv">' + fmtInt(p.market_value) + '</td>' +
       '<td class="lt-fp ' + pnlCls + '">' + fmtInt(fp) + '</td>' +
+      '<td class="' + pnlCls + '">' + (pr > 0 ? '+' : '') + pr.toFixed(1) + '%</td>' +
       '<td>' + tag + '</td></tr>';
   }).join('');
   const fmtSign = v => v > 0 ? '+' : (v < 0 ? '-' : '');
@@ -166,6 +173,22 @@ function _renderLivePositions(data) {
   // A1: 渲染完重发行情订阅(纳入实盘持仓 codes),再用最新行情刷新现价
   if (typeof _sendQuoteSubscribe === 'function') _sendQuoteSubscribe();
   if (typeof applyLiveQuotes === 'function') applyLiveQuotes();
+  // 风控卡片同样吃 WS 推送 → 现价/浮盈实时同步持仓
+  if (typeof _refreshRiskMonitorPrices === 'function') _refreshRiskMonitorPrices();
+}
+
+function _refreshRiskMonitorPrices() {
+  // 与 applyLiveQuotes 共用 window._lastQuotes 缓存 → 同一数据源
+  const last = window._lastQuotes || {};
+  if (!last || !Object.keys(last).length) return;
+  document.querySelectorAll('#risk-monitor-body tr.risk-row').forEach(tr => {
+    const code = tr.dataset.code;
+    if (!code) return;
+    const q = last[code];
+    if (!q || !q.lastPrice) return;
+    const priceTd = tr.querySelector('td.risk-price');
+    if (priceTd) priceTd.textContent = Number(q.lastPrice).toFixed(2);
+  });
 }
 
 async function loadLiveOrders() {
@@ -175,25 +198,29 @@ async function loadLiveOrders() {
     const data = await _liveFetch('/live/orders?limit=50');
     _renderLiveOrders(data);
   } catch (e) {
-    tbody.innerHTML = '<tr><td colspan=7 style="color:var(--red);">加载失败</td></tr>';
+    tbody.innerHTML = '<tr><td colspan=8 style="color:var(--red);">加载失败</td></tr>';
   }
 }
 // 纯渲染:供 loadLiveOrders 与 live_trader_snapshot 推送共用
 function _renderLiveOrders(data) {
   const tbody = document.getElementById('live-orders-tbody');
   if (!tbody) return;
-  if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan=7 style="text-align:center;color:var(--text2);">无委托</td></tr>'; return; }
+  if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan=8 style="text-align:center;color:var(--text2);">无委托</td></tr>'; return; }
   const statusMap = { 48: '未报', 49: '待报', 50: '已报', 51: '待撤', 52: '部成待撤', 53: '部撤', 54: '已撤', 55: '部成', 56: '已成', 57: '废单', 255: '未知' };
+  const cancelable = new Set([50, 55]);  // 已报/部成 可撤(待撤/部成待撤已在撤单流程中)
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   tbody.innerHTML = data.map(o => {
     const dirColor = o.direction === 'buy' ? 'var(--red)' : 'var(--green)';
     const stColor = o.status === 56 ? 'var(--green)' : (o.status === 57 ? 'var(--red)' : 'var(--orange)');
     const ts = o.created_at ? o.created_at.slice(11, 19) : '';
+    const cancelBtn = cancelable.has(o.status) && o.order_id
+      ? '<button class="btn btn-sm btn-ghost" onclick="cancelLiveOrder(' + o.order_id + ')">撤单</button>'
+      : '';
     return '<tr><td>' + ts + '</td><td>' + esc(o.code) + '</td>' +
       '<td style="color:' + dirColor + ';">' + (o.direction === 'buy' ? '买入' : '卖出') + '</td>' +
       '<td>' + (o.price || 0).toFixed(2) + '</td><td>' + o.volume + '</td>' +
       '<td style="color:' + stColor + ';">' + (statusMap[o.status] || o.status) + '</td>' +
-      '<td>' + esc(o.mode) + '</td></tr>';
+      '<td>' + esc(o.mode) + '</td><td>' + cancelBtn + '</td></tr>';
   }).join('');
 }
 
@@ -305,21 +332,23 @@ async function loadLiveEquity(days) {
   }
   try {
     const d = await _liveFetch('/live/equity?days=' + _liveEquityDays);
-    const pts0 = d.points || [];
-    // C1: 盘中不显示当日点;仅当今日已有收盘点(time>='15:00',EOD 15:01 写入)才显示今日
-    const _enow = new Date();
-    const _today = _enow.getFullYear() + '-' + String(_enow.getMonth()+1).padStart(2,'0') + '-' + String(_enow.getDate()).padStart(2,'0');
-    const _todayPts = pts0.filter(p => p.date === _today);
-    const _closed = _todayPts.length > 0 && (_todayPts[_todayPts.length - 1].time || '') >= '15:00';
-    let pts = _closed ? pts0 : pts0.filter(p => p.date !== _today);
-    if (pts.length === 0) pts = pts0;  // 边界:周一盘中全过滤→回退,宁显盘中不空白
+    let pts = d.points || [];
+    // 统一日收盘口径:1日=当日EOD单点(不过滤);5/30/1年=多日EOD(过滤今日未收盘避免部分日误导)
+    if (_liveEquityDays > 1) {
+      const _enow = new Date();
+      const _today = _enow.getFullYear() + '-' + String(_enow.getMonth()+1).padStart(2,'0') + '-' + String(_enow.getDate()).padStart(2,'0');
+      const _todayPts = pts.filter(p => p.date === _today);
+      const _closed = _todayPts.length > 0 && (_todayPts[_todayPts.length - 1].time || '') >= '15:00';
+      if (!_closed) pts = pts.filter(p => p.date !== _today);
+    }
     if (pts.length === 0) {
       if (_liveEquityChart) { _liveEquityChart.dispose(); _liveEquityChart = null; }
-      el.innerHTML = '<div style="text-align:center;color:var(--text2);padding:60px;">暂无净值数据(盘中每 5min 采样)</div>';
+      el.innerHTML = '<div style="text-align:center;color:var(--text2);padding:60px;">暂无净值数据(每日收盘后更新)</div>';
       return;
     }
     const _accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#f0b429';
-    const xs = pts.map(p => (p.date || '') + ' ' + (p.time || ''));
+    // x 轴统一标日期(YYYY-MM-DD)
+    const xs = pts.map(p => p.date || '');
     const totals = pts.map(p => p.total);
     if (!_liveEquityChart) _liveEquityChart = echarts.init(el);
     _liveEquityChart.setOption({
@@ -353,12 +382,16 @@ async function loadLiveDeals() {
 function _renderLiveDeals(data) {
   const tbody = document.getElementById('live-deals-tbody');
   if (!tbody) return;
-  if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan=6 style="text-align:center;color:var(--text2);">无成交</td></tr>'; return; }
+  if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan=7 style="text-align:center;color:var(--text2);">无成交</td></tr>'; return; }
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   tbody.innerHTML = data.map(d => {
     const dirColor = d.direction === 'buy' ? 'var(--red)' : 'var(--green)';
-    const ts = d.traded_at ? String(d.traded_at).slice(11, 19) : '';
-    return '<tr><td>' + ts + '</td><td>' + esc(d.code) + '</td>' +
+    const ta = d.traded_at || '';
+    const s = String(ta);
+    const date = s.length >= 10 ? s.slice(5, 10) : '';   // MM-DD
+    const time = s.length >= 19 ? s.slice(11, 19) : '';   // HH:MM:SS
+    const ts = date ? (date + ' ' + time) : time;
+    return '<tr><td>' + ts + '</td><td>' + (d.hold_days || 0) + '</td><td>' + esc(d.code) + '</td>' +
       '<td style="color:' + dirColor + ';">' + (d.direction === 'buy' ? '买入' : '卖出') + '</td>' +
       '<td>' + (d.filled_price || 0).toFixed(2) + '</td><td>' + (d.filled_volume || 0) + '</td>' +
       '<td>' + esc(d.mode || '') + '</td></tr>';
@@ -372,16 +405,19 @@ async function loadLiveSwitches() {
     setEl('live-buy-switch', d.buy_enabled);
     setEl('live-sell-switch', d.sell_enabled);
     setEl('live-auto-buy-switch', d.auto_buy_enabled);
+    setEl('live-ks-switch', d.kill_switch_enabled);
     // 折叠区摘要
     const sb = document.getElementById('lt-sum-buy'); if (sb) sb.textContent = d.buy_enabled ? '开' : '关';
     const ss = document.getElementById('lt-sum-sell'); if (ss) ss.textContent = d.sell_enabled ? '开' : '关';
     const sab = document.getElementById('lt-sum-auto-buy'); if (sab) sab.textContent = d.auto_buy_enabled ? '开' : '关';
+    const sks = document.getElementById('lt-sum-ks'); if (sks) sks.textContent = d.kill_switch_enabled ? '开' : '关';
   } catch (e) {
     const setErr = (id) => { const el = document.getElementById(id); if (el) { el.textContent = '—'; el.style.color = 'var(--text2)'; } };
-    setErr('live-buy-switch'); setErr('live-sell-switch'); setErr('live-auto-buy-switch');
+    setErr('live-buy-switch'); setErr('live-sell-switch'); setErr('live-auto-buy-switch'); setErr('live-ks-switch');
     const sb = document.getElementById('lt-sum-buy'); if (sb) sb.textContent = '—';
-    const ss = document.getElementById('lt-sum-sell'); if (ss) ss.textContent = '—';
+    const ss = document.getElementById('lt-sum-sell'); if (ss) sb.textContent = '—';
     const sab = document.getElementById('lt-sum-auto-buy'); if (sab) sab.textContent = '—';
+    const sks = document.getElementById('lt-sum-ks'); if (sks) sks.textContent = '—';
   }
 }
 
@@ -390,18 +426,23 @@ async function toggleLiveSwitch(which) {
   if (_liveSwitching) return;
   _liveSwitching = true;
   const msgEl = document.getElementById('live-switch-msg');
-  const labels = { buy: '买入', sell: '卖出', auto: '自动选股' };
-  const keys = { buy: 'buy_enabled', sell: 'sell_enabled', auto: 'auto_buy_enabled' };
+  const labels = { buy: '买入', sell: '卖出', auto: '自动选股', ks: '急停功能' };
+  const keys = { buy: 'buy_enabled', sell: 'sell_enabled', auto: 'auto_buy_enabled', ks: 'kill_switch_enabled' };
   try {
     const cur = await _liveFetch('/live/config/switches');
     const key = keys[which];
     const newVal = !cur[key];
-    if (!confirm('确认 ' + (labels[which] || which) + ' 开关 -> ' + (newVal ? '开' : '关') + '?')) return;
+    if (which === 'ks' && !newVal) {
+      if (!confirm('⚠ 关闭急停功能后:急停永不自动激活、闸门7 不熔断、当前残留急停一并清除。\n真钱交易将失去急停保险。确认关闭?')) return;
+    } else {
+      if (!confirm('确认 ' + (labels[which] || which) + ' 开关 -> ' + (newVal ? '开' : '关') + '?')) return;
+    }
     await _liveFetch('/live/config/switches', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ [key]: newVal }),
     });
     await loadLiveSwitches();
+    await loadLiveStatus();
     if (msgEl) { msgEl.textContent = '✓ ' + (labels[which] || which) + '已' + (newVal ? '开启' : '关闭'); msgEl.style.color = 'var(--green)'; }
   } catch (e) {
     if (msgEl) { msgEl.textContent = '切换失败: ' + e.message; msgEl.style.color = 'var(--red)'; }
@@ -542,6 +583,7 @@ async function saveLiveBuyRatio() {
 async function loadLiveAll() {
   loadLiveStatus(); loadLiveAsset(); loadLivePositions(); loadLiveOrders();
   loadLiveEquity(); loadLiveDeals(); loadLiveSwitches(); loadLiveModeDisplay();
+  initManualOrderForm();
   loadLiveRiskParams(); loadScanInterval(); loadLiveBuyRatio(); loadAutoBuyTime();
   loadRiskMonitor();
 }
@@ -629,6 +671,8 @@ function applyLiveQuotes() {
   } catch (e) {
     console.warn('[applyLiveQuotes]', e);  // 集成M3:防 500ms 刷错中断 market_quotes 分支
   }
+  // 风控卡片吃同一份 WS 行情,严格对齐持仓卡片现价
+  if (typeof _refreshRiskMonitorPrices === 'function') _refreshRiskMonitorPrices();
 }
 // 暴露给 main.js:market_quotes 分支调 applyLiveQuotes;switchTab 切回实盘 tab 调 resizeLiveEquityChart(D,F1)
 window.applyLiveQuotes = applyLiveQuotes;
@@ -668,7 +712,7 @@ function renderRiskMonitor(d) {
   }
   const STATUS_COLOR = { danger: 'var(--red)', warning: 'var(--yellow)', safe: 'var(--green)' };
   let html = noteHtml + '<table class="data-table" style="font-size:12px"><thead><tr>' +
-    '<th>代码</th><th>现价</th><th>累计</th><th>进度</th><th>状态</th><th>详情</th></tr></thead><tbody>';
+    '<th>代码</th><th>简称</th><th>现价</th><th>累计</th><th>进度</th><th>状态</th><th>详情</th></tr></thead><tbody>';
   for (const pos of positions) {
     const color = STATUS_COLOR[pos.global_status] || 'var(--text2)';
     const globalLabel = { danger: '⚠️ 危险', warning: '⚡ 激活', safe: '✓ 安全' }[pos.global_status] || '—';
@@ -702,14 +746,15 @@ function renderRiskMonitor(d) {
       if (it.type && it.type.startsWith('TP')) return it.message;
       return '';
     }).filter(Boolean).join('；');
-    html += '<tr>' +
-      '<td>' + escHtml(pos.code) + (pos.name ? ' ' + escHtml(pos.name) : '') + '</td>' +
-      '<td>' + (pos.current_price > 0 ? pos.current_price.toFixed(2) : '—') + '</td>' +
+    html += '<tr class="risk-row" data-code="' + escHtml(pos.code).split('.')[0] + '">' +
+      '<td>' + escHtml(pos.code) + '</td>' +
+      '<td class="muted">' + escHtml(pos.name || '') + '</td>' +
+      '<td class="risk-price">' + (pos.current_price > 0 ? pos.current_price.toFixed(2) : '—') + '</td>' +
       '<td style="color:' + (pos.profit_rate >= 0 ? 'var(--red)' : 'var(--green)') + '">' +
         (pos.profit_rate > 0 ? '+' : '') + (pos.profit_rate || 0).toFixed(1) + '%</td>' +
       '<td>' + barHtml + '</td>' +
       '<td style="color:' + color + ';font-weight:600">' + globalLabel + '</td>' +
-      '<td style="color:var(--text2);font-size:11px">' + escHtml(msgs) + '</td>' +
+      '<td style="color:var(--text2);font-size:11px;word-break:break-all;white-space:normal">' + escHtml(msgs) + '</td>' +
       '</tr>';
   }
   html += '</tbody></table>';
@@ -725,3 +770,176 @@ window.startRiskPolling = function () {
 window.stopRiskPolling = function () {
   if (_riskTimer) { clearInterval(_riskTimer); _riskTimer = null; }
 };
+
+// ─── 手工下单(2026-07-18 T5-T8)────────────────────────────────
+// 与后端 app/live_trader/price_type.py 保持一致(market 过滤规则修改要两边同步)
+const MO_PRICE_TYPES = [
+  { key: 'limit',      name: '限价',       needsPrice: true,  market: null },
+  { key: 'latest',     name: '最新价',     needsPrice: false, market: null },
+  { key: 'peer_best',  name: '对手最优',   needsPrice: false, market: null },
+  { key: 'mine_best',  name: '本方最优',   needsPrice: false, market: null },
+  { key: 'sh5_cancel', name: '沪五档撤销', needsPrice: false, market: 'SH' },
+  { key: 'sh5_limit',  name: '沪五档转限价', needsPrice: false, market: 'SH' },
+  { key: 'sz5_cancel', name: '深五档撤销', needsPrice: false, market: 'SZ' },
+];
+let _moDir = 'buy';
+
+function _moDetectMarket(code) {
+  if (/^(60|68|50|51|52|56|58)/.test(code)) return 'SH';
+  if (/^(00|30|15|16)/.test(code)) return 'SZ';
+  if (/^(8|4|920)/.test(code)) return 'BJ';
+  return 'UNKNOWN';
+}
+
+function _moAvailableTypes(code) {
+  const m = _moDetectMarket(code || '');
+  return MO_PRICE_TYPES.filter(t => !t.market || t.market === m);
+}
+
+function setManualOrderDir(dir) {
+  _moDir = dir === 'sell' ? 'sell' : 'buy';
+  const buyBtn = document.getElementById('mo-dir-buy');
+  const sellBtn = document.getElementById('mo-dir-sell');
+  if (buyBtn) buyBtn.className = 'btn btn-sm' + (_moDir === 'buy' ? '' : ' btn-ghost');
+  if (sellBtn) sellBtn.className = 'btn btn-sm' + (_moDir === 'sell' ? '' : ' btn-ghost');
+  updateManualOrderEstimate();
+}
+
+function onManualOrderCodeChange() {
+  const codeEl = document.getElementById('mo-code');
+  if (!codeEl) return;
+  codeEl.value = codeEl.value.replace(/\D/g, '').slice(0, 6);
+  // 按市场过滤价格类型下拉(R4)
+  const sel = document.getElementById('mo-price-type');
+  if (sel) {
+    const prev = sel.value;
+    const avail = _moAvailableTypes(codeEl.value);
+    sel.innerHTML = avail.map(t => '<option value="' + t.key + '">' + t.name + '</option>').join('');
+    if (avail.some(t => t.key === prev)) sel.value = prev;
+  }
+  onManualOrderPriceTypeChange();
+}
+
+function onManualOrderPriceTypeChange() {
+  const sel = document.getElementById('mo-price-type');
+  const row = document.getElementById('mo-price-row');
+  const t = MO_PRICE_TYPES.find(x => x.key === (sel ? sel.value : 'limit'));
+  if (row) row.style.display = (t && t.needsPrice) ? '' : 'none';
+  updateManualOrderEstimate();
+}
+
+function updateManualOrderEstimate() {
+  const estEl = document.getElementById('mo-estimate');
+  const cashEl = document.getElementById('mo-cash');
+  const cash = Number(window._liveCash) || 0;
+  if (cashEl) cashEl.textContent = cash > 0 ? fmtCapital(cash) : '—';
+  if (!estEl) return;
+  const price = Number(document.getElementById('mo-price')?.value) || 0;
+  const vol = Number(document.getElementById('mo-volume')?.value) || 0;
+  const sel = document.getElementById('mo-price-type');
+  const t = MO_PRICE_TYPES.find(x => x.key === (sel ? sel.value : 'limit'));
+  const needsPrice = t ? t.needsPrice : true;
+  if (vol <= 0 || (needsPrice && price <= 0)) { estEl.textContent = '—'; estEl.style.color = 'var(--text2)'; return; }
+  if (!needsPrice) { estEl.textContent = '按实时价估算'; estEl.style.color = 'var(--text2)'; return; }
+  const amt = price * vol;
+  estEl.textContent = fmtCapital(amt);
+  const over = _moDir === 'buy' && cash > 0 && amt > cash;
+  estEl.style.color = over ? 'var(--red)' : 'var(--text2)';
+  if (over) estEl.textContent += ' ⚠超可用资金';
+}
+
+function _updateManualOrderAvailability(mode) {
+  const disabled = mode !== 'live';
+  const form = document.getElementById('manual-order-form');
+  const sum = document.getElementById('lt-sum-manual-order');
+  if (sum) sum.textContent = disabled ? 'dry-run 禁用' : '可下单';
+  if (!form) return;
+  form.querySelectorAll('input,select,button').forEach(el => { el.disabled = disabled; });
+  form.style.opacity = disabled ? '0.5' : '1';
+}
+
+function _moValidate(code, priceTypeKey, price, volume) {
+  if (!/^\d{6}$/.test(code)) return '代码必须是 6 位数字';
+  const t = MO_PRICE_TYPES.find(x => x.key === priceTypeKey);
+  if (!t) return '价格类型非法';
+  if (t.needsPrice && !(price > 0)) return '限价单必须填写价格';
+  if (!Number.isInteger(volume) || volume <= 0) return '数量必须是正整数';
+  if (_moDir === 'buy') {
+    const lot = code.startsWith('688') ? 200 : 100;
+    if (volume % lot !== 0) return '买入数量必须是 ' + lot + ' 的整数倍';
+  }
+  return null;
+}
+
+async function submitManualOrder() {
+  // H4: 防重复提交(POST 进行中再点直接忽略 + disable 按钮,避免手抖下两笔真单)
+  if (window._moSubmitting) return;
+  const msgEl = document.getElementById('mo-msg');
+  const setMsg = (txt, color) => { if (msgEl) { msgEl.textContent = txt; msgEl.style.color = color; } };
+  const code = (document.getElementById('mo-code')?.value || '').trim();
+  const priceTypeKey = document.getElementById('mo-price-type')?.value || 'limit';
+  const price = Number(document.getElementById('mo-price')?.value) || 0;
+  const volume = Number(document.getElementById('mo-volume')?.value) || 0;
+  const t = MO_PRICE_TYPES.find(x => x.key === priceTypeKey) || MO_PRICE_TYPES[0];
+
+  const err = _moValidate(code, priceTypeKey, price, volume);
+  if (err) { setMsg(err, 'var(--red)'); return; }
+
+  const dirText = _moDir === 'buy' ? '买入' : '卖出';
+  let confirmText = '确认' + dirText + '?\n\n代码: ' + code + '\n价格类型: ' + t.name +
+    (t.needsPrice ? '\n价格: ' + price.toFixed(2) : '') + '\n数量: ' + volume;
+  if (t.needsPrice) confirmText += '\n预估金额: ¥' + (price * volume).toLocaleString();
+  else confirmText += '\n\n⚠ 市价单不保证成交价,按 QMT 实时价估算风控金额';
+  if (!confirm(confirmText)) return;
+
+  // 确认通过后上锁 + disable 按钮,直到 POST 结束
+  window._moSubmitting = true;
+  const submitBtn = document.getElementById('mo-submit');
+  if (submitBtn) submitBtn.disabled = true;
+  setMsg('提交中...', 'var(--text2)');
+  try {
+    const body = { code, direction: _moDir, volume, price: t.needsPrice ? price : 0, price_type_key: priceTypeKey };
+    const d = await _liveFetch('/live/order', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (d && d.ok) {
+      let okText = '✓ 已提交 ' + (d.order_id != null ? 'order_id=' + d.order_id : d.status || '');
+      if (d.price_type_warning) okText += ' (' + d.price_type_warning + ')';
+      setMsg(okText, 'var(--green)');
+    } else {
+      setMsg('✗ ' + ((d && d.reason) || '下单失败'), 'var(--red)');
+    }
+    loadLiveOrders();
+    // T8: 下单 5s 后自动持仓同步(成交回调可能已先到,这里兜底对齐)
+    setTimeout(async () => {
+      try {
+        await _liveFetch('/live/positions/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+        loadLivePositions();
+      } catch (e) { console.warn('持仓同步失败:', e.message); }
+    }, 5000);
+  } catch (e) {
+    setMsg('✗ ' + e.message, 'var(--red)');
+  } finally {
+    window._moSubmitting = false;
+    if (submitBtn) submitBtn.disabled = false;
+  }
+}
+
+async function cancelLiveOrder(orderId) {
+  if (!confirm('确认撤销订单 order_id=' + orderId + '?')) return;
+  try {
+    const d = await _liveFetch('/live/order/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order_id: orderId }) });
+    if (d && d.ok) {
+      alert('撤单成功');
+    } else {
+      alert('撤单失败: ' + ((d && d.reason) || '未知'));
+    }
+    loadLiveOrders();
+  } catch (e) { alert('撤单失败: ' + e.message); }
+}
+
+function initManualOrderForm() {
+  const sel = document.getElementById('mo-price-type');
+  if (!sel) return;  // 不在实盘 tab
+  if (!sel.options.length) onManualOrderCodeChange();  // 首次填充下拉
+  const cashEl = document.getElementById('mo-cash');
+  if (cashEl) cashEl.textContent = window._liveCash > 0 ? fmtCapital(window._liveCash) : '—';
+}

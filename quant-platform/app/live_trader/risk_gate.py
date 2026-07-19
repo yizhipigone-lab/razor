@@ -4,9 +4,10 @@
 闸门 2/3/4/10 只对 buy(止损卖出不应被误拒)。
 闸门 10:同股冷却 20 天(buy-only,查 live_deals 最近卖出记录)。
 C1:闸门 3/4 含在途买入预扣,防异步撮合超买。
-H1:QMT 缺价时闸门5a fail-safe 禁买。
+H1:闸门5a fail-safe 仅限"无资产数据";基准缺失走兜底链(今日快照→昨收→本金)。
 H4:闸门7 5分钟时间窗 + risk/broker 分类。
 H6:闸门9 T+1 can_use_volume。
+2026-07-16:闸门5a 基准缺失兜底(今日无快照时 QMT 开盘未连 → 不再全天误禁买)。
 2026-07-18:闸门5c 涨停封板拒买(buy-only,缺价 fail-safe 拒买,不计入连续拒绝计数)。
 """
 import time
@@ -111,13 +112,13 @@ class RiskGate:
                 return (False, gates, f"总仓 {new_total:.0f} > {max_total:.0f}")
             gates.append(self._gate(4, "总仓位(含在途)", True, f"≤{max_total:.0f}", f"{new_total:.0f}"))
 
-            # 闸门 5a:日亏软熔断(H1:QMT缺价fail-safe)
+            # 闸门 5a:日亏软熔断(2026-07-16:基准缺失已走兜底链,此处 fail-safe 仅限无资产数据)
             daily_loss_pct = self._calc_daily_loss_pct(asset, positions, quote)
             if daily_loss_pct is None:
-                # QMT 缺价或无基准,无法算日亏 → fail-safe 禁买(H1)
+                # asset 缺失(无任何资产数据),无法算日亏 → fail-safe 禁买
                 gates.append(self._gate("5a", "日亏软熔断", False, f"≥-{self.config.daily_loss_halt_pct*100:.1f}%", "缺价fail-safe"))
                 self._record_rejection("risk")
-                return (False, gates, "QMT缺价/无基准无法算日亏,fail-safe禁买")
+                return (False, gates, "无资产数据无法算日亏,fail-safe禁买")
             if daily_loss_pct <= -self.config.daily_loss_halt_pct:
                 gates.append(self._gate("5a", "日亏软熔断", False, f"≥-{self.config.daily_loss_halt_pct*100:.1f}%", f"{daily_loss_pct*100:.2f}%"))
                 self._record_rejection("risk")
@@ -185,10 +186,15 @@ class RiskGate:
                     gates.append(self._gate(9, "T+1可卖", False, "today>entry_date", "当日买入不可卖"))
                     self._record_rejection("risk")
                     return (False, gates, "当日买入不可卖(T+1)")
+                if entry_d is None:
+                    # M4(审计):entry_date 缺失则日历双保险失效,仅靠 can_use_volume 兜底;
+                    # 记 warning 提示运营(不强行拒卖,避免误拦 entry_date 未回填的旧持仓)
+                    logger.warning(f"闸门9:持仓 {intent.code} entry_date 缺失,T+1 仅靠 can_use_volume 兜底")
             gates.append(self._gate(9, "T+1可卖", True, "≤can_use_volume", "OK"))
 
         # 闸门 7:连续拒绝(最后检查,本单通过则清零)
-        if self._check_consecutive_rejection():
+        # 主开关禁用时不熔断(kill_switch.is_enabled()==False → 跳过本闸门,仍记录拒绝但不拦单)
+        if self.kill_switch and self.kill_switch.is_enabled() and self._check_consecutive_rejection():
             gates.append(self._gate(7, "连续拒绝", False, f"{self.config.max_consecutive_rejections}次/5分钟", "已达上限"))
             return (False, gates, "连续拒绝达上限,kill switch 已激活")
         gates.append(self._gate(7, "连续拒绝", True, f"{self.config.max_consecutive_rejections}次/5分钟", "OK"))
@@ -227,9 +233,9 @@ class RiskGate:
 
     def _calc_daily_loss_pct(self, asset: Optional[Dict], positions: Optional[List[Dict]],
                              quote: Optional[Dict]) -> Optional[float]:
-        """日亏率 = (当前总资产 - 开盘总资产) / 开盘总资产(§16.4)
+        """日亏率 = (当前总资产 - 日亏基准) / 日亏基准(§16.4)
 
-        H1:QMT 缺价或无基准时返回 None 触发 fail-safe。
+        2026-07-16:基准缺失已走兜底链(今日快照→昨收→本金),仅 asset 缺失时返回 None 触发 fail-safe。
         """
         if not asset:
             return None
@@ -240,14 +246,24 @@ class RiskGate:
         return (total - open_asset) / open_asset
 
     def _get_open_asset(self) -> Optional[float]:
-        """从 live_assets_backup 取当日首条总资产(§16.4 闸门5a 基准)"""
-        if not self.store:
-            return None
+        """从 live_assets_backup 取日亏基准(§16.4 闸门5a 基准)
+
+        2026-07-16 根因修复:今日无快照(QMT 开盘未连)时不再直接 fail-safe,
+        走兜底链:今日首条快照 → 昨收快照 → live_capital(首日无历史)。
+        仅 store 缺失/查询异常且 live_capital 无效时才返回 None。
+        """
         try:
-            return self.store.get_open_asset()
+            if self.store:
+                baseline = self.store.get_daily_baseline()
+                if baseline is not None and baseline > 0:
+                    return baseline
+                logger.warning("闸门5a:今日+历史均无资产快照,用 live_capital 兜底基准")
         except Exception as e:
             logger.warning(f"获取开盘资产失败: {e}")
-            return None
+        # 兜底(无快照或查询异常):用 live_capital,不阻断交易(异常已在日志留痕)
+        if self.config.live_capital > 0:
+            return float(self.config.live_capital)
+        return None
 
     # ===== 闸门7 拒绝计数(H4:5分钟窗+分类)=====
 
@@ -263,6 +279,9 @@ class RiskGate:
             # 只算 risk/broker
             risk_broker = [c for t, c in self._rejections if c in ("risk", "broker")]
             if len(risk_broker) >= self.config.max_consecutive_rejections:
+                if self.kill_switch and not self.kill_switch.is_enabled():
+                    logger.info(f"闸门7:连续 {len(risk_broker)} 次risk/broker拒绝,但急停主开关已禁用,不激活")
+                    return
                 logger.critical(f"闸门7:5分钟内连续 {len(risk_broker)} 次risk/broker拒绝,激活kill switch")
                 if self.kill_switch:
                     self.kill_switch.activate(

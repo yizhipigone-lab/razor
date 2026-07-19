@@ -91,6 +91,11 @@ class LiveTraderConfig:
     auto_buy_time: str = "14:50"             # 触发时点(在 buy_signal_cutoff 14:59 之前;比模拟盘 14:52 早,错开 TDX)
     auto_buy_lookback_days: int = 500        # 选股回看天数(与模拟盘 cron_jobs.py:452 对齐)
 
+    # ===== Kill Switch 主开关(2026-07-16)=====
+    # True=启用急停机制(默认,安全);False=整个机制禁用(activate 空操作、is_active 恒 False、闸门7 不熔断)。
+    # 种子值,运行时由 runtime_state.kill_switch_enabled 覆盖(前端可热切换)。
+    kill_switch_enabled: bool = True
+
     # ===== 离场扫描 =====
     exit_scan_interval_sec: float = 60.0    # 离场扫描间隔(默认60s,可调低至10s)
 
@@ -122,7 +127,11 @@ def load_config() -> LiveTraderConfig:
     notify_channel = settings.get("notify", "channel", default="") or ""
 
     # 合并:环境变量 > JSON > 默认值
-    mode = env_mode or cfg_dict.get("mode", "dry-run")
+    # 边界净化:环境变量是不可信输入,可能带 \r / 空格 / 外层引号
+    # (2026-07-16: start.bat set 的值干净,但 cmd 会话残留或手动 set 可能带脏字符,
+    #  导致 mode="live\r" 之类通过 not in ("dry-run","live") 校验失败)
+    raw_mode = env_mode or cfg_dict.get("mode", "dry-run")
+    mode = raw_mode.strip().strip('"').strip("'")
     live_capital = float(env_capital) if env_capital else float(cfg_dict.get("live_capital", 1150000.0))
 
     config = LiveTraderConfig(
@@ -137,18 +146,19 @@ def load_config() -> LiveTraderConfig:
         max_total_position_pct=float(cfg_dict.get("max_total_position_pct", 0.90)),
         daily_loss_halt_pct=float(cfg_dict.get("daily_loss_halt_pct", 0.03)),
         max_single_loss_pct=float(cfg_dict.get("max_single_loss_pct", 0.05)),
-        limit_up_gate_enabled=cfg_dict.get("limit_up_gate_enabled", True),
+        limit_up_gate_enabled=_as_bool(cfg_dict.get("limit_up_gate_enabled", True)),
         wework_webhook=wework_webhook,
         feishu_webhook=feishu_webhook,
         notify_channel=notify_channel,
         buy_position_size=float(cfg_dict.get("buy_position_size", 10000.0)),
         buy_position_ratio=float(cfg_dict.get("buy_position_ratio", 0.05)),
         buy_signal_token=cfg_dict.get("buy_signal_token", ""),
-        buy_signal_enabled=cfg_dict.get("buy_signal_enabled", True),
+        buy_signal_enabled=_as_bool(cfg_dict.get("buy_signal_enabled", True)),
         buy_signal_cutoff=cfg_dict.get("buy_signal_cutoff", "14:59"),
-        auto_buy_enabled=cfg_dict.get("auto_buy_enabled", False),
+        auto_buy_enabled=_as_bool(cfg_dict.get("auto_buy_enabled", False)),
         auto_buy_time=cfg_dict.get("auto_buy_time", "14:50"),
         auto_buy_lookback_days=int(cfg_dict.get("auto_buy_lookback_days", 500)),
+        kill_switch_enabled=_as_bool(cfg_dict.get("kill_switch_enabled", True)),
         exit_scan_interval_sec=float(cfg_dict.get("exit_scan_interval_sec", 60.0)),
         # 每日账户概览(v6.0 Phase 2)
         daily_summary_enabled=settings.get("notify", "daily_summary_enabled", default=True),
@@ -158,6 +168,18 @@ def load_config() -> LiveTraderConfig:
     # fail-fast 校验(§16.4)
     _validate_config(config)
     return config
+
+
+def _as_bool(v, default=True):
+    """布尔强转(M1 修复,2026-07-19 审计):JSON 字符串 "false" 会被 bool() 当 True,
+    显式解析防 limit_up_gate / auto_buy / kill_switch 等开关方向反转。"""
+    if isinstance(v, bool):
+        return v
+    if v is None:
+        return default
+    if isinstance(v, (int, float)):
+        return bool(v)
+    return str(v).strip().lower() in ("true", "1", "yes", "on")
 
 
 def _validate_config(config: LiveTraderConfig) -> None:
@@ -171,12 +193,18 @@ def _validate_config(config: LiveTraderConfig) -> None:
         errors.append("buy_position_ratio 必须在 (0,1]")
     if config.max_single_trade_pct <= 0 or config.max_single_trade_pct > 1:
         errors.append("max_single_trade_pct 必须在 (0,1]")
-    if config.max_position_pct <= 0 or config.max_total_position_pct <= 0:
-        errors.append("max_position_pct / max_total_position_pct 必须 > 0")
-    if config.daily_loss_halt_pct <= 0:
-        errors.append("daily_loss_halt_pct 必须 > 0")
+    if not (0 < config.max_position_pct <= 1):
+        errors.append("max_position_pct 必须在 (0,1]")
+    if not (0 < config.max_total_position_pct <= 1):
+        errors.append("max_total_position_pct 必须在 (0,1]")
+    if not (0 < config.daily_loss_halt_pct <= 1):
+        errors.append("daily_loss_halt_pct 必须在 (0,1]")
+    if not (0 < config.cash_reserve_pct < 1):
+        errors.append("cash_reserve_pct 必须在 (0,1)")
+    if not (0 < config.max_single_loss_pct <= 1):
+        errors.append("max_single_loss_pct 必须在 (0,1]")
     if config.mode not in ("dry-run", "live"):
-        errors.append(f"mode 必须是 dry-run 或 live,当前 {config.mode}")
+        errors.append(f"mode 必须是 dry-run 或 live,当前 {config.mode!r}")
 
     if errors:
         msg = "实盘配置校验失败(fail-fast):\n  - " + "\n  - ".join(errors)

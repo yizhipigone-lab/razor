@@ -75,6 +75,33 @@ def test_refresh_quotes_writes_last_close(store):
     assert pos["last_price"] == 10.5, f"last_price 应为 10.5,实际 {pos['last_price']}"
 
 
+# ===== M2(2026-07-19): apply_buy_fill 缺价不污染浮盈 =====
+
+def test_apply_buy_fill_no_price_does_not_inflate_float_profit(store):
+    """M2: apply_buy_fill 遇 QMT 回报无价(filled_price=0)时,
+    avg_cost 留 NULL 不冒充 0;后续 refresh_quotes 不该算出 (last-0)*volume 的虚高浮盈。"""
+    # 模拟 QMT 成交回报缺价(filled_price=0)
+    store.apply_buy_fill("600000.SH", filled_volume=100, filled_price=0)
+
+    pos = store.get_position("600000.SH")
+    assert pos["volume"] == 100
+    # avg_cost 不该有正值(成本未确认,留 NULL)
+    assert not (pos.get("avg_cost") or 0) > 0, "filled_price=0 时 avg_cost 不该冒充正值"
+
+    # refresh_quotes 拿到真实 last=10.0
+    store.refresh_quotes({"600000.SH": {"lastPrice": 10.0, "lastClose": 9.5}})
+
+    pos = store.get_position("600000.SH")
+    # 关键:float_profit 不该是 (10-0)*100=1000 的虚高值
+    assert pos["float_profit"] == 0.0, (
+        f"成本未确认时 float_profit 应为 0,实际 {pos['float_profit']}(不该虚高)"
+    )
+    assert pos["profit_rate"] == 0.0
+    # market_value 仍按现价算(与成本无关)
+    assert pos["market_value"] == 1000.0, f"市值仍按现价×数量算,实际 {pos['market_value']}"
+    assert pos["last_price"] == 10.0
+
+
 # ===== C-T2: /live/positions 契约(last_close + today_buy_volume) =====
 
 def test_positions_contract(store):

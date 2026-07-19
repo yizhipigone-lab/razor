@@ -56,6 +56,9 @@ class LiveScheduler:
         self._last_quotes_refresh_time: float = 0.0
         self._today: str = ""
         self._executed_today: set = set()
+        # 进程启动日期(2026-07-15):用于 _check_signal_heartbeat 区分"今日启动的服务"vs"跨日冷启动",
+        # 后者心跳不存在是预期(14:55 早已过去),不该刷告警
+        self._process_start_date = date.today()
 
         # 离场扫描间隔(可运行时修改,默认从 config 读取)
         self._exit_scan_interval: float = getattr(config, 'exit_scan_interval_sec', 60.0)
@@ -221,15 +224,17 @@ class LiveScheduler:
         """非交易日:自动激活 kill switch"""
         if "non_trading_check" not in self._executed_today:
             if self.kill_switch and not self.kill_switch.is_active():
-                self.kill_switch.activate(
+                # 主开关禁用时 activate 为空操作(返回 False),此时不发"已激活"日志/通知,
+                # 防每个周末幽灵告警。
+                if self.kill_switch.activate(
                     reason="非交易日自动激活(周末/节假日)",
                     source="scheduler"
-                )
-                logger.info("调度:非交易日,kill switch 已激活")
-                if self.notifier:
-                    self.notifier.kill_switch_activated(
-                        "非交易日,实盘监控暂停", "scheduler"
-                    )
+                ):
+                    logger.info("调度:非交易日,kill switch 已激活")
+                    if self.notifier:
+                        self.notifier.kill_switch_activated(
+                            "非交易日,实盘监控暂停", "scheduler"
+                        )
             self._executed_today.add("non_trading_check")
 
     def _handle_trading_day_activate(self) -> None:
@@ -334,8 +339,18 @@ class LiveScheduler:
         - 无心跳 → 告警(可能是 API 服务端选股失败或网络不通)
         - 有心跳但 scan_status=error → 告警
         - 有心跳且 status=ok → 正常
+
+        冷启动保护(2026-07-15):若进程启动日期 != 今日(跨日重启),14:55 早已过去,
+        当日无心跳是预期,跳过告警只 info。否则 23:28 重启会刷假阳性 WARNING。
         """
         if not self.store:
+            return
+        # 冷启动保护:进程启动日期不是今日 → 14:55 已过,心跳不存在是预期
+        if self._process_start_date != date.today():
+            logger.info(
+                f"14:55 看门狗:进程启动日期 {self._process_start_date} != 今日 "
+                f"{date.today()}(跨日冷启动),心跳不存在属预期,跳过检查"
+            )
             return
         # 候选④:心跳读 + 分支告警委托 TaskRunner(异常吞掉,不阻塞主循环)
         def _do_check():

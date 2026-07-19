@@ -115,19 +115,30 @@ class ExitMonitor:
                 return None
 
             avg_cost = float(qmt_pos.get("avg_cost", 0) or (local_pos or {}).get("avg_cost", 0))
-            last_price = float(qmt_pos.get("last_price", 0))
+            # last_price 优先级: QMT 实时 tick → QMT 持仓快照 → 本地 DuckDB
+            last_price = 0.0
 
-            # 拉行情补 last_price + 当日 high/low(U1: HS 用真实 low)
-            today_high = last_price
-            today_low = last_price
+            # 拉行情(优先用实时 tick 的 lastPrice,不再以持仓快照为主力)
+            today_high = 0.0
+            today_low = 0.0
             if self.qmt:
                 quotes = self.qmt.get_realtime_quotes([code])
                 q = quotes.get(code, {}) if quotes else {}
                 if q:
-                    if last_price <= 0:
-                        last_price = float(q.get("lastPrice", 0) or 0)
+                    last_price = float(q.get("lastPrice", 0) or 0)
                     today_high = float(q.get("high", 0) or last_price)
                     today_low = float(q.get("low", 0) or last_price)
+
+            # tick 不可用 → 降级到 QMT 持仓快照
+            if last_price <= 0:
+                last_price = float(qmt_pos.get("last_price", 0))
+            # 再降级 → 本地 DuckDB(quotes_refresh 3s 写入)
+            if last_price <= 0:
+                last_price = float((local_pos or {}).get("last_price", 0))
+            # today_high/low 兜底
+            if last_price > 0 and today_high <= 0:
+                today_high = last_price
+                today_low = last_price
 
             # v2(审计M5): avg_cost/last_price 缺失则规则除零被 engine 静默吞,持仓永不退出 → 显式告警跳过
             if avg_cost <= 0 or last_price <= 0:
@@ -198,7 +209,9 @@ class ExitMonitor:
         return 0
 
     def _calc_hold_days(self, entry_date) -> int:
-        """v2(A10/T4): 交易日计数(对齐模拟盘 intraday_monitor);entry_date 缺失用今日填充"""
+        """v2(A10/T4): 交易日计数(对齐模拟盘 intraday_monitor);entry_date 缺失用今日填充
+        规则:买入后第二天起算第1天(window 排除 entry_date 本身)
+        """
         try:
             if entry_date is None:
                 entry_date = date.today()
@@ -210,9 +223,9 @@ class ExitMonitor:
             cal = _load_trading_calendar() or set()
             today = date.today()
             if cal:
-                window = sorted(d for d in cal if entry_d <= d <= today)
+                window = sorted(d for d in cal if entry_d < d <= today)
                 return max(1, len(window))
-            return max(1, (today - entry_d).days)  # fallback: 自然日
+            return max(1, (today - entry_d).days - 1)  # fallback: 自然日(第二天起算)
         except Exception:
             return 1
 

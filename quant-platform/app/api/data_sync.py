@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request, HTTPException
 from typing import Optional
 from core.logger import get_logger
 from core.settings import settings
@@ -70,8 +70,12 @@ async def start_download(mode: str = "incremental", freq: str = "daily", years: 
     return {"status": "started", "message": "全量同步任务已由后端线程承接"}
 
 @router.post("/api/data/sync_log")
-async def receive_sync_log(payload: dict):
+async def receive_sync_log(payload: dict, request: Request):
     """供外部脚本向 WebSocket 广播同步日志并控制状态"""
+    # C4 修复(2026-07-19 审计):只允许本机调用(服务已绑 127.0.0.1,纵深防御防伪造 done 释放全局同步锁)
+    client_host = request.client.host if request.client else None
+    if client_host not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(403, "仅允许本地访问")
     msg = payload.get("msg", "")
     level = payload.get("level", "info")
     msg_type = payload.get("type", "log")

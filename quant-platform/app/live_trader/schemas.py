@@ -92,6 +92,7 @@ class OrderRequest(BaseModel):
     volume: int = Field(..., gt=0)
     price: float = Field(0.0, ge=0)
     price_type: int = 11
+    price_type_key: str = ""   # 市价键(2026-07-18 M1):limit/latest/peer_best/...,有值时优先于 price_type
     strategy_name: str = ""
     terminal: str = "WEB"
 

@@ -26,11 +26,33 @@ try:
     from xtquant.xttrader import XtQuantTrader
     from app.utils.xtquant_compat import (
         get_stock_account_class, safe_getattr, safe_float, safe_int,
-        format_code, ORDER_TYPE_BUY, ORDER_TYPE_SELL,
+        format_code,
+        ORDER_TYPE_BUY, ORDER_TYPE_SELL,
     )
     _xtquant_available = True
 except ImportError as e:
     logger.warning(f"xtquant 未安装(非 Windows 环境?): {e}")
+
+
+def _format_quote_code(code: str) -> str:
+    """决定传给 xtdata.get_full_tick 的查询码(解决 000001 股票/指数歧义)。
+
+    规则:
+    - 带后缀的码:后缀已确定身份,原样返回。000001.SZ=平安银行(深市股票),
+      000001.SH=上证指数(沪市指数)——绝不剥后缀重判,否则 000001.SZ 会被查成
+      000001.SH 指数点位(2026-07-16"平安银行变上证指数"事故根因)。
+    - 裸码:is_index_code 命中指数表 → format_index_code 强制 .SH(指数查询场景);
+      否则 format_code 按数字补后缀(裸 000001 默认按深市股票)。
+
+    纯函数(仅依赖 xtquant_compat,无 xtquant 依赖),便于单测。
+    """
+    from app.utils.xtquant_compat import format_code, format_index_code, is_index_code
+    c = str(code)
+    if '.' in c:
+        return c  # 后缀已确定身份,原样返回
+    if is_index_code(c):
+        return format_index_code(c)
+    return format_code(c)
 
 
 class QmtWrapper:
@@ -76,19 +98,27 @@ class QmtWrapper:
         return xtdata.connect()
 
     def get_realtime_quotes(self, codes: List[str]) -> Dict[str, Dict[str, float]]:
-        """获取实时行情(批量)"""
+        """获取实时行情(批量)
+        返回 key 严格用入参的 codes_fmt(避免 QMT 内部把 000001 默认映射成 000001.SH 上证指数)
+        """
         if not _xtquant_available:
             return {}
         try:
-            codes_fmt = [format_code(c) if '.' not in c else c for c in codes]
+            codes_fmt = [_format_quote_code(c) for c in codes]
+            # 裸码 → 入参 fmt 的反向映射(第一个 wins,匹配原线性扫描语义);
+            # QMT 可能返回不同后缀(例如 000001 → 000001.SH 指数),按裸码 O(1) 校正 key
+            bare_to_fmt = {}
+            for c in codes_fmt:
+                bare_to_fmt.setdefault(c.split('.')[0], c)
             ticks = xtdata.get_full_tick(codes_fmt)
             result = {}
             for code, tick in (ticks or {}).items():
                 if tick is None:
                     continue
-                # xtdata.get_full_tick 返回 dict,用 .get() 而非 getattr
+                bare = code.split('.')[0] if '.' in code else code
+                key = bare_to_fmt.get(bare) or code  # 找不到就用原 key 兜底
                 if isinstance(tick, dict):
-                    result[code] = {
+                    result[key] = {
                         "lastPrice": safe_float(tick.get("lastPrice", 0)),
                         "lastClose": safe_float(tick.get("lastClose", 0)),
                         "open": safe_float(tick.get("open", 0)),
@@ -97,8 +127,7 @@ class QmtWrapper:
                         "volume": safe_float(tick.get("volume", 0)),
                     }
                 else:
-                    # 兜底:对象属性方式(xtquant 某些版本返回对象)
-                    result[code] = {
+                    result[key] = {
                         "lastPrice": safe_float(safe_getattr(tick, "lastPrice", 0)),
                         "lastClose": safe_float(safe_getattr(tick, "lastClose", 0)),
                         "open": safe_float(safe_getattr(tick, "open", 0)),
@@ -121,7 +150,7 @@ class QmtWrapper:
         """
         if not _xtquant_available:
             return 0
-        codes_fmt = [format_code(c) if '.' not in c else c for c in codes]
+        codes_fmt = [format_code(c.split('.')[0]) for c in codes]
         seq = xtdata.subscribe_whole_quote(codes_fmt, callback=callback)
         logger.info(f"subscribe_whole_quote({codes_fmt}) seq={seq}")
         return seq
@@ -152,7 +181,7 @@ class QmtWrapper:
         if not _xtquant_available:
             return {}
         try:
-            code_fmt = format_code(code) if '.' not in code else code
+            code_fmt = format_code(code.split('.')[0])
             d = xtdata.get_instrument_detail(code_fmt)
             return d if d else {}
         except Exception as e:

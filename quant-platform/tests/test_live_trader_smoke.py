@@ -53,7 +53,10 @@ def test_xtquant_compat_format_code():
     assert format_code("000001") == "000001.SZ"
     assert format_code("300750") == "300750.SZ"
     assert format_code("688981") == "688981.SH"
-    assert format_code("159226") == "159226.SZ"  # ETF
+    assert format_code("159226") == "159226.SZ"  # 深市 ETF
+    assert format_code("510300") == "510300.SH"  # 沪市 ETF(沪深300,非深市)
+    assert format_code("510050") == "510050.SH"  # 沪市 ETF(上证50)
+    assert format_code("880001") == "880001.SH"  # 申万综指指数(非北交所)
     assert format_code("600000.SH") == "600000.SH"  # 已带后缀
     assert strip_code_suffix("600000.SH") == "600000"
 
@@ -415,6 +418,138 @@ def test_kill_switch_triple_state(tmp_config, store):
     assert not os.path.exists(ks._file_path)
 
 
+def test_kill_switch_master_switch_disables(tmp_config, store):
+    """主开关禁用:activate 空操作 + is_active 恒 False(即使文件/DB 有残留)"""
+    from app.live_trader.kill_switch import KillSwitch
+
+    flag = {"enabled": False}
+    ks = KillSwitch(tmp_config, store, enabled_check=lambda: flag["enabled"])
+    # 禁用态:activate 不应落任何状态
+    assert ks.activate(reason="x", source="test") is False
+    assert ks.is_active() is False
+    assert not os.path.exists(ks._file_path)
+    db_state = store.get_killswitch()
+    assert db_state.get("activated") is not True
+    assert ks.status()["enabled"] is False
+    assert ks.status()["activated"] is False
+
+    # 残留场景:先用启用态写一份残留文件,再禁用,is_active 仍应返回 False
+    flag["enabled"] = True
+    ks.activate(reason="residue", source="gate7")
+    assert os.path.exists(ks._file_path)
+    flag["enabled"] = False
+    assert ks.is_active() is False  # 主开关关,忽略残留文件
+
+    # 重新启用:残留文件被识别,is_active 恢复 True
+    flag["enabled"] = True
+    assert ks.is_active() is True
+    ks.deactivate()
+
+
+def test_kill_switch_disable_clears_residue(tmp_config, store):
+    """关闭主开关时端点逻辑:直接 deactivate() 清残留(is_active 已短路,不能用它判断)"""
+    from app.live_trader.kill_switch import KillSwitch
+
+    flag = {"enabled": True}
+    ks = KillSwitch(tmp_config, store, enabled_check=lambda: flag["enabled"])
+    ks.activate(reason="residue", source="gate7")
+    assert os.path.exists(ks._file_path)
+
+    # 模拟端点关闭流程:先翻 flag,再 deactivate()(端点里 is_active 已短路,故直接调)
+    flag["enabled"] = False
+    assert ks.is_active() is False  # 短路:即使文件还在
+    ks.deactivate()  # 端点直接调,不经过 is_active 判断
+    assert not os.path.exists(ks._file_path)  # 残留文件被清
+
+    # 重新启用后是干净状态
+    flag["enabled"] = True
+    assert ks.is_active() is False
+
+
+def test_kill_switch_deactivate_clears_db_only_residue(tmp_config, store):
+    """MEDIUM-2 修复:内存 flag=False 但 DB 有残留时,deactivate 也能清 DB(不提前 return)"""
+    from app.live_trader.kill_switch import KillSwitch
+
+    ks = KillSwitch(tmp_config, store)
+    assert ks.is_active() is False
+    # 模拟 DB-only 残留(文件写失败/重启 __init__ 只读文件):直接置 DB,内存 flag 保持 False
+    store.set_killswitch(True, "db_only", "gate7", datetime.now())
+    assert store.get_killswitch()["activated"] is True
+    assert os.path.exists(ks._file_path) is False
+
+    # 旧实现会在这里提前 return,DB 清不掉;修复后照常清
+    ret = ks.deactivate()
+    assert ret is False  # 内存态本就未激活,返回 False
+    assert store.get_killswitch()["activated"] is False  # 但 DB 已被清
+
+    # 重新启用不应因 DB 残留复活
+    assert ks.is_active() is False
+
+
+def test_scheduler_non_trading_day_no_ghost_notify_when_disabled(tmp_config, store):
+    """MEDIUM-1 修复:主开关禁用时,非交易日 scheduler 不发'急停已激活'幽灵通知"""
+    from app.live_trader.kill_switch import KillSwitch
+    from app.live_trader.scheduler import LiveScheduler
+
+    flag = {"enabled": False}
+    ks = KillSwitch(tmp_config, store, enabled_check=lambda: flag["enabled"])
+    notifier = MagicMock()
+    sched = LiveScheduler(tmp_config, store=store, kill_switch=ks, notifier=notifier)
+
+    sched._handle_non_trading_day()
+
+    # activate 空操作,不应发"已激活"通知
+    assert notifier.kill_switch_activated.call_count == 0
+    assert ks.is_active() is False
+
+    # 对照:主开关启用时,通知正常发
+    flag["enabled"] = True
+    sched2 = LiveScheduler(tmp_config, store=store, kill_switch=ks, notifier=notifier)
+    sched2._handle_non_trading_day()
+    assert notifier.kill_switch_activated.call_count == 1
+    assert ks.is_active() is True
+    ks.deactivate()
+
+
+def test_kill_switch_master_switch_default_enabled(tmp_config, store):
+    """不传 enabled_check(向后兼容):默认启用,行为不变"""
+    from app.live_trader.kill_switch import KillSwitch
+    ks = KillSwitch(tmp_config, store)  # 兼容旧签名
+    assert ks.is_enabled() is True
+    assert ks.activate(reason="t", source="t") is True
+    assert ks.is_active() is True
+    ks.deactivate()
+
+
+def test_risk_gate_gate7_respects_master_switch(tmp_config, store):
+    """主开关禁用时,闸门7 不拦单(即使累计拒绝已达阈值)"""
+    from app.live_trader.risk_gate import RiskGate
+    from app.live_trader.kill_switch import KillSwitch
+    from app.live_trader.schemas import OrderIntent
+
+    flag = {"enabled": False}
+    ks = KillSwitch(tmp_config, store, enabled_check=lambda: flag["enabled"])
+    rg = RiskGate(tmp_config, store, ks, qmt_wrapper=MagicMock(connected=True))
+
+    # 注入足够多 risk 拒绝(闸门1 单笔超限)使 _rejections 堆满
+    intent = OrderIntent(code="600000.SH", direction="buy", volume=1000, price=50.0)
+    for _ in range(6):
+        rg.check(intent, asset={"cash": 500000})
+
+    # 主开关关:闸门7 不应激活 kill switch
+    assert ks.is_active() is False
+    # 第 7 次检查仍因闸门1 被拒,但拒绝原因应是"单笔金额"而非"连续拒绝达上限"
+    passed, gates, reason = rg.check(intent, asset={"cash": 500000})
+    assert passed is False
+    assert "单笔金额" in reason
+
+    # 启用主开关后,再触发一次拒绝 → 闸门7 熔断
+    flag["enabled"] = True
+    rg.check(intent, asset={"cash": 500000})
+    assert ks.is_active() is True
+    assert ks._source == "gate7"
+
+
 # ===== 7. Reconciler 不回写 live_positions(v5.3 修复)=====
 
 def test_reconciler_no_writeback(tmp_config, store):
@@ -501,7 +636,10 @@ if __name__ == "__main__":
 # ===== 9. 闸门5a 日亏计算(不再返回 None fail-safe)=====
 
 def test_risk_gate_5a_daily_loss_with_backup(tmp_config, store):
-    """闸门5a:有 live_assets_backup 时能算出日亏率(不再永远 fail-safe)"""
+    """闸门5a:有 live_assets_backup 时能算出日亏率(不再永远 fail-safe)
+
+    注意:asset 必须带 cash,否则闸门2(现金保留)先拒,5a 根本不会被评估。
+    """
     from app.live_trader.risk_gate import RiskGate
     from app.live_trader.kill_switch import KillSwitch
     from app.live_trader.schemas import OrderIntent
@@ -511,28 +649,31 @@ def test_risk_gate_5a_daily_loss_with_backup(tmp_config, store):
     qmt_mock.connected = True
     gate = RiskGate(tmp_config, store, ks, qmt_mock)
 
-    # 写入当日开盘资产备份(闸门5a 基准)
+    # 写入当日开盘资产备份(闸门5a 基准=100000)
     store.backup_asset({"cash": 50000, "frozen_cash": 0, "market_value": 50000, "total_asset": 100000})
 
-    # 场景1:当前总资产=100000(无亏),应通过
+    # 场景1:当前总资产=100000(无亏),5a 应通过
     intent = OrderIntent(code="600000.SH", direction="buy", volume=100, price=10.0, client_order_id="t1")
-    passed, gates, reason = gate.check(intent, asset={"total_asset": 100000}, positions=[], quote=None)
+    # 给非涨停 quote:避免 5c 走 quote_source 真实降级链(QMT/TDX/腾讯),结果随机器漂移
+    passed, gates, reason = gate.check(intent, asset={"total_asset": 100000, "cash": 50000}, positions=[],
+                                       quote={"lastClose": 10.0, "lastPrice": 10.0})
     gate_5a = [g for g in gates if g.get("gate") == "5a"]
-    # 缺行情时闸门3/4/5a 可能因其他原因拒绝,但5a不应因"无基准"而fail-safe
-    if gate_5a:
-        assert gate_5a[0]["current"] != "缺价fail-safe", "有资产备份不应返回缺价fail-safe"
+    assert gate_5a, "闸门5a 应被评估(asset 带 cash,闸门2 不拦)"
+    assert gate_5a[0]["passed"] is True
+    assert gate_5a[0]["current"] != "缺价fail-safe"
 
-    # 场景2:日亏 > 3%,应被拒
+    # 场景2:日亏 > 3%,应被 5a 熔断拒绝
+    # 日亏率 = (96000-100000)/100000 = -4% < -3%
     intent2 = OrderIntent(code="600000.SH", direction="buy", volume=100, price=10.0, client_order_id="t2")
     passed2, gates2, reason2 = gate.check(
-        intent2, asset={"total_asset": 96000}, positions=[], quote=None
+        intent2, asset={"total_asset": 96000, "cash": 50000}, positions=[], quote=None
     )
-    # 日亏率 = (96000-100000)/100000 = -4% < -3%,应被5a拒绝
     gate_5a_2 = [g for g in gates2 if g.get("gate") == "5a"]
-    if gate_5a_2 and not gate_5a_2[0]["passed"]:
-        assert "熔断" in reason2 or "日亏" in reason2
+    assert gate_5a_2 and not gate_5a_2[0]["passed"]
+    assert "熔断" in reason2 or "日亏" in reason2
 
-    # 场景3:无资产备份,应 fail-safe 禁买
+    # 场景3(2026-07-16 行为变更):无任何资产备份 → 不再 fail-safe,用 live_capital 兜底基准
+    # 日亏率 = (96000-100000)/100000 = -4% < -3%,应被 5a 以"日亏熔断"拒绝(而非"缺价fail-safe")
     # 用新的 store(没有 backup)
     from app.live_trader.config import LiveTraderConfig
     from app.live_trader.store import LiveTraderStore
@@ -546,11 +687,65 @@ def test_risk_gate_5a_daily_loss_with_backup(tmp_config, store):
         empty_store = LiveTraderStore(empty_cfg)
         gate3 = RiskGate(empty_cfg, empty_store, ks, qmt_mock)
         intent3 = OrderIntent(code="600000.SH", direction="buy", volume=100, price=10.0, client_order_id="t3")
-        passed3, gates3, reason3 = gate3.check(intent3, asset={"total_asset": 96000}, positions=[], quote=None)
+        passed3, gates3, reason3 = gate3.check(intent3, asset={"total_asset": 96000, "cash": 50000}, positions=[], quote=None)
         gate_5a_3 = [g for g in gates3 if g.get("gate") == "5a"]
-        if gate_5a_3:
-            assert gate_5a_3[0]["current"] == "缺价fail-safe", "无资产备份应 fail-safe"
+        assert gate_5a_3, "应有 5a 闸门记录"
+        assert gate_5a_3[0]["current"] != "缺价fail-safe", "基准缺失应走 live_capital 兜底,不再 fail-safe"
+        assert "日亏" in reason3 or "熔断" in reason3, f"应用本金基准算出日亏并熔断: {reason3}"
         empty_store.close()
+
+    # 场景4:asset 完全缺失 → _calc_daily_loss_pct 返回 None(fail-safe 唯一入口)
+    assert gate._calc_daily_loss_pct(None, [], None) is None
+
+
+def test_store_daily_baseline_fallback(tmp_config, store):
+    """get_daily_baseline 兜底链:今日首条 → 昨收 → None(2026-07-16 根因修复)"""
+    from datetime import timedelta
+
+    # 无数据 → None
+    assert store.get_daily_baseline() is None
+
+    # 写入昨日快照 → 兜底昨收
+    yesterday = date.today() - timedelta(days=1)
+    store._conn.execute(
+        "INSERT INTO live_assets_backup (backup_date, backup_time, cash, frozen_cash, market_value, total_asset) "
+        "VALUES (?,?,?,?,?,?)",
+        [yesterday, "15:00", 1, 0, 1, 99000.0])
+    assert store.get_daily_baseline() == 99000.0
+
+    # 写入今日快照 → 优先今日首条(不用昨收)
+    store.backup_asset({"cash": 1, "frozen_cash": 0, "market_value": 1, "total_asset": 100000.0})
+    assert store.get_daily_baseline() == 100000.0
+
+
+def test_risk_gate_5a_yesterday_baseline_no_failsafe(tmp_config, store):
+    """今日无快照但有昨收 → 5a 用昨收基准,不 fail-safe(2026-07-16 今日事故场景)"""
+    from datetime import timedelta
+    from app.live_trader.risk_gate import RiskGate
+    from app.live_trader.kill_switch import KillSwitch
+    from app.live_trader.schemas import OrderIntent
+
+    ks = KillSwitch(tmp_config, store)
+    qmt_mock = MagicMock()
+    qmt_mock.connected = True
+    gate = RiskGate(tmp_config, store, ks, qmt_mock)
+
+    # 只有昨日快照(模拟 QMT 开盘未连,今日无快照)
+    yesterday = date.today() - timedelta(days=1)
+    store._conn.execute(
+        "INSERT INTO live_assets_backup (backup_date, backup_time, cash, frozen_cash, market_value, total_asset) "
+        "VALUES (?,?,?,?,?,?)",
+        [yesterday, "15:00", 1, 0, 1, 100000.0])
+
+    # 当前总资产正常 → 5a 应通过,不得 fail-safe
+    intent = OrderIntent(code="600000.SH", direction="buy", volume=100, price=10.0, client_order_id="t5")
+    # 给非涨停 quote:避免 5c 走 quote_source 真实降级链(QMT/TDX/腾讯),结果随机器漂移
+    passed, gates, reason = gate.check(intent, asset={"total_asset": 100500, "cash": 50000}, positions=[],
+                                       quote={"lastClose": 10.0, "lastPrice": 10.0})
+    gate_5a = [g for g in gates if g.get("gate") == "5a"]
+    assert gate_5a, "5a 应被评估"
+    assert gate_5a[0]["current"] != "缺价fail-safe", "有昨收基准不应 fail-safe"
+    assert gate_5a[0]["passed"] is True
 
 
 # ===== 10. 调度器基本逻辑 =====

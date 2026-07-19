@@ -90,6 +90,27 @@ class ClearanceLock:
             self._cleanup_expired()
             return key in self._locks
 
+    def rebind_order_id(self, code: str, order_id: int) -> bool:
+        """下单拿到 order_id 后补建反查索引(H1 修复,2026-07-19 审计)。
+
+        acquire/acquire_with_wait 在下单前调用,此时 order_id 还没有(传 None),
+        _order_index 没建。下单成功拿到 seq/order_id 后调本方法补索引;
+        否则成交回调 release_by_order_id 找不到 → 锁持有到 TTL(300s) → 止损/止盈延迟。
+        """
+        if not order_id:
+            return False
+        key = self._key(code)
+        with self._lock:
+            entry = self._locks.get(key)
+            if not entry:
+                return False
+            old_oid = entry.get("order_id")
+            if old_oid:
+                self._order_index.pop(old_oid, None)
+            entry["order_id"] = order_id
+            self._order_index[order_id] = key
+            return True
+
     def _cleanup_expired(self) -> None:
         """清理过期锁"""
         now = time.time()
