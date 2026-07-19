@@ -173,7 +173,7 @@ async def place_order(req: dict):
     )
 
     # 调用 service(审计 W4.1:source="WEB"/lock_wait_sec=30 一字不动,与 _process_one_signal 的 TDX/5s 不同)
-    from ..main import place_order_service  # 留 main,阶段 3 搬 services/order_service.py
+    from ..services.order_service import place_order_service  # 阶段3已搬 services
     result = place_order_service(intent, source="WEB", lock_wait_sec=30)
     if price_type_warning:
         result["price_type_warning"] = price_type_warning
@@ -255,7 +255,7 @@ async def buy_signal(req: dict, authorization: str = ""):
 
     # 业务内核委托共享函数(去重/cutoff/并发/心跳/幂等 全在 process_buy_signals)
     # HTTP 端点与 scheduler 自给自足同源,保证副作用一致(尤其心跳,防 14:55 看门狗误报)
-    from ..main import process_buy_signals  # 留 main,阶段 3 搬 services/signal_service.py
+    from ..services.signal_service import process_buy_signals  # 阶段3已搬 services
     _strategy = getattr(signal_req, 'strategy', 'QUANTQQ') or 'QUANTQQ'
     return await process_buy_signals(
         signal_req.signals, strategy=_strategy, source=signal_req.source,

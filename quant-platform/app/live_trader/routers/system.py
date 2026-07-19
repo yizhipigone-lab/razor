@@ -66,7 +66,7 @@ async def sync_positions_admin(request: Request, body: dict = None):
     if not qmt or not qmt.connected:
         raise HTTPException(503, "QMT 未连接,无法同步持仓")
 
-    from ..main import _takeover_positions  # 阶段2搬 lifecycle.py 后改 import 源
+    from ..lifecycle import _takeover_positions  # 阶段2已搬 lifecycle.py
     code = (body or {}).get("code")
     try:
         codes = _takeover_positions(store, qmt, config, audit, code=code)
@@ -88,7 +88,7 @@ async def sync_positions_full():
         raise HTTPException(503, "QMT 未连接")
     if not store:
         raise HTTPException(503, "Store 未初始化")
-    from ..main import _takeover_positions  # 阶段2搬 lifecycle.py 后改 import 源
+    from ..lifecycle import _takeover_positions  # 阶段2已搬 lifecycle.py
     _takeover_positions(store, qmt, config, audit)
     positions = store.get_positions()
     return {"synced": len(positions), "positions": [
@@ -185,7 +185,7 @@ async def shutdown_service(request: Request):
 @router.post("/live/sync/intra")
 async def sync_intra(req: dict):
     """分时数据同步(隔离子进程,替代 qmt_proxy /api/sync/intra)"""
-    from ..main import _cleanup_zombies, _spawned_lock, _spawned_processes  # 阶段2搬 lifecycle
+    from ..lifecycle import _cleanup_zombies, _spawned_lock, _spawned_processes  # 阶段2已搬 lifecycle.py
     _cleanup_zombies()
     try:
         freq = req.get("freq", "5m")
@@ -214,7 +214,7 @@ async def sync_intra(req: dict):
 @router.post("/live/sync/index_daily")
 async def sync_index_daily(req: dict):
     """指数日线同步(隔离子进程,替代 qmt_proxy /api/sync/index_daily)"""
-    from ..main import _cleanup_zombies, _spawned_lock, _spawned_processes  # 阶段2搬 lifecycle
+    from ..lifecycle import _cleanup_zombies, _spawned_lock, _spawned_processes  # 阶段2已搬 lifecycle.py
     _cleanup_zombies()
     try:
         start_date = req.get("start_date")

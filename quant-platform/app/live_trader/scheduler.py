@@ -433,7 +433,7 @@ class LiveScheduler:
 
         # 2. 阻塞选股丢线程池(绝不阻塞事件循环)
         from .signal_picker import SignalPicker
-        from .main import process_buy_signals
+        from .services.signal_service import process_buy_signals
         from datetime import date as _date
 
         picker = SignalPicker(self.qmt, self.config)

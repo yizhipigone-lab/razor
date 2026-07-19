@@ -288,7 +288,13 @@ app/live_trader/
 
 **预期结果**：main.py 从 1930 行降到 ~800 行。**这一步收益最大、风险最低**。
 
-### 阶段 2 —— 抽 `lifecycle.py`（~半天）
+### 阶段 2 —— 抽 `lifecycle.py`（~半天）✅ 已完成（2026-07-19）
+
+> **执行记录**：建 lifecycle.py（6 组函数整组搬：_check_port_in_use / _acquire_lock / lifespan / _takeover_positions / _cleanup_dryrun_residue / 进程管理，logger **沿用 `live_trader.main`** 兑现 R6）；main.py 删 6 组 + 死 import（socket/asynccontextmanager/os/time）+ 加 `from .lifecycle import lifespan, _takeover_positions`（re-export 给 poc/test）；routers/system.py 4 处 import 改源 main→lifecycle。main.py **741 → 283 行（-458）**。
+> **验证清单 8/9 项过**：py_compile 3 文件 / **lifespan identity**（main.lifespan is lifecycle.lifespan）/ routes 44 / main 残留 0 / routers import 源 0（4 处全改）/ 死 import 0 / pytest 81 全过。⏳ 第 9 项**人工启动冒烟**（用户实盘验证 lifespan 真实启动：连 QMT + 拿锁 + 装配 + 调度器）。
+> **R6 兑现**：lifecycle.py `get_logger("live_trader.main")`，32 处启动/接管/QMT 失败日志 module 字段不变，运维监控不受影响（loguru bind module）。
+> **sed 删 lifespan 段**（398 行超长，Edit old_string 不现实）：grep 定位 + preview 确认范围（@asynccontextmanager 到 # ===== FastAPI app =====）+ sed 删 + py_compile/grep 残留验证，0 失误。
+> **计划书流程**：经 code-reviewer + architect 双 agent 审计 + 13 处迭代（H1 行号错/M1 组件数/M3 logger 运维盲区 等）后实施。
 
 - 抽 lifespan + `_takeover_positions` + `_cleanup_dryrun_residue` + **`_cleanup_zombies` + `_kill_all_subprocesses` + `_spawned_processes` + `_spawned_lock` 整组搬**
   - **🔴 审计修订（architect）**：lifespan L263 调 `_kill_all_subprocesses`，不整组搬会引用失败；原方案未说清这个耦合
@@ -296,7 +302,13 @@ app/live_trader/
 - main.py 留 re-export 别名给 poc 脚本和测试
 - **冒烟**：`POST /shutdown` 优雅关闭 + 子进程不残留 + 无 WAL 损坏
 
-### 阶段 3 —— 抽核心 services（~半天）
+### 阶段 3 —— 抽核心 services（~半天）✅ 已完成（2026-07-19，拆分收官）
+
+> **执行记录**：建 services/（`__init__.py` + `order_service.py` place_order_service + `signal_service.py` process_buy_signals/_process_one_signal），**函数内 import 4 处双点**（审计 C1/A 兑现 R7）；main.py 删 3 服务 + 死 import（asyncio/date/datetime/HTTPException/Request）；scheduler:436 + routers/trade×2 改源 main→services。main.py **283 → 93 行（-190）**。
+> **验证清单 10/10 项过**：py_compile 5 文件 / import + services identity / routes 44 / main 残留 0 / scheduler+trade from main 0 / main 死 import 0 / **services 函数内双点（R7，4 处审计点全 `..` 前缀）** / **pytest 81 全过**（test_buy_signal_bridge 调 process_buy_signals 间接验函数内 import）。⏳ 项9 **人工冒烟**（启服务 + buy-signal + 手工下单 + 14:50 auto_buy + 14:55 心跳）。
+> **R7 兑现**：4 处审计点（order_executor/schemas×2/buy_volume）全改 `..` 双点。grep `from \.[a-z_]` 命中是**注释**（"原 main 为 from .schemas" 描述），代码双点正确，pytest 兜底验证。
+> **计划书流程**：双 agent 审计抓 CRITICAL（C1/A 函数内 import 前缀，**和 trade R5 同类盲区第二次犯**）+ 8 处迭代后实施。
+> 🎉 **拆分收官**：main.py **1930 → 93 行（-95%）**。40 路由拆 4 个 router + lifespan/生命周期搬 lifecycle.py + 3 核心服务搬 services/。main.py 现在只剩启动骨架（app + middleware + include_router + _resolve + __main__）。
 
 - 抽 `services/order_service.py`（`place_order_service`）/ `services/signal_service.py`（`process_buy_signals` / `_process_one_signal`）
 - **🔴 同步改 `scheduler.py:436`** → `from .services.signal_service import process_buy_signals`（生产路径，必改，不能靠 main 别名）
