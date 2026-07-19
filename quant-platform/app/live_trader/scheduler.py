@@ -60,6 +60,10 @@ class LiveScheduler:
         # 后者心跳不存在是预期(14:55 早已过去),不该刷告警
         self._process_start_date = date.today()
 
+        # 配置文件 mtime(2026-07-19 主流程审计): _maybe_reload_settings 据此检测 app_setting.json
+        # 是否被改写, 实现止盈止损等参数盘中热加载(无需重启 live_trader 进程)
+        self._last_cfg_mtime: Optional[float] = None
+
         # 离场扫描间隔(可运行时修改,默认从 config 读取)
         self._exit_scan_interval: float = getattr(config, 'exit_scan_interval_sec', 60.0)
 
@@ -131,6 +135,30 @@ class LiveScheduler:
         with self._lock:
             return self._auto_buy_time
 
+    def _maybe_reload_settings(self) -> None:
+        """检查 app_setting.json 是否被修改, 变化则 reload(盘中改参数热生效)。
+
+        背景(2026-07-19 主流程审计 FAIL-B): 实盘进程(8001)与主API(8888)是两个独立进程,
+        Settings._data 启动时缓存一次。主API 改配置落盘后实盘进程无感知, 必须重启才生效。
+        此处 mtime 轮询(每秒一次 stat, 开销可忽略): 文件被动过就 settings.reload(),
+        下次 exit_scan / risk_gate 读 settings 即拿新值, 止盈止损参数盘中实时生效。
+        """
+        from core.settings import settings, CONFIG_FILE
+        try:
+            mtime = os.path.getmtime(str(CONFIG_FILE))
+        except OSError:
+            return
+        if self._last_cfg_mtime is None:
+            # 首次 tick: 记录当前 mtime 但不 reload(进程启动时 settings 已 _load 过)
+            self._last_cfg_mtime = mtime
+            return
+        if mtime != self._last_cfg_mtime:
+            logger.info(
+                f"检测到 app_setting.json 变化(mtime {self._last_cfg_mtime} -> {mtime}), reload settings"
+            )
+            settings.reload()
+            self._last_cfg_mtime = mtime
+
     async def _loop(self) -> None:
         """主循环(细粒度调度,1s 一次 tick 内部按子任务间隔节流)"""
         while True:
@@ -144,6 +172,8 @@ class LiveScheduler:
 
     def _tick(self) -> None:
         """单次调度检查"""
+        # 配置热加载(每秒检查 mtime, 变化则 reload): 止损止盈等参数盘中改了立即生效
+        self._maybe_reload_settings()
         now = datetime.now()
         today_key = now.date().isoformat()
         current_time = now.strftime("%H:%M")

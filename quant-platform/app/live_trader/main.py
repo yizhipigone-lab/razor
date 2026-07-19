@@ -1015,26 +1015,12 @@ async def _process_one_signal(signal, semaphore, lock_wait_sec: int = 5, strateg
                 "status": "error", "reason": f"计算买入量为0(price={price}, size={position_size})",
             }
 
-        # 尾盘价格策略(漏洞E修复):14:55-14:57 五档即成即撤,14:57+ 对手最优价
-        from app.utils.xtquant_compat import (
-            PRICE_TYPE_FIX, PRICE_TYPE_SH_5_CANCEL, PRICE_TYPE_SZ_5_CANCEL,
-            PRICE_TYPE_PEER_FIRST,
-        )
-        now_str = datetime.now().strftime("%H:%M")
-        if now_str >= "14:57":
-            price_type = PRICE_TYPE_PEER_FIRST  # 对手方最优
-        elif now_str >= "14:55":
-            # 五档即成即撤:沪市42,深市47
-            bare = code.split(".")[0] if "." in code else code
-            price_type = PRICE_TYPE_SH_5_CANCEL if bare.startswith("6") else PRICE_TYPE_SZ_5_CANCEL
-        else:
-            price_type = PRICE_TYPE_FIX
-
-        # 确定买入价格(尾盘用 0 让 price_type 决定)
-        if price_type != PRICE_TYPE_FIX:
-            order_price = 0  # 非限价单不需要价格
-        else:
-            order_price = price
+        # 尾盘价格策略(2026-07-19 用户决议): 全时段统一对手方最优价
+        # 选出来即按卖一价买入确保成交, 取代原 14:55/14:57 时段分档(限价单/五档即成即撤)
+        # 避免限价单挂在最新价不追价、尾盘拉升时买不到
+        from app.utils.xtquant_compat import PRICE_TYPE_PEER_FIRST
+        price_type = PRICE_TYPE_PEER_FIRST
+        order_price = 0  # 对手最优为市价单, 由交易所按卖一价撮合, 无需指定价格
 
         intent = OrderIntent(
             code=code_fmt,

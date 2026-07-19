@@ -26,8 +26,9 @@ class TestRiskParamsLoad:
         fake_risk = {
             "hard_stop_loss_pct": -6.0,
             "trailing_stop_activate_pct": 5.0,
-            "trailing_drawdown_pct": 2.0,
-            "time_exit_min_pnl_pct": 3.0,
+            # 用非默认值(1.7/2.5)抓 key 拼写 bug: 若 load 读错 key 走 default(2.0/3.0), 下面断言会失败
+            "trailing_stop_drawdown_pct": 1.7,
+            "time_exit_min_profit_pct": 2.5,
             "first_day_exit_min_profit": 3.0,
             "breakeven_threshold_pct": 2.23,
             "breakeven_stop_pnl_pct": 0.98,
@@ -38,8 +39,8 @@ class TestRiskParamsLoad:
 
         assert rp.hard_stop == pytest.approx(-0.06), f"hard_stop={rp.hard_stop}"
         assert rp.trail_activate == pytest.approx(0.05)
-        assert rp.trail_dd == pytest.approx(0.02)
-        assert rp.time_exit_profit == pytest.approx(0.03)
+        assert rp.trail_dd == pytest.approx(0.017), f"应读取 trailing_stop_drawdown_pct=1.7%, 实际 {rp.trail_dd}(若=0.02 说明 key 又拼错走 default)"
+        assert rp.time_exit_profit == pytest.approx(0.025), f"应读取 time_exit_min_profit_pct=2.5%, 实际 {rp.time_exit_profit}(若=0.03 说明 key 又拼错走 default)"
         assert rp.first_day_exit_min_profit == pytest.approx(0.03), \
             f"CRITICAL-1: 应 /100.0 得 0.03,实际 {rp.first_day_exit_min_profit}"
         assert rp.breakeven_threshold_pct == pytest.approx(0.0223), \
@@ -203,8 +204,8 @@ class TestRiskParamsRealSettings:
         risk = data.get("risk", {})
         # 加载函数实际读的 key 列表(来自 risk_params.py:57-69)
         expected_keys = {
-            "hard_stop_loss_pct", "trailing_stop_activate_pct", "trailing_drawdown_pct",
-            "time_exit_days", "time_exit_min_pnl_pct", "time_exit_force_days",
+            "hard_stop_loss_pct", "trailing_stop_activate_pct", "trailing_stop_drawdown_pct",
+            "time_exit_days", "time_exit_min_profit_pct", "time_exit_force_days",
             "first_day_exit_min_profit", "first_day_exit_days",
             "use_atr_stop", "atr_stop_multiplier",
             "take_profit_tiers", "breakeven_threshold_pct", "breakeven_stop_pnl_pct",
@@ -248,9 +249,9 @@ class TestRiskParamsCriticalBugRepro:
             "first_day_exit_days": 1,
             "hard_stop_loss_pct": -6.0,
             "trailing_stop_activate_pct": 5.0,
-            "trailing_drawdown_pct": 2.0,
+            "trailing_stop_drawdown_pct": 2.0,
             "time_exit_days": 7,
-            "time_exit_min_pnl_pct": 3.0,
+            "time_exit_min_profit_pct": 3.0,
             "time_exit_force_days": 12,
         }
         m = mock.MagicMock()
@@ -327,7 +328,7 @@ class TestSettingsPropertyUnits:
         ("breakeven_threshold_pct", "breakeven_threshold_pct"),
         ("breakeven_stop_pnl_pct", "breakeven_stop_pnl_pct"),
         ("time_exit_days", "time_exit_days"),
-        ("time_exit_min_profit_pct", "time_exit_min_pnl_pct"),
+        ("time_exit_min_profit_pct", "time_exit_min_profit_pct"),
         ("time_exit_force_days", "time_exit_force_days"),
         ("first_day_exit_min_profit", "first_day_exit_min_profit"),
         ("first_day_exit_days", "first_day_exit_days"),
