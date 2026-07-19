@@ -19,12 +19,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from fastapi.testclient import TestClient
 
 import app.live_trader.main as main_mod
+import app.live_trader.auth as auth_mod  # 阶段0b: _is_local 抽到 auth,_require_admin 内部调 auth._is_local
 
 
 @pytest.fixture
 def client():
     # 不用 with(不开 lifespan);_require_admin 依赖本机 IP,测试里打补丁
-    main_mod._is_local = lambda request: True
+    # 阶段0b: _is_local 已抽到 auth.py, _require_admin 内部调 auth._is_local, 故 patch auth 模块
+    auth_mod._is_local = lambda request: True
     return TestClient(main_mod.app, raise_server_exceptions=False)
 
 

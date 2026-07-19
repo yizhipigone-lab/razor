@@ -17,6 +17,7 @@ from datetime import date, datetime
 from typing import Optional
 
 from core.logger import get_logger
+from core.settings import settings, CONFIG_FILE
 
 from app.scheduler.safe_task import TaskRunner
 
@@ -60,9 +61,7 @@ class LiveScheduler:
         # 后者心跳不存在是预期(14:55 早已过去),不该刷告警
         self._process_start_date = date.today()
 
-        # 配置文件 mtime(2026-07-19 主流程审计): _maybe_reload_settings 据此检测 app_setting.json
-        # 是否被改写, 实现止盈止损等参数盘中热加载(无需重启 live_trader 进程)
-        self._last_cfg_mtime: Optional[float] = None
+        self._last_cfg_mtime: Optional[float] = None  # app_setting.json 上次 mtime, 供 _maybe_reload_settings 判变化
 
         # 离场扫描间隔(可运行时修改,默认从 config 读取)
         self._exit_scan_interval: float = getattr(config, 'exit_scan_interval_sec', 60.0)
@@ -136,28 +135,26 @@ class LiveScheduler:
             return self._auto_buy_time
 
     def _maybe_reload_settings(self) -> None:
-        """检查 app_setting.json 是否被修改, 变化则 reload(盘中改参数热生效)。
+        """app_setting.json 被改写则 reload(盘中改参数热生效, 免重启 live_trader 进程)。
 
-        背景(2026-07-19 主流程审计 FAIL-B): 实盘进程(8001)与主API(8888)是两个独立进程,
-        Settings._data 启动时缓存一次。主API 改配置落盘后实盘进程无感知, 必须重启才生效。
-        此处 mtime 轮询(每秒一次 stat, 开销可忽略): 文件被动过就 settings.reload(),
-        下次 exit_scan / risk_gate 读 settings 即拿新值, 止盈止损参数盘中实时生效。
+        背景(2026-07-19 主流程审计 FAIL-B): 实盘(8001)与主API(8888)是两个独立进程,
+        Settings._data 启动时缓存一次, 主API 改配置落盘后实盘无感知。此处每秒 stat mtime,
+        变化则 settings.reload()。
+
+        生效范围(口径): 仅对"使用时现读 settings.get() 的参数"生效(如止盈止损 risk params,
+        exit_monitor 每次扫描现读); holder 背书的运行时可变参数(scan-interval / auto-buy-time
+        / buy-ratio)须走对应 PUT 端点热更新, 改文件本身不会热生效。
         """
-        from core.settings import settings, CONFIG_FILE
         try:
             mtime = os.path.getmtime(str(CONFIG_FILE))
         except OSError:
             return
-        if self._last_cfg_mtime is None:
-            # 首次 tick: 记录当前 mtime 但不 reload(进程启动时 settings 已 _load 过)
-            self._last_cfg_mtime = mtime
-            return
-        if mtime != self._last_cfg_mtime:
-            logger.info(
-                f"检测到 app_setting.json 变化(mtime {self._last_cfg_mtime} -> {mtime}), reload settings"
-            )
-            settings.reload()
-            self._last_cfg_mtime = mtime
+        prev = self._last_cfg_mtime
+        self._last_cfg_mtime = mtime
+        if prev is None or mtime == prev:
+            return  # 首次 tick(记录基准) 或无变化, 不 reload
+        logger.info(f"检测到 app_setting.json 变化(mtime {prev} -> {mtime}), reload settings")
+        settings.reload()
 
     async def _loop(self) -> None:
         """主循环(细粒度调度,1s 一次 tick 内部按子任务间隔节流)"""
@@ -555,7 +552,7 @@ class LiveScheduler:
     def _cleanup_notifications(self) -> None:
         """15:35 清理 7 天前通知历史（复用 _state 中的 notif_store）"""
         try:
-            from .main import _state
+            from ._state import state as _state
             notif_store = _state.get("notif_store")
             if not notif_store:
                 logger.warning("_cleanup_notifications: notif_store 未初始化")
