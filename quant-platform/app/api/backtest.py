@@ -494,14 +494,14 @@ async def apply_bt_to_system():
         from core.settings import settings
         settings.reload()
         risk = settings._data.get('risk', {})
-        # 止盈止损核心参数（直接从 cfg 拿，cfg 本身已是从 settings 读的）
-        risk['hard_stop_loss_pct']       = float(cfg.get('hard_stop', -6.0))
-        risk['trailing_stop_activate_pct'] = float(cfg.get('trail_activate', 5.0))
-        risk['trailing_stop_drawdown_pct'] = float(cfg.get('trail_dd', 2.0))
+        # 止盈止损核心参数：cfg(backtest 段)是小数约定，risk 段是百分数约定，写回需 *100。
+        risk['hard_stop_loss_pct']       = float(cfg.get('hard_stop', -0.06)) * 100.0
+        risk['trailing_stop_activate_pct'] = float(cfg.get('trail_activate', 0.05)) * 100.0
+        risk['trailing_stop_drawdown_pct'] = float(cfg.get('trail_dd', 0.02)) * 100.0
         risk['time_exit_days']            = int(cfg.get('time_exit_days', 7))
-        risk['time_exit_min_profit_pct']  = float(cfg.get('time_exit_profit', 3.0))
+        risk['time_exit_min_profit_pct']  = float(cfg.get('time_exit_profit', 0.03)) * 100.0
         risk['time_exit_force_days']      = int(cfg.get('time_force_days', 12))
-        risk['first_day_exit_min_profit'] = float(cfg.get('first_day_exit_min_profit', 3.0))
+        risk['first_day_exit_min_profit'] = float(cfg.get('first_day_exit_min_profit', 0.0)) * 100.0
         risk['first_day_exit_days']       = int(cfg.get('first_day_exit_days', 1))
         risk['take_profit_tiers'] = cfg.get('take_profit_tiers', [
             {'profit_pct': 0.03, 'sell_ratio': 0.30}

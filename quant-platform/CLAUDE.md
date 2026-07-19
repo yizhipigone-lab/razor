@@ -82,6 +82,9 @@
 - **禁止 audit agent 派子 agent**（2026-07 亲历：研究 agent 递归派子 agent 不返回结果，只能杀掉重派；insights 报告同案例）
 - 审计结论必须 Read / Grep 实际代码验证，不靠推断（防 context-dependency 错误：行号对但周边代码已变）
 - 审计报告立即存 .md，PASS / FAIL / WARNING 分类，不等用户要
+- **审计范围必须含前端**配置读写（`loadSettings` / `saveRiskSettings` / `saveBuyAmtSettings` 等 JS 单位转换），不只后端 .py（2026-07-20 风控 /100 bug 漏查多轮的根因）
+- **关键参数追值审计**：追一个真实值（如硬止损 -60）从输入框 → 保存 → 落盘 → 读回 → 引擎，记录每步数值。函数间单位衔接错只靠读代码查不出，必须追值
+- **单位/量纲字段查全链路对照表**，每条链路每一跳（本项目 settings 存百分数 / RiskParams 引擎小数 / take_profit_tiers 内层小数 / 回测配置 cfg 小数 / 搜索空间百分数 / simulate_one_trade params_override 混合 —— 多套并存，见 ADR-001）
 - 完整版见全局 `~/.claude/rules/workflow/audit-verification.md`
 
 ## 质量门禁 (Quality Gates)

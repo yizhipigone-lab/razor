@@ -853,18 +853,18 @@ async function saveRiskSettings() {
     }
   });
   const body = {
-    hard_stop: getv('set-stop', v => -Math.abs(parseFloat(v)) / 100),
+    hard_stop: getv('set-stop', v => -Math.abs(parseFloat(v))),
     take_profit_tiers: tiers.length > 0 ? tiers : [{ profit_pct: 0.03, sell_ratio: 0.30 }],
-    trail_activate: getv('set-trail-act', v => parseFloat(v) / 100),
-    trail_dd: getv('set-trail-dd', v => parseFloat(v) / 100),
+    trail_activate: getv('set-trail-act', v => parseFloat(v)),
+    trail_dd: getv('set-trail-dd', v => parseFloat(v)),
     time_exit_days: getv('set-days', v => parseInt(v)),
-    time_exit_profit: getv('set-days-min-pnl', v => parseFloat(v) / 100),
+    time_exit_profit: getv('set-days-min-pnl', v => parseFloat(v)),
     time_force_days: getv('set-force-days', v => parseInt(v)),
     loss_streak_halve: getv('set-streak-halve', v => parseInt(v)),
     loss_streak_pause: getv('set-streak-pause', v => parseInt(v)),
     pause_days: getv('set-pause-days', v => parseInt(v)),
     same_stock_cooldown: getv('set-cooldown', v => parseInt(v)),
-    first_day_exit_min_profit: (function() { var ck = document.getElementById('set-fd-enable'); if (ck && !ck.checked) return 0; var el = document.getElementById('set-fd-profit'); if (!el || el.value === '') return 0.03; return parseFloat(el.value) / 100; })(),
+    first_day_exit_min_profit: (function() { var ck = document.getElementById('set-fd-enable'); if (ck && !ck.checked) return 0; var el = document.getElementById('set-fd-profit'); if (!el || el.value === '') return 3.0; return parseFloat(el.value); })(),
     first_day_exit_days: getv('set-fd-days', v => parseInt(v)) || 1,
   };
   try {
@@ -4443,7 +4443,7 @@ async function loadSettings() {
     var fdDaysEl = document.getElementById('set-fd-days');
     if (fdProfit !== undefined && fdProfit > 0) {
       if (fdCk) fdCk.checked = true;
-      if (fdProfitEl) { fdProfitEl.value = (fdProfit * 100).toFixed(1); fdProfitEl.disabled = false; }
+      if (fdProfitEl) { fdProfitEl.value = fdProfit.toFixed(1); fdProfitEl.disabled = false; }
     } else {
       if (fdCk) fdCk.checked = false;
       if (fdProfitEl) { fdProfitEl.value = '3.0'; fdProfitEl.disabled = true; }

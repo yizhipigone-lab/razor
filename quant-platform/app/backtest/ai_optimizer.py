@@ -168,10 +168,13 @@ def _ai_params_to_tdx_params(ai_params: dict, base_params: dict) -> dict:
         p["trail_dd"] = ai_params["trailing_drawdown_pct"] / 100.0
     if "time_exit_days" in ai_params:
         p["time_exit_days"] = int(ai_params["time_exit_days"])
-    # breakeven_* 已统一为小数(2026-07-15 ADR-001),直接透传
+    # breakeven_* 搜索空间是百分数, 引擎(exit_rules.rule_breakeven_stop)期望小数, 需 /100。
+    # (2026-07-20 修正: 原注释"已统一小数"误判 — 搜索空间 min/max 实际是百分数
+    #  (breakeven_stop_pnl_pct min 0.29 max 1.96), 透传会让保本线 = entry*(1+百分数)
+    #  错位 100 倍, 且 peak_pct(小数) < breakeven_threshold(百分数) 永真导致保本永激活)
     for k in ("breakeven_threshold_pct", "breakeven_stop_pnl_pct"):
         if k in ai_params:
-            p[k] = ai_params[k]
+            p[k] = float(ai_params[k]) / 100.0
     # 多档止盈：tp1/tp2/tp3 → take_profit_tiers(小数)
     if "tp1_profit" in ai_params and "tp2_profit" in ai_params:
         tiers = [
@@ -185,6 +188,31 @@ def _ai_params_to_tdx_params(ai_params: dict, base_params: dict) -> dict:
                           "sell_ratio": ai_params.get("tp3_ratio", 0.34)})
         p["take_profit_tiers"] = tiers
     return p
+
+
+# simulate_one_trade params_override 期望小数的 pct 字段
+# (_p 不转换; tp*_profit 走 TP 路径自己 /100, 不在此列)
+_PYTHON_OVERRIDE_PCT_KEYS = frozenset({
+    "hard_stop_loss_pct", "trailing_activate_pct", "trailing_drawdown_pct",
+    "breakeven_threshold_pct", "breakeven_stop_pnl_pct", "first_day_exit_min_profit",
+})
+
+
+def _search_space_to_python_override(params: dict) -> dict:
+    """搜索空间采样(全百分数) → simulate_one_trade params_override(混合约定)。
+
+    simulate_one_trade._p 对 hard_stop/trail_*/breakeven_*/first_day_exit 期望小数(不转换),
+    对 tp*_profit 自己 /100(期望百分数), tp*_ratio 期望小数, 整数字段不变。
+    搜索空间这些字段都是百分数, 故 pct 字段需先 /100, tp*_profit 保持百分数交给内核 /100。
+    与 TDX 路径(_ai_params_to_tdx_params)语义对齐, 区别仅在 key 命名(内核读百分数命名)。
+    """
+    out = {}
+    for k, v in params.items():
+        if k in _PYTHON_OVERRIDE_PCT_KEYS and isinstance(v, (int, float)):
+            out[k] = v / 100.0
+        else:
+            out[k] = v
+    return out
 
 
 def _lhs_sample(search_space: dict, n: int, seed: int = None) -> List[dict]:
@@ -427,6 +455,11 @@ class AIBacktestOptimizer:
         if self.strategy_type == "tdx":
             return self._run_trial_tdx(params, start, end)
 
+        # Python 模式: 搜索空间采样是百分数, simulate_one_trade params_override 的
+        # pct 字段期望小数(tp*_profit 除外, 内核自 /100)。先转一次, 不污染外层 params
+        # (外层 _summarize_result 仍用原始百分数展示 Top-10 参数)。
+        engine_params = _search_space_to_python_override(params)
+
         if self._cached_signals is None:
             return []
 
@@ -441,7 +474,7 @@ class AIBacktestOptimizer:
             if sd < start or sd > end:
                 continue
 
-            trade = self._fast_simulate(code, entry, sd, params, end_date=end)
+            trade = self._fast_simulate(code, entry, sd, engine_params, end_date=end)
             if trade:
                 all_trades.append(trade)
 
