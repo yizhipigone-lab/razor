@@ -65,14 +65,16 @@ def _cleanup_stale_temp_parquets():
         tmp = Path(tempfile.gettempdir())
         import time as _t
         now = _t.time()
-        for p in tmp.glob("tdx_intra_*.parquet"):
-            try:
-                age_h = (now - p.stat().st_mtime) / 3600
-                if age_h > _STALE_TEMP_HOURS:
-                    p.unlink(missing_ok=True)
-                    log.info(f"[temp清理] 删除陈旧文件 {p.name} (age {age_h:.1f}h)")
-            except Exception:
-                pass
+        # tdx_intra_*(日内bars) + tdx_range_*(区间长表, 2026-07-18) 两种临时 parquet
+        for pattern in ("tdx_intra_*.parquet", "tdx_range_*.parquet"):
+            for p in tmp.glob(pattern):
+                try:
+                    age_h = (now - p.stat().st_mtime) / 3600
+                    if age_h > _STALE_TEMP_HOURS:
+                        p.unlink(missing_ok=True)
+                        log.info(f"[temp清理] 删除陈旧文件 {p.name} (age {age_h:.1f}h)")
+                except Exception:
+                    pass
     except Exception as e:
         log.debug(f"[temp清理] 跳过: {e}")
 
@@ -165,6 +167,7 @@ class TdxBridge:
                               start_time: str = "",
                               formula_name: str = None,
                               use_cache: bool = True,
+                              raw: bool = False,
                               progress_cb=None, stop_event=None):
         """
         区间选股：返回信号 + 价格
@@ -172,6 +175,10 @@ class TdxBridge:
         数据源仍是 TDX。use_cache=True 时，按 (公式名+区间+K线数) 哈希缓存
         TDX 返回的 signals/prices 到本地 parquet，命中则跳过 subprocess。
         同一公式同一区间的选股结果是确定函数，可安全缓存；换公式/区间自动失效。
+
+        raw=True (2026-07-18): 缓存命中时跳过 df_to_signals_prices 的
+        dict-of-strings 转换(897万行 ~7s), 只返回 parquet_path,
+        由调用方(tdx_runner)直接向量化解析。冷路径不受影响。
 
         Returns:
             {status: 'ok', signals: {code: {ZP: [...], Date: [...]}},
@@ -196,6 +203,13 @@ class TdxBridge:
                 fname, start_time, end_time, kline_count,
                 return_count, stock_list_override, formula_fp=fp)
             if cached is not None:
+                if raw:
+                    # 快路径: 不做 dict 转换, 调用方直接读 parquet
+                    log.info(f"缓存命中: {cached.name} (raw, 跳过 dict 转换)")
+                    return {
+                        "status": "ok", "parquet_path": str(cached),
+                        "cache_hit": True,
+                    }
                 try:
                     import pandas as pd
                     df = pd.read_parquet(cached)
@@ -228,7 +242,38 @@ class TdxBridge:
         if result.get("status") != "ok":
             return result
 
-        # ── A: 写缓存（worker 返回的 dict → parquet 副本）──
+        # ── B: 新 worker 直写 parquet (2026-07-18) ──
+        # worker 把 signals/prices 长表写到临时 parquet, stdout 只回路径,
+        # 消灭 100MB+ JSON 管道的 dumps/loads 开销。
+        range_path = result.get("range_path")
+        if range_path and os.path.exists(range_path):
+            parquet_path = range_path
+            if use_cache:
+                try:
+                    cache_path = result_cache.save_cache_from_parquet(
+                        Path(range_path), fname, start_time, end_time,
+                        kline_count, return_count, stock_list_override, formula_fp=fp)
+                    Path(range_path).unlink(missing_ok=True)
+                    parquet_path = str(cache_path)
+                    log.info(f"缓存写入: {cache_path.name}")
+                except Exception as e:
+                    log.warning(f"缓存写入失败（不影响本次回测）: {e}")
+            if raw:
+                return {"status": "ok", "parquet_path": parquet_path, "cache_hit": False}
+            # 兼容路径: 调用方需要 signals/prices dict (如 api/tqsdk.py)
+            try:
+                import pandas as pd
+                df = pd.read_parquet(parquet_path)
+                signals, prices = result_cache.df_to_signals_prices(df)
+                total = int(df["code"].nunique()) if not df.empty else 0
+                return {
+                    "status": "ok", "signals": signals, "prices": prices,
+                    "total": total, "parquet_path": parquet_path, "cache_hit": False,
+                }
+            except Exception as e:
+                return {"status": "error", "message": f"worker parquet 读取失败: {e}"}
+
+        # ── A: 旧 worker (signals dict) 写缓存（兼容保留）──
         if use_cache and result.get("signals"):
             try:
                 cache_path = result_cache.save_cache_from_dict(
@@ -250,6 +295,7 @@ class TdxBridge:
                                        signal_start: str = "",
                                        period: str = "5m",
                                        formula_name: str = None,
+                                       raw: bool = False,
                                        progress_cb=None, stop_event=None):
         """
         区间选股 + 日内K线增强版：两步调用 worker
@@ -257,6 +303,7 @@ class TdxBridge:
         Step 2: fetch_intraday → 仅对信号股获取日内 OHLC (限 300 只)
         失败自动降级，bars_intraday 为 None 时走日线回退
         period: '5m' 或 '1m'
+        raw: 透传给 Step1 的 execute_screen_range (缓存命中跳过 dict 转换)
         """
         bars_per_day = 48 if period == "5m" else 241
         MAX_5M_BARS = 50_000_000  # 最多5000万根K线（写到磁盘，不限内存）
@@ -268,7 +315,7 @@ class TdxBridge:
         result = self.execute_screen_range(
             end_time=end_time, kline_count=kline_count, return_count=return_count,
             stock_list_override=stock_list_override, start_time=start_time,
-            formula_name=formula_name,
+            formula_name=formula_name, raw=raw,
             progress_cb=progress_cb, stop_event=stop_event)
         result["bars_intraday"] = None
 
@@ -276,19 +323,33 @@ class TdxBridge:
             return result
 
         # ── Step 2: 获取 5 分钟 OHLC（仅对信号股，且信号在回测区间内） ──
-        signals = result.get("signals", {})
+        signals = result.get("signals") or {}
         signal_codes = []
-        for code, d in signals.items():
-            dates = d.get("Date", [])
-            # 探测变量名 (兼容 ZP/ZT/中文/任意)
-            var_name = next((k for k in d.keys() if k != "Date"), "ZP")
-            zps = d.get(var_name, [])
-            for dt, v in zip(dates, zps):
-                if _is_signal_value(v):
-                    if signal_start and str(dt) < signal_start:
-                        continue  # 信号在回测区间之前，不拿5m数据
-                    signal_codes.append(code)
-                    break
+        if signals:
+            for code, d in signals.items():
+                dates = d.get("Date", [])
+                # 探测变量名 (兼容 ZP/ZT/中文/任意)
+                var_name = next((k for k in d.keys() if k != "Date"), "ZP")
+                zps = d.get(var_name, [])
+                for dt, v in zip(dates, zps):
+                    if _is_signal_value(v):
+                        if signal_start and str(dt) < signal_start:
+                            continue  # 信号在回测区间之前，不拿5m数据
+                        signal_codes.append(code)
+                        break
+        else:
+            # raw 快路径: 无 signals dict, 直接从缓存 parquet 向量化提取信号股
+            pq = result.get("parquet_path")
+            if pq and os.path.exists(pq):
+                try:
+                    import pandas as pd
+                    _df = pd.read_parquet(pq, columns=["code", "date", "signal_value"])
+                    if signal_start:
+                        _df = _df[_df["date"] >= signal_start]
+                    _sv = pd.to_numeric(_df["signal_value"], errors="coerce")
+                    signal_codes = _df[_sv.notna() & (_sv != 0)]["code"].unique().tolist()
+                except Exception as e:
+                    log.warning(f"raw 信号股提取失败: {e}")
 
         if not signal_codes:
             return result
@@ -310,6 +371,9 @@ class TdxBridge:
         log.info(f"{period} fetch: {len(signal_codes)} stocks x {est_days:.0f} days = {est_bars/1e3:.0f}K bars (limit {MAX_5M_BARS/1e6:.1f}M)")
         if est_bars > MAX_5M_BARS:
             log.warning(f"{period} data estimate {est_bars/1e6:.1f}M > limit {MAX_5M_BARS/1e6:.1f}M, fallback daily")
+            # 2026-07-18 (C5): 打标记让调用方/前端知道"5m 超限降级日线",不再是静默降级
+            result["intraday_fallback"] = (
+                f"{period}估算{est_bars/1e6:.0f}M根K线超上限{MAX_5M_BARS/1e6:.0f}M,已降级日线")
             return result
 
         try:

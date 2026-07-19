@@ -11,7 +11,8 @@ from typing import Callable, Optional
 import json
 import warnings
 from core.logger import get_logger
-from app.backtest.execution import can_buy, calc_buy_cost, calc_sell_revenue, realized_pnl
+from app.backtest.execution import can_buy, calc_buy_cost, calc_sell_revenue, realized_pnl, get_cost_cfg
+from app.backtest.exit_rules import exit_rule_engine, adjust_for_gap
 from app.utils.limit_up import _is_valid_price
 
 log = get_logger("SimpleBT")
@@ -64,6 +65,10 @@ class FastEngine:
                 tiers.append({'profit_pct': self.p['tp2_pct'],
                               'sell_ratio': self.p.get('tp2_sell_ratio', 1.0)})
             self.p['take_profit_tiers'] = tiers
+        # 2026-07-16 性能: 预解析 build_context 固定字段(整场不变),避免每持仓每天重取
+        self._ctx_params = exit_rule_engine.precompute_params(self.p)
+        # 2026-07-16 性能: 成本配置整场不变,缓存一次,避免每笔交易重建 dict + import settings
+        self._cost_cfg = get_cost_cfg()
 
     def max_pos(self):
         if self.cl >= self.p.get('loss_streak_halve', 3):
@@ -127,7 +132,7 @@ class FastEngine:
         sh = int(ma / px / 100) * 100
         if sh < 100: return None
         # L28 修复: 统一成交执行层 - 买入成本(佣金+滑点)
-        cost_result = calc_buy_cost(px, sh)
+        cost_result = calc_buy_cost(px, sh, cfg=self._cost_cfg)
         cost = cost_result['total']
         if cost > self.cash: return None
         p = Position(code, d, px, sh, cost, STRATEGY_NAME)
@@ -136,10 +141,10 @@ class FastEngine:
         return p
 
     def check_stops(self, d, snap, prev_snap=None):
-        from app.backtest.exit_rules import exit_rule_engine, RuleContext, adjust_for_gap
-
+        # 2026-07-16 性能: import 提模块顶层; 循环不 mutate positions 结构(只改 Position 属性),
+        # 去掉 list() 拷贝直接迭代 items。
         sells = []
-        for code, p in list(self.positions.items()):
+        for code, p in self.positions.items():
             if not p.active or p.remaining <= 0: continue
             bar = snap.get(code)
             if bar is None: continue
@@ -155,7 +160,8 @@ class FastEngine:
                         cp, prev_bar.get('close', 0)
                     )
 
-            ctx = exit_rule_engine.build_context(p, bar, hd, self.p, use_high_for_tp=True)
+            ctx = exit_rule_engine.build_context(p, bar, hd, self.p, use_high_for_tp=True,
+                                                 precomputed=self._ctx_params)
             # check_all: trailing_first 下 ladder部分卖后继续trailing/cost_stop（对齐VERA），可能返回多个signal
             for signal in exit_rule_engine.check_all(ctx):
                 if signal.reason.startswith('TP'):
@@ -181,7 +187,7 @@ class FastEngine:
         ss = min(ss, int(p.remaining))
         # CARD1 统一净口径:cost_basis 用 pos.cost 含费基按比例摊分(避免 min_commission 重复计费破守恒)
         _cb = p.cost * (ss / p.shares) if p.shares else 0.0
-        _rp = realized_pnl(p.entry_price, px, ss, cost_basis=_cb)
+        _rp = realized_pnl(p.entry_price, px, ss, cfg=self._cost_cfg, cost_basis=_cb)
         self.cash += _rp['sell_revenue']
         p.remaining -= ss
         if p.remaining <= 0: p.active = False; p.remaining = 0

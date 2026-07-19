@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter
 from datetime import date, datetime, timedelta
 from typing import Optional, List
@@ -793,7 +794,7 @@ async def list_simple_bt_history(limit: int = 20):
 async def get_simple_bt_history(result_id: str):
     """加载指定回测结果的完整数据"""
     import re
-    if not re.match(r'^bt_\d{8}_\d{6}_\d+$', result_id):
+    if not re.match(r'^bt_[A-Za-z0-9_]+$', result_id):
         return {"status": "error", "message": "非法 result_id 格式"}
     fp = _BT_RESULTS_DIR / f"{result_id}.json"
     if not fp.resolve().is_relative_to(_BT_RESULTS_DIR.resolve()):
@@ -809,7 +810,7 @@ async def get_simple_bt_history(result_id: str):
 async def delete_simple_bt_history(result_id: str):
     """删除回测结果"""
     import re
-    if not re.match(r'^bt_\d{8}_\d{6}_\d+$', result_id):
+    if not re.match(r'^bt_[A-Za-z0-9_]+$', result_id):
         return {"status": "error", "message": "非法 result_id 格式"}
     fp = _BT_RESULTS_DIR / f"{result_id}.json"
     if not fp.resolve().is_relative_to(_BT_RESULTS_DIR.resolve()):

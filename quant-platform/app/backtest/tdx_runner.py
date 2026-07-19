@@ -144,6 +144,7 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
         sig_result = bridge.execute_screen_range(
             end_time=end_time, kline_count=kline_count,
             start_time=formula_start, formula_name=_formula_name,
+            use_cache=True, raw=True,
             progress_cb=progress_cb, stop_event=stop_event)
         if sig_result.get("status") != "ok":
             return _empty_result(params, 0, sig_result.get("message", "TDX 信号获取失败"))
@@ -155,6 +156,7 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
         period = "5m"
     is_intraday = False
     stocks_with_intraday = set()
+    sig_result = None
 
     try:
         if progress_cb:
@@ -166,6 +168,7 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
             signal_start=start_time_str,
             period=period,
             formula_name=_formula_name,
+            raw=True,
             progress_cb=progress_cb, stop_event=stop_event,
         )
         if sig_result.get("status") == "ok":
@@ -188,7 +191,7 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
             sig_result = bridge.execute_screen_range_intraday(
                 end_time=end_time, kline_count=kline_count,
                 start_time=formula_start, signal_start=start_time_str,
-                period="5m", formula_name=_formula_name,
+                period="5m", formula_name=_formula_name, raw=True,
                 progress_cb=progress_cb, stop_event=stop_event)
             if sig_result.get("status") == "ok":
                 bars_5m = sig_result.get("bars_intraday", sig_result.get("bars_5m", []))
@@ -207,19 +210,35 @@ def run_tdx_backtest(params: dict, progress_cb: Optional[Callable] = None,
     if not is_intraday:
         if progress_cb:
             progress_cb(0, 5, "日内数据不可用，降级日线回测...")
-        sig_result = bridge.execute_screen_range(
-            end_time=end_time,
-            kline_count=kline_count,
-            start_time=formula_start,
-            formula_name=_formula_name,
-            progress_cb=progress_cb, stop_event=stop_event,
+        # 2026-07-18 性能(P0-2): 日内尝试已成功拿到 signals/parquet 时直接复用,
+        # 不再重复调 execute_screen_range(缓存命中也要白付一次 df→dict 转换 ~7s)。
+        _reusable = (
+            isinstance(sig_result, dict)
+            and sig_result.get("status") == "ok"
+            and (sig_result.get("signals") or sig_result.get("parquet_path"))
         )
-        if sig_result.get("status") != "ok":
-            return _empty_result(params, 0, sig_result.get("message", "TDX 信号获取失败"))
-        return _run_daily_backtest(
+        if not _reusable:
+            sig_result = bridge.execute_screen_range(
+                end_time=end_time,
+                kline_count=kline_count,
+                start_time=formula_start,
+                formula_name=_formula_name,
+                use_cache=True, raw=True,
+                progress_cb=progress_cb, stop_event=stop_event,
+            )
+            if sig_result.get("status") != "ok":
+                return _empty_result(params, 0, sig_result.get("message", "TDX 信号获取失败"))
+        result = _run_daily_backtest(
             sig_result, params, start, end, progress_cb,
             stop_event, stock_names or {},
         )
+        # C5: 5m 超限降级时, 在结果里显式标注(前端可提示用户实际精度)
+        # (空结果保持 data_source="empty", 不覆盖)
+        _fb = sig_result.get("intraday_fallback")
+        if (_fb and isinstance(result, dict) and result.get("summary")
+                and result["summary"].get("data_source") != "empty"):
+            result["summary"]["data_source"] = f"daily(降级:{_fb})"
+        return result
 
     if progress_cb:
         progress_cb(0, 5, f"{period}逐K线回放 ({len(stocks_with_intraday)}只, 公式: {_formula_name or 'settings'})...")
@@ -302,100 +321,115 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
     try:
         raw_signals = sig_result.get("signals", {})
         bars_intra = sig_result.get("bars_intraday", sig_result.get("bars_intra", []))
-        raw_prices = sig_result.get("prices", {})
 
         # 过滤有效K线
         bars_intra = [b for b in (bars_intra or []) if b.get("close", 0) > 0]
 
-        # 解析信号
-        sig_by_code = {}
-        all_signal_codes = set()
-        for code, d in raw_signals.items():
-            code_num = code.split(".")[0] if "." in code else code
-            dates_list = d.get("Date", [])
-            # 探测实际变量名 (兼容 ZP/ZT/中文/任意)
-            var_name = _pick_signal_var(d)
-            zps = d.get(var_name, [])
-            if len(dates_list) != len(zps):
-                continue
-            code_sigs = {}
-            has_any = False
-            for dt, zp in zip(dates_list, zps):
-                try:
-                    dt_date = date(int(dt[:4]), int(dt[4:6]), int(dt[6:8]))
-                except (ValueError, TypeError):
+        # 2026-07-18 性能: 优先从缓存 parquet 向量化解析信号+日线价格
+        # (替代逐行 float() 解析, 与日线路径同一模块); 无 parquet_path 回退旧逐行解析。
+        pq_path = sig_result.get("parquet_path")
+        _vec_ok = False
+        if pq_path and Path(pq_path).exists():
+            try:
+                from app.backtest.tdx_parse import load_cache_df, parse_intraday
+                _df = load_cache_df(pq_path, start, end)
+                sig_by_code, prices_by_date = parse_intraday(_df)
+                all_signal_codes = set(sig_by_code)
+                _vec_ok = True
+            except Exception as e:
+                log.warning(f"缓存 parquet 解析失败, 回退旧解析路径: {e}")
+        if not _vec_ok:
+            raw_prices = sig_result.get("prices", {})
+
+            # 解析信号
+            sig_by_code = {}
+            all_signal_codes = set()
+            for code, d in raw_signals.items():
+                code_num = code.split(".")[0] if "." in code else code
+                dates_list = d.get("Date", [])
+                # 探测实际变量名 (兼容 ZP/ZT/中文/任意)
+                var_name = _pick_signal_var(d)
+                zps = d.get(var_name, [])
+                if len(dates_list) != len(zps):
                     continue
-                if start <= dt_date <= end:
-                    code_sigs[str(dt_date)] = zp
-                    # 非零即信号 (兼容 1/100/0.5/任意)
-                    if _is_signal_value(zp):
-                        has_any = True
-            if has_any:
-                sig_by_code[code_num] = code_sigs
-                all_signal_codes.add(code_num)
+                code_sigs = {}
+                has_any = False
+                for dt, zp in zip(dates_list, zps):
+                    try:
+                        dt_date = date(int(dt[:4]), int(dt[4:6]), int(dt[6:8]))
+                    except (ValueError, TypeError):
+                        continue
+                    if start <= dt_date <= end:
+                        code_sigs[str(dt_date)] = zp
+                        # 非零即信号 (兼容 1/100/0.5/任意)
+                        if _is_signal_value(zp):
+                            has_any = True
+                if has_any:
+                    sig_by_code[code_num] = code_sigs
+                    all_signal_codes.add(code_num)
+
+            # 解析日线价格（用于无5m数据的股票）
+            # raw_prices 来自 TDX bridge,正常包含 Date/Open/High/Low/Close 5个字段
+            # 如果 TDX worker 老版本没传 Low 字段, fallback 从本地 parquet 补
+            prices_by_date = defaultdict(dict)
+            daily_dir = Path(__file__).parent.parent.parent / "data" / "parquet" / "daily"
+            # 缓存 parquet 加载的 low 数据: {(date_str, code): low}
+            low_cache = {}
+            for tdx_code, d in raw_prices.items():
+                code_num = tdx_code.split(".")[0] if "." in tdx_code else tdx_code
+                dates_list = d.get("Date", [])
+                closes = d.get("Close", [])
+                highs = d.get("High", [])
+                lows = d.get("Low", [])
+                opens = d.get("Open", [])
+                # TDX 老版本可能只返回 Close, 没有 High/Low/Open
+                has_ohlc = len(highs) > 0 and len(lows) > 0 and len(opens) > 0
+                for i, (dt_str, cl) in enumerate(zip(dates_list, closes)):
+                    try:
+                        dt_date = date(int(dt_str[:4]), int(dt_str[4:6]), int(dt_str[6:8]))
+                    except (ValueError, TypeError):
+                        continue
+                    if start <= dt_date <= end:
+                        try:
+                            close_val = float(cl)
+                            # 优先用 TDX 返回的 OHLC
+                            if has_ohlc and i < len(highs) and i < len(lows) and i < len(opens):
+                                try:
+                                    high_val = float(highs[i])
+                                    low_val = float(lows[i])
+                                    open_val = float(opens[i])
+                                    # 任何字段为 0/NaN 视为缺失, fallback 到 parquet
+                                    if low_val <= 0 or high_val <= 0 or open_val <= 0:
+                                        raise ValueError("OHLC has zero, fallback to parquet")
+                                except (ValueError, TypeError):
+                                    has_ohlc = False  # 老 TDX/部分字段缺失, 全用 parquet
+                            if not has_ohlc:
+                                # 从 parquet 读 low
+                                cache_key = (dt_str, code_num)
+                                if cache_key not in low_cache:
+                                    low_val = close_val  # fallback
+                                    pq = daily_dir / f"{code_num}.parquet"
+                                    if pq.exists():
+                                        try:
+                                            pdf = pd.read_parquet(str(pq), columns=['date', 'low'])
+                                            pdf['date'] = pd.to_datetime(pdf['date']).dt.strftime('%Y-%m-%d')
+                                            row = pdf[pdf['date'] == dt_str]
+                                            if not row.empty:
+                                                low_val = float(row.iloc[0]['low'])
+                                        except Exception:
+                                            pass
+                                    low_cache[cache_key] = low_val
+                                low_val = low_cache[cache_key]
+                                high_val = close_val  # 高没用但保留结构
+                                open_val = close_val
+                            prices_by_date[str(dt_date)][code_num] = {
+                                "close": close_val, "high": high_val, "low": low_val, "open": open_val,
+                            }
+                        except (ValueError, TypeError):
+                            pass
 
         if not all_signal_codes:
             return _empty_result(params, 0, "区间内无QUANTQQ信号")
-
-        # 解析日线价格（用于无5m数据的股票）
-        # raw_prices 来自 TDX bridge,正常包含 Date/Open/High/Low/Close 5个字段
-        # 如果 TDX worker 老版本没传 Low 字段, fallback 从本地 parquet 补
-        prices_by_date = defaultdict(dict)
-        daily_dir = Path(__file__).parent.parent.parent / "data" / "parquet" / "daily"
-        # 缓存 parquet 加载的 low 数据: {(date_str, code): low}
-        low_cache = {}
-        for tdx_code, d in raw_prices.items():
-            code_num = tdx_code.split(".")[0] if "." in tdx_code else tdx_code
-            dates_list = d.get("Date", [])
-            closes = d.get("Close", [])
-            highs = d.get("High", [])
-            lows = d.get("Low", [])
-            opens = d.get("Open", [])
-            # TDX 老版本可能只返回 Close, 没有 High/Low/Open
-            has_ohlc = len(highs) > 0 and len(lows) > 0 and len(opens) > 0
-            for i, (dt_str, cl) in enumerate(zip(dates_list, closes)):
-                try:
-                    dt_date = date(int(dt_str[:4]), int(dt_str[4:6]), int(dt_str[6:8]))
-                except (ValueError, TypeError):
-                    continue
-                if start <= dt_date <= end:
-                    try:
-                        close_val = float(cl)
-                        # 优先用 TDX 返回的 OHLC
-                        if has_ohlc and i < len(highs) and i < len(lows) and i < len(opens):
-                            try:
-                                high_val = float(highs[i])
-                                low_val = float(lows[i])
-                                open_val = float(opens[i])
-                                # 任何字段为 0/NaN 视为缺失, fallback 到 parquet
-                                if low_val <= 0 or high_val <= 0 or open_val <= 0:
-                                    raise ValueError("OHLC has zero, fallback to parquet")
-                            except (ValueError, TypeError):
-                                has_ohlc = False  # 老 TDX/部分字段缺失, 全用 parquet
-                        if not has_ohlc:
-                            # 从 parquet 读 low
-                            cache_key = (dt_str, code_num)
-                            if cache_key not in low_cache:
-                                low_val = close_val  # fallback
-                                pq = daily_dir / f"{code_num}.parquet"
-                                if pq.exists():
-                                    try:
-                                        pdf = pd.read_parquet(str(pq), columns=['date', 'low'])
-                                        pdf['date'] = pd.to_datetime(pdf['date']).dt.strftime('%Y-%m-%d')
-                                        row = pdf[pdf['date'] == dt_str]
-                                        if not row.empty:
-                                            low_val = float(row.iloc[0]['low'])
-                                    except Exception:
-                                        pass
-                                low_cache[cache_key] = low_val
-                            low_val = low_cache[cache_key]
-                            high_val = close_val  # 高没用但保留结构
-                            open_val = close_val
-                        prices_by_date[str(dt_date)][code_num] = {
-                            "close": close_val, "high": high_val, "low": low_val, "open": open_val,
-                        }
-                    except (ValueError, TypeError):
-                        pass
 
         # 按日内数据有无分组
         no_intraday_codes = all_signal_codes - stocks_with_intraday
@@ -421,10 +455,12 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
         # 替代原先每个买入/每持仓每天对 bars_intra 的线性扫描(O(天数×持仓×K线数))。
         # bars 已按 datetime 升序: 首次出现即当天第一根 bar。
         first_bar_of_day = {}
+        last_close_of_day = {}
         for b in bars_intra:
             _k = (b["code"], str(b["date"]))
             if _k not in first_bar_of_day:
                 first_bar_of_day[_k] = b
+            last_close_of_day[_k] = b["close"]
 
         # ── 引擎状态 ─────────────────────────────────
         cash = params["initial_capital"]
@@ -466,7 +502,6 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
 
             d = date.fromisoformat(d_str)
             log_prefix = ""
-            day_bars_start = bar_idx
 
             # ── 新的一天：执行买入信号 ──────────────
             if d_str in pending_buys:
@@ -480,8 +515,11 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
                     for pc, pp in positions.items():
                         if not pp.active: continue
                         if pc in stocks_with_intraday:
-                            bar_px = next((b["close"] for b in bars_intra[max(0,bar_idx-50):bar_idx]
-                                          if b["code"] == pc and str(b["date"]) == d_str), pp.entry_price)
+                            # 2026-07-18: 原代码在此向前扫 50 根 bar 找"当日价",
+                            # 但买入发生在当天第一根 bar 之前(bar_idx=当天起点),
+                            # 扫描区间全是往日 bar 恒不匹配 → 恒 fallback entry_price。
+                            # 零差异口径: 直接用 entry_price(与原行为逐位一致)。
+                            bar_px = pp.entry_price
                         else:
                             bar_px = prices_by_date.get(d_str, {}).get(pc, {}).get("close", pp.entry_price)
                         mkt_value += pp.shares * bar_px
@@ -654,8 +692,8 @@ def _run_intraday_backtest(sig_result: dict, params: dict, start: date, end: dat
             pos_value = 0
             for pc, p in positions.items():
                 if pc in stocks_with_intraday:
-                    px = next((b["close"] for b in reversed(bars_intra[:bar_idx])
-                              if b["code"] == pc and str(b["date"]) == d_str), p.entry_price)
+                    # 2026-07-18: O(1) 索引替代向前线性扫描(原 O(持仓×K线数))
+                    px = last_close_of_day.get((pc, d_str), p.entry_price)
                 else:
                     px = prices_by_date.get(d_str, {}).get(pc, {}).get("close", p.entry_price)
                 pos_value += p.shares * px
@@ -739,92 +777,122 @@ class _FakeEngine:
 def _run_daily_backtest(sig_result: dict, params: dict, start: date, end: date,
                          progress_cb, stop_event, stock_names: dict) -> dict:
     """日线收盘价回测引擎（原有的 FastEngine 逻辑）"""
-    raw_signals = sig_result.get("signals", {})
-    raw_prices = sig_result.get("prices", {})
+    # 2026-07-18 性能: 优先从缓存 parquet 向量化解析(替代 dict-of-strings 往返,
+    # 实测省 ~20s); 无 parquet_path 时(如缓存写失败的冷路径)回退旧逐行解析。
+    pq_path = sig_result.get("parquet_path")
+    _vec_ok = False
+    if pq_path and Path(pq_path).exists():
+        try:
+            from app.backtest.tdx_parse import load_cache_df, parse_daily
+            _df = load_cache_df(pq_path, start, end)
+            sig_by_code, prices_by_date = parse_daily(_df)
+            all_signal_codes = set(sig_by_code)
+            _vec_ok = True
+            if not all_signal_codes:
+                return _empty_result(params, 0, "区间内无QUANTQQ信号")
+        except Exception as e:
+            # 缓存 parquet 损坏等异常 → 回退旧解析分支(signals 为空时返回空结果)
+            log.warning(f"缓存 parquet 解析失败, 回退旧解析路径: {e}")
+    if not _vec_ok:
+        raw_signals = sig_result.get("signals", {})
+        raw_prices = sig_result.get("prices", {})
 
-    # 解析信号
-    sig_by_code = {}
-    all_signal_codes = set()
-    for code, d in raw_signals.items():
-        code_num = code.split(".")[0] if "." in code else code
-        dates_list = d.get("Date", [])
-        # 探测实际变量名 (兼容 ZP/ZT/中文/任意)
-        var_name = _pick_signal_var(d)
-        zps = d.get(var_name, [])
-        if len(dates_list) != len(zps):
-            continue
-        code_sigs = {}
-        has_any = False
-        for dt, zp in zip(dates_list, zps):
-            try:
-                dt_date = date(int(dt[:4]), int(dt[4:6]), int(dt[6:8]))
-            except (ValueError, TypeError):
+        # 解析信号
+        sig_by_code = {}
+        all_signal_codes = set()
+        for code, d in raw_signals.items():
+            code_num = code.split(".")[0] if "." in code else code
+            dates_list = d.get("Date", [])
+            # 探测实际变量名 (兼容 ZP/ZT/中文/任意)
+            var_name = _pick_signal_var(d)
+            zps = d.get(var_name, [])
+            if len(dates_list) != len(zps):
                 continue
-            if start <= dt_date <= end:
-                code_sigs[str(dt_date)] = zp
-                if _is_signal_value(zp):
-                    has_any = True
-        if has_any:
-            sig_by_code[code_num] = code_sigs
-            all_signal_codes.add(code_num)
-
-    if not all_signal_codes:
-        return _empty_result(params, 0, "区间内无QUANTQQ信号")
-
-    # 解析价格
-    # raw_prices 来自 TDX bridge，只有 Date 和 Close 字段，没有 low
-    # 所以从本地 parquet 补 low 字段，确保 _check_stops_daily 用真实盘中 low
-    prices_by_date = defaultdict(dict)
-    daily_dir = Path(__file__).parent.parent.parent / "data" / "parquet" / "daily"
-    low_cache = {}
-    for tdx_code, d in raw_prices.items():
-        code_num = tdx_code.split(".")[0] if "." in tdx_code else tdx_code
-        dates_list = d.get("Date", [])
-        closes = d.get("Close", [])
-        highs = d.get("High", [])
-        lows = d.get("Low", [])
-        opens = d.get("Open", [])
-        has_ohlc = len(highs) > 0 and len(lows) > 0 and len(opens) > 0
-        for i, (dt_str, cl) in enumerate(zip(dates_list, closes)):
-            try:
-                dt_date = date(int(dt_str[:4]), int(dt_str[4:6]), int(dt_str[6:8]))
-            except (ValueError, TypeError):
-                continue
-            if start <= dt_date <= end:
+            # 2026-07-16 性能: 只存"确为信号"的日期(此处已调 _is_signal_value),
+            # 下游 pending_buys 直接用不再二次判定,消除对每个 zp 的双重解析。
+            code_sigs = {}
+            for dt, zp in zip(dates_list, zps):
                 try:
-                    close_val = float(cl)
-                    if has_ohlc and i < len(highs) and i < len(lows) and i < len(opens):
-                        try:
-                            high_val = float(highs[i])
-                            low_val = float(lows[i])
-                            open_val = float(opens[i])
-                            if low_val <= 0 or high_val <= 0 or open_val <= 0:
-                                raise ValueError("OHLC has zero, fallback to parquet")
-                        except (ValueError, TypeError):
-                            has_ohlc = False
-                    if not has_ohlc:
-                        cache_key = (dt_str, code_num)
-                        if cache_key not in low_cache:
-                            low_val = close_val
-                            pq = daily_dir / f"{code_num}.parquet"
-                            if pq.exists():
-                                try:
-                                    pdf = pd.read_parquet(str(pq), columns=['date', 'low'])
-                                    pdf['date'] = pd.to_datetime(pdf['date']).dt.strftime('%Y-%m-%d')
-                                    row = pdf[pdf['date'] == dt_str]
-                                    if not row.empty:
-                                        low_val = float(row.iloc[0]['low'])
-                                except Exception:
-                                    pass
-                            low_cache[cache_key] = low_val
-                        low_val = low_cache[cache_key]
-                        high_val = close_val
-                        open_val = close_val
-                    prices_by_date[str(dt_date)][code_num] = {
-                        "close": close_val, "high": high_val, "low": low_val, "open": open_val,
-                    }
+                    dt_date = date(int(dt[:4]), int(dt[4:6]), int(dt[6:8]))
                 except (ValueError, TypeError):
-                    pass
+                    continue
+                if start <= dt_date <= end and _is_signal_value(zp):
+                    code_sigs[str(dt_date)] = zp
+            if code_sigs:
+                sig_by_code[code_num] = code_sigs
+                all_signal_codes.add(code_num)
+
+        if not all_signal_codes:
+            return _empty_result(params, 0, "区间内无QUANTQQ信号")
+
+        # 解析价格
+        # raw_prices 来自 TDX bridge，只有 Date 和 Close 字段，没有 low
+        # 所以从本地 parquet 补 low 字段，确保 _check_stops_daily 用真实盘中 low
+        prices_by_date = defaultdict(dict)
+        daily_dir = Path(__file__).parent.parent.parent / "data" / "parquet" / "daily"
+        # 2026-07-16 性能/防雷: low_cache 改为按 code 缓存整只 {date: low} 映射(原按 (date,code)
+        # 导致同一股票每个日期都重读整个 parquet → O(信号数×天数) 读盘风暴)。首次读一次建映射,后续 O(1)。
+        low_map_cache = {}  # code_num -> {dt_str: low} | None(读不到)
+
+        def _get_low_map(code_num):
+            if code_num not in low_map_cache:
+                m = None
+                pq = daily_dir / f"{code_num}.parquet"
+                if pq.exists():
+                    try:
+                        pdf = pd.read_parquet(str(pq), columns=['date', 'low'])
+                        pdf['date'] = pd.to_datetime(pdf['date']).dt.strftime('%Y-%m-%d')
+                        m = dict(zip(pdf['date'], pdf['low']))
+                    except Exception:
+                        m = None
+                low_map_cache[code_num] = m
+            return low_map_cache[code_num]
+
+        for tdx_code, d in raw_prices.items():
+            code_num = tdx_code.split(".")[0] if "." in tdx_code else tdx_code
+            dates_list = d.get("Date", [])
+            closes = d.get("Close", [])
+            highs = d.get("High", [])
+            lows = d.get("Low", [])
+            opens = d.get("Open", [])
+            code_has_ohlc = len(highs) > 0 and len(lows) > 0 and len(opens) > 0
+            for i, (dt_str, cl) in enumerate(zip(dates_list, closes)):
+                try:
+                    dt_date = date(int(dt_str[:4]), int(dt_str[4:6]), int(dt_str[6:8]))
+                except (ValueError, TypeError):
+                    continue
+                if start <= dt_date <= end:
+                    try:
+                        close_val = float(cl)
+                        # 2026-07-16 修复: has_ohlc 逐行判断(局部 row_has_ohlc),不再让一行脏数据
+                        # 把整只股票永久打到 parquet fallback。
+                        row_has_ohlc = code_has_ohlc and i < len(highs) and i < len(lows) and i < len(opens)
+                        if row_has_ohlc:
+                            try:
+                                high_val = float(highs[i])
+                                low_val = float(lows[i])
+                                open_val = float(opens[i])
+                                if low_val <= 0 or high_val <= 0 or open_val <= 0:
+                                    raise ValueError("OHLC has zero, fallback to parquet")
+                            except (ValueError, TypeError):
+                                row_has_ohlc = False
+                        if not row_has_ohlc:
+                            low_val = close_val
+                            _lm = _get_low_map(code_num)
+                            if _lm is not None:
+                                _v = _lm.get(dt_str)
+                                if _v is not None:
+                                    try:
+                                        low_val = float(_v)
+                                    except (ValueError, TypeError):
+                                        low_val = close_val
+                            high_val = close_val
+                            open_val = close_val
+                        prices_by_date[str(dt_date)][code_num] = {
+                            "close": close_val, "high": high_val, "low": low_val, "open": open_val,
+                        }
+                    except (ValueError, TypeError):
+                        pass
 
     if progress_cb:
         progress_cb(0, len(prices_by_date), f"逐日回放 ({len(prices_by_date)}个交易日)...")
@@ -838,9 +906,8 @@ def _run_daily_backtest(sig_result: dict, params: dict, start: date, end: date,
     # 替代原"每天遍历全部 sig_by_code"的 O(天×股) 扫描（5421只×2383天≈1290万次→24980次）
     pending_buys = defaultdict(list)
     for code, sigs in sig_by_code.items():
-        for dt_str, zp in sigs.items():
-            if _is_signal_value(zp):
-                pending_buys[dt_str].append(code)
+        for dt_str in sigs:  # sigs 现只含信号日期(解析时已过滤),无需再判 _is_signal_value
+            pending_buys[dt_str].append(code)
 
     eng = FastEngine(td_list, params)
     prev_snap = None
@@ -864,7 +931,8 @@ def _run_daily_backtest(sig_result: dict, params: dict, start: date, end: date,
             prev_snap = snap
             continue
 
-        for code in list(eng.positions.keys()):
+        # 2026-07-16 性能: 循环只写 snap 不改 positions,去掉 list() 拷贝直接迭代
+        for code in eng.positions:
             if code not in snap:
                 bar = prices_by_date.get(d_str, {}).get(code)
                 if bar:
@@ -886,9 +954,10 @@ def _run_daily_backtest(sig_result: dict, params: dict, start: date, end: date,
             if px <= 0:
                 continue
             # 2026-07-15 HIGH-3: 计算 prev_close - 用前一个交易日的 close 作为涨停判断基准
+            # 2026-07-16 修复: 日线循环无 prev_day 变量(从日内循环误拷), 改用 td_list[d_idx-1] 取前一交易日
             prev_close_for_buy = None
-            if prev_day is not None:
-                _prev_snap = prices_by_date.get(str(prev_day), {})
+            if d_idx > 0:
+                _prev_snap = prices_by_date.get(str(td_list[d_idx - 1]), {})
                 _prev_bar = _prev_snap.get(code, {})
                 if isinstance(_prev_bar, dict):
                     prev_close_for_buy = _prev_bar.get("close")

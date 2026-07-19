@@ -267,7 +267,14 @@ def _probe_check_signal(sig_payload: dict, code: str, name: str):
 
 
 def _do_range(task, stock_list, output_var):
-    """区间模式：分批调 formula_process_mul_xg + formula_process_mul_zb"""
+    """区间模式：分批调 formula_process_mul_xg + get_market_data, 结果直写 parquet。
+
+    2026-07-18 性能(P1-1/P1-2): 不再把 897万行 signals/prices dict 压成单行 JSON
+    经 stdout 传回(100MB+, json.dumps/loads 各数十秒 + 120s join 超时风险),
+    改为 worker 直接写 parquet 长表(与 result_cache 缓存 schema 一致),
+    stdout 只回文件路径。价格 DataFrame → 长表用 pandas stack 向量化,
+    替代原 _col_to_values 的逐单元格 df.loc(约 3400 万次访问)。
+    """
     start_time = task.get("start_time", "")
     end_time = task.get("end_time", "")
 
@@ -322,9 +329,8 @@ def _do_range(task, stock_list, output_var):
                           "total": len(stock_list)}))
         return
 
-    # Step 2: 从 TDX 取收盘价（用 get_market_data，不用 formula_process_mul_zb）
+    # Step 2: 从 TDX 取 OHLC（get_market_data）, 收集为长表 DataFrame
     tdx_codes = sorted(signal_codes)
-    # 转换代码格式
     tdx_codes_full = _to_tdx_codes(tdx_codes)
 
     # 计算需要的K线数量
@@ -336,7 +342,7 @@ def _do_range(task, stock_list, output_var):
         est_days = 200
     bar_count = est_days + 50
 
-    prices = {}
+    price_frames = []
     total_batches_p = (len(tdx_codes_full) - 1) // BATCH_SIZE + 1
     for batch_start in range(0, len(tdx_codes_full), BATCH_SIZE):
         batch = tdx_codes_full[batch_start:batch_start + BATCH_SIZE]
@@ -361,47 +367,94 @@ def _do_range(task, stock_list, output_var):
 
         if not mk or "Close" not in mk:
             continue
+        frame = _market_data_to_long(mk)
+        if frame is not None:
+            price_frames.append(frame)
 
-        close_df = mk["Close"]
-        # 兼容老版本 TDX（可能 low/high/open 字段缺失）
-        high_df = mk.get("High") if "High" in mk else None
-        low_df = mk.get("Low") if "Low" in mk else None
-        open_df = mk.get("Open") if "Open" in mk else None
-
-        def _col_to_values(df, col):
-            """安全地把 pandas 列转成字符串列表(NaN -> '0')"""
-            if df is None:
-                return None
-            vals = []
-            for dt in df.index:
-                try:
-                    v = float(df.loc[dt, col])
-                    if np.isnan(v) or v <= 0:
-                        vals.append("0")
-                    else:
-                        vals.append(str(v))
-                except Exception:
-                    vals.append("0")
-            return vals
-
-        for col in close_df.columns:
-            code_full = str(col)
-            code_num = code_full.split(".")[0]
-            dates = [str(dt)[:10].replace("-", "") for dt in close_df.index]
-            entry = {"Date": dates, "Close": _col_to_values(close_df, col)}
-            # 低/高/开字段如有则一并传出(供回测引擎做 OHLC 回放)
-            if high_df is not None:
-                entry["High"] = _col_to_values(high_df, col)
-            if low_df is not None:
-                entry["Low"] = _col_to_values(low_df, col)
-            if open_df is not None:
-                entry["Open"] = _col_to_values(open_df, col)
-            prices[code_num] = entry
-
+    range_path, row_count = _write_range_parquet(signals, price_frames, output_var)
     print(json.dumps({
-        "status": "ok", "signals": signals, "prices": prices,
+        "status": "ok", "range_path": range_path, "rows": row_count,
         "total": len(stock_list),
     }))
+
+
+def _market_data_to_long(mk: dict):
+    """get_market_data 返回的 {field: DataFrame(index=date, columns=code)} → 长表。
+
+    向量化替代旧 _col_to_values 的逐单元格 df.loc 取值。
+    输出列: date(YYYYMMDD str) / code(带后缀) / open / high / low / close。
+    """
+    parts = []
+    for field, name in (("Close", "close"), ("High", "high"), ("Low", "low"), ("Open", "open")):
+        df = mk.get(field)
+        if df is None:
+            continue
+        s = df.stack()
+        s.name = name
+        parts.append(s)
+    if not parts:
+        return None
+    long = pd.concat(parts, axis=1).reset_index()
+    # reset_index 后前两列是 (date index, code columns), 名字不可靠, 强制改名
+    long.columns = ["date", "code"] + [c for c in long.columns[2:]]
+    long["date"] = long["date"].astype(str).str[:10].str.replace("-", "", regex=False)
+    long["code"] = long["code"].astype(str)
+    return long
+
+
+def _write_range_parquet(signals: dict, price_frames: list, output_var: str):
+    """把 signals dict + 价格长表 frames 合并成 result_cache 长表 schema 写临时 parquet。
+
+    schema (与 result_cache._signals_prices_to_rows 产物一致):
+        code(str, 带后缀) / date(YYYYMMDD str) / signal_var(str) / signal_value(str)
+        / open / high / low / close (float64, 缺失或 <=0 → NaN)
+    返回 (parquet_path, 行数)。
+    """
+    # ── signals → 长表 ──
+    codes_l, dates_l, vars_l, vals_l = [], [], [], []
+    for code, d in signals.items():
+        dates = d.get("Date", [])
+        var = next((k for k in d.keys() if k != "Date"), output_var)
+        vals = d.get(var, [])
+        n = len(dates)
+        codes_l.extend([code] * n)
+        dates_l.extend(str(dt) for dt in dates)
+        vars_l.extend([var] * n)
+        if len(vals) >= n:
+            vals_l.extend(str(v) for v in vals[:n])
+        else:
+            vals_l.extend(str(vals[i]) if i < len(vals) else "" for i in range(n))
+    sig_df = pd.DataFrame({
+        "code": codes_l, "date": dates_l,
+        "signal_var": vars_l, "signal_value": vals_l,
+    })
+    sig_df["code_num"] = sig_df["code"].str.split(".").str[0]
+
+    # ── 价格长表合并(按 code_num+date 左连到信号表, 与旧 price_lookup 语义一致) ──
+    if price_frames:
+        ohlc = pd.concat(price_frames, ignore_index=True)
+        ohlc["code_num"] = ohlc["code"].str.split(".").str[0]
+        ohlc = ohlc.drop(columns=["code"])
+        # 缺失/<=0 → NaN(等价旧 _safe_float / _col_to_values 的 "0"→None 归一)
+        for col in ("open", "high", "low", "close"):
+            if col in ohlc.columns:
+                v = pd.to_numeric(ohlc[col], errors="coerce")
+                ohlc[col] = v.where(v > 0)
+        merged = sig_df.merge(ohlc, on=["code_num", "date"], how="left")
+    else:
+        merged = sig_df
+
+    # 老版 TDX 可能缺 OHLC 字段(只返回 Close) → 缺失列补 NaN, 防列选择 KeyError
+    for col in ("open", "high", "low", "close"):
+        if col not in merged.columns:
+            merged[col] = np.nan
+
+    out = merged[["code", "date", "signal_var", "signal_value",
+                  "open", "high", "low", "close"]]
+    fd, path = tempfile.mkstemp(suffix=".parquet", prefix="tdx_range_")
+    os.close(fd)
+    out.to_parquet(path, index=False)
+    return path, len(out)
 
 
 def _do_fetch_intraday(task):

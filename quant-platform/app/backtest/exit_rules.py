@@ -398,16 +398,50 @@ class ExitRuleEngine:
         return signals
 
     @staticmethod
+    def precompute_params(params: dict) -> dict:
+        """把 build_context 里整场回测不变的风控字段一次性解析成 dict。
+
+        2026-07-16 性能: build_context 每持仓每天调用(量级 天数×持仓),原先每次
+        重取这 ~20 个 params.get(全程不变)。预解析一次复用,取值逻辑与默认值
+        与 build_context 原地 params.get 逐一对齐,保证回测数字零差异。
+        键名与 RuleContext 字段一致,build_context 直接展开使用。
+        """
+        return {
+            "take_profit_tiers": params.get("take_profit_tiers", []),
+            "hard_stop": params.get("hard_stop", -0.06),
+            "trail_activate": params.get("trail_activate", 0.05),
+            "trail_dd": params.get("trail_dd", 0.02),
+            "time_exit_days": params.get("time_exit_days", 7),
+            "time_exit_profit": params.get("time_exit_profit", 0.03),
+            "time_force_days": params.get("time_force_days", 12),
+            "first_day_exit_min_profit": params.get("first_day_exit_min_profit", 0.0),
+            "first_day_exit_days": params.get("first_day_exit_days", 1),
+            "use_atr_trail": params.get("use_atr_trail", True),
+            "atr_trail_multiplier": params.get("atr_trail_multiplier", 1.0),
+            "breakeven_threshold": params.get("breakeven_threshold_pct", 0.0),
+            "breakeven_stop": params.get("breakeven_stop_pnl_pct", 0.0),
+            "vol_climax_enabled": params.get("use_vol_climax_exit", False),
+            "realistic_stop_fill": params.get("realistic_stop_fill", "stop"),
+            "tp_stack_mode": params.get("tp_stack_mode", True),
+            "tp1_fill_pct": params.get("tp1_fill_pct", 0.03),
+            "priority_mode": params.get("priority_mode", "trailing_first"),
+        }
+
+    @staticmethod
     def build_context(pos, bar: dict, hold_days: int,
                       params: dict, use_high_for_tp: bool = False,
-                      first_day_hold_value: int = 2) -> RuleContext:
+                      first_day_hold_value: int = 2,
+                      precomputed: dict = None) -> RuleContext:
         """从持仓对象 + bar数据 + 参数 构建 RuleContext
 
         first_day_hold_value: 首日对应的 hold_days 值
           = 2: simple_runner / sim_trader（含首日计）
           = 1: 5m引擎 / 日线回退（日历差/排他计）
+        precomputed: 由 precompute_params(params) 预解析的固定字段 dict。
+          传入则复用(热路径,回测主循环用);为 None 时原地逐个 params.get(兼容旧调用)。
         """
-        tp_tiers = params.get("take_profit_tiers", [])
+        pc = precomputed if precomputed is not None else \
+            ExitRuleEngine.precompute_params(params)
         triggered = getattr(pos, "tp_triggered", None)
         if triggered is None:
             triggered = set()
@@ -428,25 +462,25 @@ class ExitRuleEngine:
             atr=float(bar.get("atr", 0)),
             hold_days=hold_days,
             first_day_hold_value=first_day_hold_value,
-            hard_stop=params.get("hard_stop", -0.06),
-            take_profit_tiers=tp_tiers,
-            trail_activate=params.get("trail_activate", 0.05),
-            trail_dd=params.get("trail_dd", 0.02),
-            time_exit_days=params.get("time_exit_days", 7),
-            time_exit_profit=params.get("time_exit_profit", 0.03),
-            time_force_days=params.get("time_force_days", 12),
-            first_day_exit_min_profit=params.get("first_day_exit_min_profit", 0.0),
-            first_day_exit_days=params.get("first_day_exit_days", 1),
-            use_atr_trail=params.get("use_atr_trail", True),
-            atr_trail_multiplier=params.get("atr_trail_multiplier", 1.0),
-            breakeven_threshold=params.get("breakeven_threshold_pct", 0.0),
-            breakeven_stop=params.get("breakeven_stop_pnl_pct", 0.0),
-            vol_climax_enabled=params.get("use_vol_climax_exit", False),
+            hard_stop=pc["hard_stop"],
+            take_profit_tiers=pc["take_profit_tiers"],
+            trail_activate=pc["trail_activate"],
+            trail_dd=pc["trail_dd"],
+            time_exit_days=pc["time_exit_days"],
+            time_exit_profit=pc["time_exit_profit"],
+            time_force_days=pc["time_force_days"],
+            first_day_exit_min_profit=pc["first_day_exit_min_profit"],
+            first_day_exit_days=pc["first_day_exit_days"],
+            use_atr_trail=pc["use_atr_trail"],
+            atr_trail_multiplier=pc["atr_trail_multiplier"],
+            breakeven_threshold=pc["breakeven_threshold"],
+            breakeven_stop=pc["breakeven_stop"],
+            vol_climax_enabled=pc["vol_climax_enabled"],
             use_high_for_tp=use_high_for_tp,
-            realistic_stop_fill=params.get("realistic_stop_fill", "stop"),
-            tp_stack_mode=params.get("tp_stack_mode", True),
-            tp1_fill_pct=params.get("tp1_fill_pct", 0.03),
-            priority_mode=params.get("priority_mode", "trailing_first"),
+            realistic_stop_fill=pc["realistic_stop_fill"],
+            tp_stack_mode=pc["tp_stack_mode"],
+            tp1_fill_pct=pc["tp1_fill_pct"],
+            priority_mode=pc["priority_mode"],
         )
 
 

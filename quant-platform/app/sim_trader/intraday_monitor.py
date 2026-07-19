@@ -191,6 +191,7 @@ class IntradayMonitor:
 
     def _calc_hold_days(self, entry_date) -> int:
         """交易日计数(对齐 live_trader.exit_monitor._calc_hold_days)。
+        规则:买入后第二天起算第1天(window 排除 entry_date 本身)
         entry_date 缺失用今日; 无交易日历则自然日兜底; 异常返回 1(不阻断风控)。"""
         try:
             if entry_date is None:
@@ -203,9 +204,9 @@ class IntradayMonitor:
             cal = _load_trading_calendar() or set()
             today = date.today()
             if cal:
-                window = sorted(d for d in cal if entry_d <= d <= today)
+                window = sorted(d for d in cal if entry_d < d <= today)
                 return max(1, len(window))
-            return max(1, (today - entry_d).days)
+            return max(1, (today - entry_d).days - 1)
         except Exception:
             return 1
 
