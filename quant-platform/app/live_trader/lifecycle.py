@@ -125,8 +125,7 @@ async def lifespan(app: FastAPI):
         # 激活时间 ISO -> 友好格式, 解析失败回退原值
         _at_raw = _ks.get('activated_at')
         try:
-            from datetime import datetime as _dt
-            _at = _dt.fromisoformat(_at_raw).strftime('%Y-%m-%d %H:%M:%S') if _at_raw else '未知'
+            _at = datetime.fromisoformat(_at_raw).strftime('%Y-%m-%d %H:%M:%S') if _at_raw else '未知'
         except Exception:
             _at = _at_raw or '未知'
         _detail = (f"当初原因:{_ks.get('reason') or '未知'} | "

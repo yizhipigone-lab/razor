@@ -6,13 +6,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from core.logger import get_logger
-
-logger = get_logger("live_trader.main")
-
 
 # ===== 全局组件(生命周期管理)=====
-# _state 抽离到 _state.py(阶段0a, 2026-07-19):避免后续 routers/ 拆分时 main↔routers 循环 import
+# _state(阶段0a 抽到 _state.py):re-export 给 tests(test_live_trader_audit/test_manual_order 从 main 拿 _state)
 from ._state import state as _state
 # 鉴权工具(阶段0b 抽到 auth.py):只 re-export _verify_token(test_buy_signal_bridge 用);
 # _require_admin 外部零引用(grep 确认) + main 内部零用,不 re-export

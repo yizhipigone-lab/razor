@@ -5,11 +5,7 @@ place_order_service 是下单核心入口,供 /live/order(WEB)和 /live/buy-sign
 
 历史:原 main.py:88-105。函数内相对 import 前缀 .→..(审计 C1/A,搬到 services/ 深一级)。
 """
-from core.logger import get_logger
-
 from .._state import state as _state
-
-logger = get_logger("live_trader.main")  # 审计 R6:沿用 main 名
 
 
 def place_order_service(intent, source: str = "WEB", lock_wait_sec: int = 30) -> dict:

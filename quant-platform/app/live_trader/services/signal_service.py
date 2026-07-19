@@ -130,7 +130,6 @@ async def _process_one_signal(signal, semaphore, lock_wait_sec: int = 5, strateg
 
     async with semaphore:
         config = _state.get("config")
-        store = _state.get("store")
 
         code = signal.code
         code_fmt = format_code(code) if '.' not in code else code
