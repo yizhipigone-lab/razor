@@ -255,7 +255,8 @@ async def sim_trader_status():
             'market_value': round(p.remaining_shares * cur_price, 2),
             'strategy_name': p.strategy_name,
             'prev_close': prev_close,           # 昨收价
-            'today_base': base_px or 0,         # 今日盈亏基准价(当日买入=买入价, 过夜=昨收)
+            'bought_today': bought_today,       # 当日买入标志: 前端实时算今日盈亏选基准用(当日=买入价/过夜=实时昨收)
+            'today_base': base_px or 0,         # 今日盈亏基准价(页面加载快照, 仅作 fallback)
             'today_pnl': today_pnl,             # 今日浮盈亏
             'day_chg_pct': day_chg_pct,         # 当日涨跌幅
         })
@@ -438,13 +439,16 @@ async def sim_trader_trades(page: int = 1, limit: int = 50):
                 'entry': str(p.entry_date), 'entry_time': getattr(p, 'entry_time', '15:00'),
                 'exit': '持仓中', 'exit_time': '',
                 'entry_px': p.entry_price, 'exit_px': cur_px,
-                'shares': p.shares, 'ret_pct': round(ret, 2),
+                'shares': p.shares,
+                'remaining': p.remaining_shares if p.remaining_shares is not None else p.shares,  # 剩余股数(部分卖出后<shares); 前端量列显示"剩余/总量", 今日盈亏/市值按它算
+                'ret_pct': round(ret, 2),
                 'profit': round(p.shares * (cur_px - p.entry_price), 0),
                 'reason': '', 'hold_days': (today - p.entry_date).days,
                 'entry_reason': p.strategy_name, 'exit_timing': '',
                 'status': '持仓中',
                 'prev_close': prev_close,          # 昨收价
-                'today_base': base_px or 0,        # 今日盈亏基准价(当日买入=买入价, 过夜=昨收), 供前端实时算
+                'bought_today': bought_today,      # 当日买入标志: 前端实时算今日盈亏选基准用(当日=买入价/过夜=实时昨收)
+                'today_base': base_px or 0,        # 今日盈亏基准价(页面加载快照, 仅作 fallback)
                 'today_pnl': today_pnl,            # 今日浮盈亏
                 'day_chg_pct': day_chg_pct,        # 当日涨跌幅
             })
@@ -462,7 +466,7 @@ async def sim_trader_trades(page: int = 1, limit: int = 50):
             'profit': round(t.profit_amount, 0), 'reason': t.exit_reason,
             'hold_days': t.hold_days, 'entry_reason': t.entry_reason,
             'exit_timing': t.exit_timing, 'status': '已平仓',
-            'prev_close': 0.0, 'today_base': 0, 'today_pnl': None, 'day_chg_pct': None,  # 已平仓无当日概念
+            'prev_close': 0.0, 'bought_today': False, 'today_base': 0, 'today_pnl': None, 'day_chg_pct': None,  # 已平仓无当日概念
         }
         for t in closed_sorted
     ]

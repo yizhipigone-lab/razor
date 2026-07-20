@@ -1,17 +1,43 @@
-﻿// ─── 颜色 token 工具(读 CSS 自定义属性, 禁止硬编码 hex) ──────
+﻿// ─── 颜色 token 工具(读 CSS 自定义属性, 禁止硬编码 hex; 模块级缓存防 getComputedStyle reflux) ──────
+const _cssVarCache = {};
 function cssVar(name, fallback) {
+  if (name in _cssVarCache) return _cssVarCache[name];
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return v || fallback || '';
+  const result = v || fallback || '';
+  _cssVarCache[name] = result;
+  return result;
 }
 const COLOR = {
   get up()    { return cssVar('--up',    '#f85149'); },
   get down()  { return cssVar('--down',  '#3fb950'); },
+  get upBorder() { return cssVar('--up-border', '#8A0000'); },
+  get downBorder() { return cssVar('--down-border', '#008F28'); },
+  get red()   { return cssVar('--red',   '#f85149'); },
+  get green() { return cssVar('--green', '#3fb950'); },
   get accent(){ return cssVar('--accent','#f0b429'); },
+  get yellow(){ return cssVar('--yellow','#d29922'); },
+  get orange(){ return cssVar('--orange','#ffa657'); },
+  get purple(){ return cssVar('--purple','#bc8cff'); },
   get text()  { return cssVar('--text',  '#e6edf3'); },
   get text2() { return cssVar('--text2', '#7d8590'); },
   get text3() { return cssVar('--text3', '#4d5566'); },
+  get bg()    { return cssVar('--bg',    '#0a0e14'); },
+  get bg2()   { return cssVar('--bg2',   '#11161f'); },
   get bg3()   { return cssVar('--bg3',   '#1a212e'); },
+  get border(){ return cssVar('--border','#1f2733'); },
+  get catHs()  { return cssVar('--cat-hs',  '#f85149'); },
+  get catTp1() { return cssVar('--cat-tp1', '#d29922'); },
+  get catTp2() { return cssVar('--cat-tp2', '#3fb950'); },
+  get catTr()  { return cssVar('--cat-tr',  '#58a6ff'); },
+  get catTc()  { return cssVar('--cat-tc',  '#a371f7'); },
+  get catTf()  { return cssVar('--cat-tf',  '#8b949e'); },
+  get catEnd() { return cssVar('--cat-end', '#3b82f6'); },
+  series(i) { return cssVar('--series-' + (((i - 1) % 8) + 1), '#d29922'); },  // i 从 1 起, 8 档循环(P3 图表用)
 };
+// 涨跌色: v>=0 红(up), v<0 绿(down) —— 消除 8 处 "#xxx : #xxx" 三元重复(MEDIUM-1, P1 用)
+function trendColor(v) { return v >= 0 ? COLOR.up : COLOR.down; }
+// 5 色系列调色板 —— 消除 4 处相同 5 色数组重复(MEDIUM-1, P3 用)
+const PALETTE_5 = [COLOR.series(1), COLOR.series(2), COLOR.series(3), COLOR.series(4), COLOR.series(5)];
 // ─── WebSocket ────────────────────────────────────────────────
 let ws, wsReady = false;
 const wsDot = document.getElementById('ws-dot');
@@ -204,7 +230,7 @@ async function loadSimTraderStatus() {
             var dcCell = (dc != null)
               ? '<td class="day-chg" style="color:' + tpColor + '">' + (dc >= 0 ? '+' : '') + dc.toFixed(2) + '%</td>'
               : '<td class="day-chg" style="color:var(--text2)">--</td>';
-            return '<tr class="pos-row" data-code="' + p.code + '" data-entry="' + (p.entry_price || 0) + '" data-shares="' + (p.remaining || p.shares || 0) + '" data-basepx="' + (p.today_base || 0) + '"><td>' + p.code + '</td><td>' + (p.name || '') + '</td><td>' + (p.entry_date || '--') + '</td><td>' + (p.entry_price || 0).toFixed(2) + '</td><td class="pos-price">' + (p.current_price || 0).toFixed(2) + '</td><td class="pos-pct" style="color:' + ((p.profit_pct || 0) >= 0 ? 'var(--red)' : 'var(--green)') + '">' + ((p.profit_pct || 0) >= 0 ? '+' : '') + (p.profit_pct || 0).toFixed(2) + '%</td>' + tpCell + dcCell + '<td>' + (p.remaining || p.shares || 0) + '</td><td class="pos-mv">' + Number(p.market_value || 0).toLocaleString() + '</td></tr>';
+            return '<tr class="pos-row" data-code="' + p.code + '" data-entry="' + (p.entry_price || 0) + '" data-shares="' + (p.remaining || p.shares || 0) + '" data-basepx="' + (p.today_base || 0) + '" data-bought-today="' + (p.bought_today ? 1 : 0) + '"><td>' + p.code + '</td><td>' + (p.name || '') + '</td><td>' + (p.entry_date || '--') + '</td><td>' + (p.entry_price || 0).toFixed(2) + '</td><td class="pos-price">' + (p.current_price || 0).toFixed(2) + '</td><td class="pos-pct" style="color:' + ((p.profit_pct || 0) >= 0 ? 'var(--red)' : 'var(--green)') + '">' + ((p.profit_pct || 0) >= 0 ? '+' : '') + (p.profit_pct || 0).toFixed(2) + '%</td>' + tpCell + dcCell + '<td>' + (p.remaining || p.shares || 0) + '</td><td class="pos-mv">' + Number(p.market_value || 0).toLocaleString() + '</td></tr>';
           }).join('')
           : '<tr><td colspan="10" style="text-align:center;color:var(--text2)">暂无持仓</td></tr>';
       }
@@ -266,11 +292,11 @@ async function loadSimRiskParams() {
     const sys = resp.system_config || {};
     const tp = (sys.take_profit_tiers || [{}])[0];
     const tags = [
-      { color: '#f85149', label: 'HS', text: '硬止损 ' + ((sys.hard_stop||0)*100).toFixed(0) + '%' },
-      { color: '#d29922', label: 'TP1', text: '止盈 +' + ((tp.profit_pct||0)*100).toFixed(0) + '% 卖' + ((tp.sell_ratio||0)*100).toFixed(0) + '%' },
-      { color: '#58a6ff', label: 'TR', text: '移动止盈 激活' + ((sys.trail_activate||0)*100).toFixed(0) + '% 回撤' + ((sys.trail_dd||0)*100).toFixed(0) + '%' },
-      { color: '#a371f7', label: 'TC', text: '时间退出 ' + (sys.time_exit_days||0) + '天 盈利>' + ((sys.time_exit_profit||0)*100).toFixed(0) + '%' },
-      { color: '#8b949e', label: 'TF', text: '强制退出 ' + (sys.time_force_days||0) + '天' },
+      { color: COLOR.catHs, label: 'HS', text: '硬止损 ' + ((sys.hard_stop||0)*100).toFixed(0) + '%' },
+      { color: COLOR.catTp1, label: 'TP1', text: '止盈 +' + ((tp.profit_pct||0)*100).toFixed(0) + '% 卖' + ((tp.sell_ratio||0)*100).toFixed(0) + '%' },
+      { color: COLOR.catTr, label: 'TR', text: '移动止盈 激活' + ((sys.trail_activate||0)*100).toFixed(0) + '% 回撤' + ((sys.trail_dd||0)*100).toFixed(0) + '%' },
+      { color: COLOR.catTc, label: 'TC', text: '时间退出 ' + (sys.time_exit_days||0) + '天 盈利>' + ((sys.time_exit_profit||0)*100).toFixed(0) + '%' },
+      { color: COLOR.catTf, label: 'TF', text: '强制退出 ' + (sys.time_force_days||0) + '天' },
     ];
     const el = document.getElementById('sim-risk-params');
     if (el) el.innerHTML = tags.map(t =>
@@ -304,12 +330,14 @@ async function loadSimTrades(page) {
         ? r.trades.map(function(t) {
             const isHolding = t.status === '持仓中';
             const shares = t.shares || 0;
+            const remaining = (isHolding && t.remaining != null && t.remaining >= 0) ? t.remaining : shares;  // 剩余股数(部分卖出后<shares); 实时盈亏/市值按它算
+            const qtyDisplay = (isHolding && remaining < shares) ? remaining.toLocaleString() + ' / ' + shares.toLocaleString() : shares;  // 量列: 部分卖出显示"剩余/总量", 否则单值
             const exitPx = Number(t.exit_px || 0).toFixed(2);
             const entryPx = Number(t.entry_px || 0).toFixed(2);
-            const mktVal = Math.round(shares * t.exit_px);  // 市值 = 数量 × 当前价/卖出价
+            const mktVal = Math.round(remaining * t.exit_px);  // 市值 = 剩余数量 × 当前价/卖出价
             const statusColor = isHolding ? 'var(--accent)' : 'var(--text2)';
             const rowClass = isHolding ? ' class="pos-row"' : '';
-            const rowData = isHolding ? ' data-code="' + t.code + '" data-entry="' + (t.entry_px || 0) + '" data-shares="' + shares + '" data-basepx="' + (t.today_base || 0) + '" data-type="trade"' : '';
+            const rowData = isHolding ? ' data-code="' + t.code + '" data-entry="' + (t.entry_px || 0) + '" data-shares="' + remaining + '" data-basepx="' + (t.today_base || 0) + '" data-bought-today="' + (t.bought_today ? 1 : 0) + '" data-type="trade"' : '';
             const pctColor = t.ret_pct >= 0 ? 'var(--up)' : 'var(--down)';
             // 买入列：日期+时间 / 价格
             var buyCell = '<span style="font-size:11px">' + (t.entry || '') + '</span><br><span style="color:var(--text2);font-size:10px">' + (t.entry_time||'') + ' @</span> <b>' + entryPx + '</b>';
@@ -345,7 +373,7 @@ async function loadSimTrades(page) {
               '<td>' + (t.name || '') + '</td>' +
               '<td>' + buyCell + '</td>' +
               '<td>' + sellCell + '</td>' +
-              '<td>' + shares + '</td>' +
+              '<td>' + qtyDisplay + '</td>' +
               '<td>' + pnlCell + '</td>' +
               '<td>' + todayPnlCell + '</td>' +
               '<td>' + dayChgCell + '</td>' +
@@ -388,11 +416,11 @@ async function renderSimEquityChart() {
     _simEquityChart = echarts.init(dom);
 
     var totalRet = ((eqValues[eqValues.length-1] / baseVal - 1) * 100).toFixed(1);
-    var idxColors = ['#ef4444','#f97316','#22c55e'];
+    var idxColors = [COLOR.series(1), COLOR.series(2), COLOR.series(3)];
     var series = [{
       name: '总资产 (' + (totalRet>=0?'+':'') + totalRet + '%)', type: 'line',
       data: eqNorm, smooth: true,
-      lineStyle: { color: '#f59e0b', width: 2.5 }, symbol: 'none',
+      lineStyle: { color: COLOR.series(5), width: 2.5 }, symbol: 'none',
     }];
 
     var wantIndices = {'上证指数':1,'创业板指':1,'中证A500':1};
@@ -517,7 +545,7 @@ function drawSimCalendar() {
 
   var weekNames = ['一','二','三','四','五','六','日'];
   var html = '<table style=\"width:100%; border-collapse:collapse; font-size:11px\">';
-  html += '<tr style=\"color:#888\">';
+  html += '<tr style=\"color:var(--text2)\">';
   for (var w = 0; w < 7; w++) html += '<th style=\"padding:3px 0; font-weight:normal; text-align:center; ' + (w >= 5 ? 'opacity:0.5' : '') + '\">' + weekNames[w] + '</th>';
   html += '</tr>';
 
@@ -536,7 +564,7 @@ function drawSimCalendar() {
     var dateStr = _simCalYear + '-' + String(_simCalMonth).padStart(2,'0') + '-' + String(day).padStart(2,'0');
     var info = _simCalData[dateStr];
     var isWeekend = (dow === 0 || dow === 6);
-    var bg = isWeekend ? '#111' : '#1a1a2e', color = info ? '#ccc' : '#444', pnlText = '', titleText = '';
+    var bg = isWeekend ? COLOR.bg2 : COLOR.bg3, color = info ? COLOR.text2 : COLOR.text3, pnlText = '', titleText = '';
 
     if (info) {
       var pnl = info.pnl;
@@ -547,14 +575,14 @@ function drawSimCalendar() {
           var ratio = Math.min(1, Math.abs(pnl) / (_simCalData._maxAbs || 1));
           if (pnl > 0) {
             bg = 'rgb(' + Math.round(200+55*ratio) + ',' + Math.round(60-30*ratio) + ',' + Math.round(60-30*ratio) + ')';
-            color = '#fff';
+            color = COLOR.text;
           } else {
             bg = 'rgb(' + Math.round(30+20*ratio) + ',' + Math.round(170-50*ratio) + ',' + Math.round(80-30*ratio) + ')';
-            color = '#fff';
+            color = COLOR.text;
           }
           pnlText = '<span style="font-size:10px">' + (pnl>=0?'+':'') + (Math.abs(pnl)>=10000?(pnl/10000).toFixed(1)+'万':pnl) + '<br><span style="font-size:9px;opacity:0.8">' + (pct>=0?'+':'') + pct.toFixed(1) + '%</span></span>';
         } else {
-          color = '#777';
+          color = COLOR.text2;
           pnlText = '<span style="font-size:9px;opacity:0.5">0<br>0.0%</span>';
         }
       }
@@ -630,7 +658,7 @@ async function renderSimStockAnalysis() {
       return {
         name: s.code + ' ' + s.name + '\n' + (s.profit>=0?'+':'') + Math.round(s.profit).toLocaleString() + ' (' + (s.avgRet>=0?'+':'') + s.avgRet + '%)',
         value: Math.abs(s.profit),
-        itemStyle: { color: s.profit >= 0 ? '#ef4444' : '#22c55e' }
+        itemStyle: { color: trendColor(s.profit) }
       };
     });
 
@@ -641,7 +669,7 @@ async function renderSimStockAnalysis() {
       tooltip: { formatter: function(p) { return p.name.replace(/\n/g, '<br/>'); } },
       series: [{
         type: 'treemap', data: treeData, roam: false,
-        label: { show: true, formatter: function(p) { return p.name; }, fontSize: 10, color: '#fff' },
+        label: { show: true, formatter: function(p) { return p.name; }, fontSize: 10, color: COLOR.text },
         levels: [{ itemStyle: { gapWidth: 2 } }]
       }]
     });
@@ -810,7 +838,7 @@ async function resetSimTrader() {
 function renderRiskTiers(tiers) {
   const container = document.getElementById('set-tp-tiers-container');
   if (!container) return;
-  const colors = ['#d29922','#3fb950','#58a6ff','#a371f7','#f59e0b'];
+  const colors = PALETTE_5;
   container.innerHTML = tiers.map((t, i) => {
     const c = colors[i % colors.length];
     return '<div class=\"bt-cfg-grid\" style=\"margin-bottom:4px\">' +
@@ -824,7 +852,7 @@ function addRiskTier() {
   const container = document.getElementById('set-tp-tiers-container');
   if (!container) return;
   const idx = container.querySelectorAll('.bt-cfg-grid').length;
-  const colors = ['#d29922','#3fb950','#58a6ff','#a371f7','#f59e0b'];
+  const colors = PALETTE_5;
   const c = colors[idx % colors.length];
   const div = document.createElement('div');
   div.className = 'bt-cfg-grid'; div.style.marginBottom = '4px';
@@ -1191,7 +1219,7 @@ async function loadReportsList() {
           if (score !== null && score !== undefined && score !== '') {
             var sc = Number(score);
             var scColor = sc >= 70 ? 'var(--red)' : (sc >= 50 ? 'var(--yellow)' : 'var(--green)');
-            scoreBadge = '<span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;color:#fff;background:' + scColor + ';margin-left:4px">' + sc + '</span>';
+            scoreBadge = '<span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;color:var(--text);background:' + scColor + ';margin-left:4px">' + sc + '</span>';
           }
           var summaryLine = rep.summary ? '<div style="font-size:11px;color:var(--text2);margin-top:3px;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + rep.summary + '</div>' : '';
           // 紧凑分项得分条
@@ -2009,11 +2037,11 @@ async function pollLiveQuotes() {
       var pctEl = tr.querySelector('.live-pct') || tr.querySelector('.pos-pct');
       if (pEl && q.price > 0) {
         pEl.textContent = q.price.toFixed(2);
-        pEl.style.color = q.change_pct >= 0 ? '#ef232a' : '#14b143';
+        pEl.style.color = trendColor(q.change_pct);
       }
       if (pctEl) {
         pctEl.textContent = (q.change_pct >= 0 ? '+' : '') + q.change_pct.toFixed(2) + '%';
-        pctEl.style.color = q.change_pct >= 0 ? '#ef232a' : '#14b143';
+        pctEl.style.color = trendColor(q.change_pct);
       }
     });
     // A4: ws 断开兜底时也刷新实盘持仓现价/浮盈/市值(用上面 window._lastQuotes)
@@ -2093,7 +2121,7 @@ async function _pollAIStatus() {
     const badge = document.getElementById('ai-status-badge');
     if (!data.running) {
       badge.textContent = data.phase === 'done' ? '✅ 完成' : data.phase === 'error' ? '❌ 失败' : '⏸ 空闲';
-      badge.style.color = data.phase === 'done' ? 'var(--green)' : data.phase === 'error' ? 'var(--red)' : '#888';
+      badge.style.color = data.phase === 'done' ? 'var(--green)' : data.phase === 'error' ? 'var(--red)' : COLOR.text3;
     } else {
       badge.textContent = '🔄 运行中';
       badge.style.color = 'var(--blue)';
@@ -2531,7 +2559,7 @@ async function viewAIBacktestHistory(id) {
               const label = paramNameMap[k] || k;
               const val = typeof v === 'number' ? v.toFixed(1) : v;
               const unit = k.includes('days') ? '天' : '%';
-              return `<span title="${k}: ${v}" style="background:rgba(255,255,255,0.08);color:#eee;padding:1px 5px;border-radius:3px;margin:2px;display:inline-block;border:1px solid rgba(255,255,255,0.1);font-size:10px"><b>${label}</b>:${val}${unit}</span>`;
+              return `<span title="${k}: ${v}" style="background:rgba(255,255,255,0.08);color:var(--text);padding:1px 5px;border-radius:3px;margin:2px;display:inline-block;border:1px solid rgba(255,255,255,0.1);font-size:10px"><b>${label}</b>:${val}${unit}</span>`;
             }).join('');
             
             const pnlColor = parseFloat(t.avg_pnl||0) > 0 ? 'var(--red)' : 'var(--green)';
@@ -2544,7 +2572,7 @@ async function viewAIBacktestHistory(id) {
               <td style="padding:3px 6px">
                 <div style="display:flex; align-items:center; justify-content:space-between">
                    <div style="flex:1">${renderedParams}</div>
-                   <button onclick='applyAIParams(${JSON.stringify(t.params)})' style="margin-left:8px; padding:3px 10px; font-size:11px; font-weight:bold; background:var(--accent); border:none; color:#fff; border-radius:3px; cursor:pointer; flex-shrink:0">写入配置</button>
+                   <button onclick='applyAIParams(${JSON.stringify(t.params)})' style="margin-left:8px; padding:3px 10px; font-size:11px; font-weight:bold; background:var(--accent); border:none; color:var(--text); border-radius:3px; cursor:pointer; flex-shrink:0">写入配置</button>
                 </div>
               </td>
             </tr>`;
@@ -2815,7 +2843,7 @@ function handleWS(msg) {
         if (pEl) pEl.textContent = ps.current_price.toFixed(2);
         if (pctEl) {
           pctEl.textContent = (ps.profit_pct >= 0 ? '+' : '') + ps.profit_pct.toFixed(2) + '%';
-          pctEl.style.color = ps.profit_pct >= 0 ? '#ef232a' : '#14b143';
+          pctEl.style.color = trendColor(ps.profit_pct);
         }
         if (mvEl) mvEl.textContent = Math.round(ps.market_value).toLocaleString();
       });
@@ -2861,7 +2889,7 @@ function updateQuoteRow(tr, info) {
     if (price <= 0) return;
 
     const pct = preClose > 0 ? (price - preClose) / preClose * 100 : 0;
-    const color = pct >= 0 ? '#ef232a' : '#14b143';
+    const color = trendColor(pct);
 
     if (pEl) {
         pEl.textContent = price.toFixed(2);
@@ -2924,7 +2952,7 @@ function updatePositionRow(tr, info, entryPrice, shares) {
     if (price <= 0) return;
 
     const profitPct = entryPrice > 0 ? (price - entryPrice) / entryPrice * 100 : 0;
-    const color = profitPct >= 0 ? '#ef232a' : '#14b143';
+    const color = trendColor(profitPct);
     // 持仓表: pos-mv = 市值;  交易记录表: pos-mv = 盈亏额
     const isTrade = tr.getAttribute('data-type') === 'trade';
     const thirdVal = isTrade ? (price - entryPrice) * shares : price * shares;
@@ -2946,15 +2974,18 @@ function updatePositionRow(tr, info, entryPrice, shares) {
     if (mv2El) {
         mv2El.textContent = Math.round(price * shares).toLocaleString();
     }
-    // 今日盈亏（CARD4 后端算基准 + 实时价前端乘: data-basepx 严格来自后端 today_base）
+    // 今日盈亏基准: 当日买入=买入价(entryPrice恒定); 过夜=实时昨收(prevClose跟随行情); 都拿不到才回退后端 basePx 快照
+    // 修 2026-07-19: 原仅用 data-basepx 会把页面加载那刻的基准冻死, 行情源昨收临时错就一路错到下次刷新
     const basePx = parseFloat(tr.getAttribute('data-basepx') || 0);
+    const boughtToday = tr.getAttribute('data-bought-today') === '1';
     // 实时涨跌：始终以昨收价为基准（市场概念，与个人买入价无关）
     const prevClose = parseFloat(info.lastClose || info.preClose || info.last_close || 0);
     const tpEl = tr.querySelector('.today-pnl');
     const dcEl = tr.querySelector('.day-chg');
-    if (basePx > 0) {
-        const todayPnl = (price - basePx) * shares;
-        const tpColor = todayPnl >= 0 ? '#ef232a' : '#14b143';
+    const todayBase = boughtToday ? entryPrice : (prevClose > 0 ? prevClose : basePx);
+    if (todayBase > 0) {
+        const todayPnl = (price - todayBase) * shares;
+        const tpColor = trendColor(todayPnl);
         if (tpEl) {
             tpEl.textContent = (todayPnl >= 0 ? '+' : '') + Math.round(todayPnl).toLocaleString();
             tpEl.style.color = tpColor;
@@ -2962,7 +2993,7 @@ function updatePositionRow(tr, info, entryPrice, shares) {
     }
     if (dcEl && prevClose > 0) {
         const dayChg = (price - prevClose) / prevClose * 100;
-        const dcColor = dayChg >= 0 ? '#ef232a' : '#14b143';
+        const dcColor = trendColor(dayChg);
         dcEl.textContent = (dayChg >= 0 ? '+' : '') + dayChg.toFixed(2) + '%';
         dcEl.style.color = dcColor;
     }
@@ -3776,17 +3807,17 @@ function renderMonthlyInsight(trades, containerId) {
   });
   const option = {
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    legend: { data: ['盈利笔数', '亏损笔数', '月均收益率'], bottom: 0, textStyle: { color: '#888', fontSize: 10 } },
+    legend: { data: ['盈利笔数', '亏损笔数', '月均收益率'], bottom: 0, textStyle: { color: COLOR.text2, fontSize: 10 } },
     grid: { top: 30, left: 40, right: 40, bottom: 40 },
-    xAxis: { type: 'category', data: sortedMonths, axisLabel: { fontSize: 10, color: '#666' } },
+    xAxis: { type: 'category', data: sortedMonths, axisLabel: { fontSize: 10, color: COLOR.text3 } },
     yAxis: [
-      { type: 'value', name: '笔数', splitLine: { lineStyle: { type: 'dashed', color: '#333' } } },
+      { type: 'value', name: '笔数', splitLine: { lineStyle: { type: 'dashed', color: COLOR.border } } },
       { type: 'value', name: '收益率(%)', axisLabel: { formatter: '{value}%' }, splitLine: { show: false } }
     ],
     series: [
       { name: '盈利笔数', type: 'bar', stack: 'total', itemStyle: { color: 'rgba(239, 68, 68, 0.7)' }, data: winData },
       { name: '亏损笔数', type: 'bar', stack: 'total', itemStyle: { color: 'rgba(34, 197, 94, 0.7)' }, data: lossData },
-      { name: '月均收益率', type: 'line', yAxisIndex: 1, symbol: 'circle', symbolSize: 8, itemStyle: { color: '#f59e0b' }, lineStyle: { width: 3 }, data: avgPnLData }
+      { name: '月均收益率', type: 'line', yAxisIndex: 1, symbol: 'circle', symbolSize: 8, itemStyle: { color: COLOR.series(5) }, lineStyle: { width: 3 }, data: avgPnLData }
     ]
   };
   myChart.setOption(option);
@@ -3912,7 +3943,7 @@ async function showChart(tradeJson) {
             name: '买入', xAxis: buyDate, yAxis: yPrice,
             value: `B ${trade.entry_price || trade.close || yPrice}`,
             itemStyle: { color: COLOR.up },
-            label: { formatter: 'B', color: '#fff', fontSize: 11, fontWeight: 'bold' }
+            label: { formatter: 'B', color: COLOR.text, fontSize: 11, fontWeight: 'bold' }
         });
     }
 
@@ -3929,12 +3960,12 @@ async function showChart(tradeJson) {
             name: '卖出', xAxis: sellDate, yAxis: yPrice,
             value: `S ${trade.exit_price || yPrice}`, 
             itemStyle: { color: COLOR.down },
-            label: { formatter: 'S', color: '#fff', fontSize: 11, fontWeight: 'bold' }
+            label: { formatter: 'S', color: COLOR.text, fontSize: 11, fontWeight: 'bold' }
         });
     }
 
-    const upColor = '#ef232a'; const upBorderColor = '#8A0000';
-    const downColor = '#14b143'; const downBorderColor = '#008F28';
+    const upColor = COLOR.up; const upBorderColor = COLOR.upBorder;
+    const downColor = COLOR.down; const downBorderColor = COLOR.downBorder;
 
     const option = {
       animation: false,
@@ -3942,12 +3973,12 @@ async function showChart(tradeJson) {
         data: ['日线', 'MA5', 'MA10', 'MA20', 'MA60'],
         top: 2,
         left: 'center',
-        textStyle: { color: '#666' }
+        textStyle: { color: COLOR.text3 }
       },
       tooltip: { 
         trigger: 'axis', 
         axisPointer: { type: 'cross' },
-        borderWidth: 1, borderColor: '#ccc', padding: 10, textStyle: { color: '#000', fontSize: 12 },
+        borderWidth: 1, borderColor: COLOR.border, padding: 10, textStyle: { color: '#000', fontSize: 12 },
         formatter: function (params) {
           let res = '';
           let kData = null;
@@ -3962,7 +3993,7 @@ async function showChart(tradeJson) {
               const o = data[1], c = data[2], l = data[3], h = data[4];
               const pct_chg = data[5], amp = data[6], amt = data[7], chg_val = data[8], vol = data[9];
               
-              const color = pct_chg >= 0 ? '#ef232a' : '#14b143';
+              const color = trendColor(pct_chg);
               const preClose = c - chg_val;
               
               const getPct = (val) => {
@@ -3977,19 +4008,19 @@ async function showChart(tradeJson) {
               
               res += `<div style="margin-bottom:5px;font-weight:bold;">${date}</div>`;
               res += `<table style="width:100%; border-collapse:collapse; font-size:12px;">`;
-              res += `<tr><td style="padding-right:10px;color:#666;">开盘</td><td style="color:${o >= preClose ? '#ef232a' : '#14b143'}">${o.toFixed(2)} <span style="font-size:10px">(${getPct(o)})</span></td></tr>`;
-              res += `<tr><td style="color:#666;">最高</td><td style="color:#ef232a">${h.toFixed(2)} <span style="font-size:10px">(${getPct(h)})</span></td></tr>`;
-              res += `<tr><td style="color:#666;">最低</td><td style="color:#14b143">${l.toFixed(2)} <span style="font-size:10px">(${getPct(l)})</span></td></tr>`;
-              res += `<tr><td style="color:#666;">收盘</td><td style="font-weight:bold;color:${color}">${c.toFixed(2)} <span style="font-size:10px">(${getPct(c)})</span></td></tr>`;
-              res += `<tr><td style="color:#666;padding-top:4px;">涨跌额</td><td style="padding-top:4px;color:${color}">${chg_val > 0 ? '+' : ''}${chg_val}</td></tr>`;
-              res += `<tr><td style="color:#666;">涨跌幅</td><td style="color:${color}">${pct_chg}%</td></tr>`;
-              res += `<tr><td style="color:#666;">振幅</td><td>${amp}%</td></tr>`;
-              res += `<tr><td style="color:#666;">成交量</td><td style="color:#e08412">${volStr}</td></tr>`;
-              res += `<tr><td style="color:#666;">成交额</td><td>${amtStr}</td></tr>`;
+              res += `<tr><td style="padding-right:10px;color:var(--text3);">开盘</td><td style="color:${trendColor(o - preClose)}">${o.toFixed(2)} <span style="font-size:10px">(${getPct(o)})</span></td></tr>`;
+              res += `<tr><td style="color:var(--text3);">最高</td><td style="color:${COLOR.up}">${h.toFixed(2)} <span style="font-size:10px">(${getPct(h)})</span></td></tr>`;
+              res += `<tr><td style="color:var(--text3);">最低</td><td style="color:${COLOR.down}">${l.toFixed(2)} <span style="font-size:10px">(${getPct(l)})</span></td></tr>`;
+              res += `<tr><td style="color:var(--text3);">收盘</td><td style="font-weight:bold;color:${color}">${c.toFixed(2)} <span style="font-size:10px">(${getPct(c)})</span></td></tr>`;
+              res += `<tr><td style="color:var(--text3);padding-top:4px;">涨跌额</td><td style="padding-top:4px;color:${color}">${chg_val > 0 ? '+' : ''}${chg_val}</td></tr>`;
+              res += `<tr><td style="color:var(--text3);">涨跌幅</td><td style="color:${color}">${pct_chg}%</td></tr>`;
+              res += `<tr><td style="color:var(--text3);">振幅</td><td>${amp}%</td></tr>`;
+              res += `<tr><td style="color:var(--text3);">成交量</td><td style="color:var(--orange)">${volStr}</td></tr>`;
+              res += `<tr><td style="color:var(--text3);">成交额</td><td>${amtStr}</td></tr>`;
               res += `</table>`;
           }
           if (maData.length > 0) {
-              res += `<div style="margin-top:5px; padding-top:5px; border-top:1px solid #ddd; font-size:11px;">`;
+              res += `<div style="margin-top:5px; padding-top:5px; border-top:1px solid var(--border); font-size:11px;">`;
               maData.forEach(m => {
                   res += `<span style="color:${m.color}; margin-right:8px">${m.seriesName}: ${m.data}</span>`;
               });
@@ -4023,7 +4054,7 @@ async function showChart(tradeJson) {
             data: markPointData, 
             symbol: 'pin', 
             symbolSize: function(val, params) { return 45; }, 
-            label: { show:true, color: '#fff', fontSize: 10, offset: [0, 0] } 
+            label: { show:true, color: COLOR.text, fontSize: 10, offset: [0, 0] } 
           }
         },
         { name: 'MA5', type: 'line', data: calculateMA(5, values), smooth: true, lineStyle: { opacity: 0.5 } },
@@ -4067,7 +4098,7 @@ function showToast(msg, type='info') {
   const el = document.getElementById('toast') || document.createElement('div');
   if (!el.id) { el.id = 'toast'; el.style.cssText = 'position:fixed;bottom:20px;right:20px;padding:10px 20px;border-radius:8px;z-index:9999;font-size:13px;transition:opacity .3s'; document.body.appendChild(el); }
   el.style.background = type==='error'?'var(--red)' : type==='warn'?'var(--yellow)' : 'var(--primary)';
-  el.style.color = '#fff'; el.textContent = msg; el.style.opacity = '1';
+  el.style.color = COLOR.text; el.textContent = msg; el.style.opacity = '1';
   clearTimeout(el._t); el._t = setTimeout(() => { el.style.opacity = '0'; }, 3000);
 }
 
@@ -4246,7 +4277,7 @@ async function queryQMTStatus() {
           
           if (isWeekend && count === 0) continue;
           
-          let dotColor = '#999';
+          let dotColor = COLOR.text2;
           let statusLabel = '无数据';
           
           if (count >= res.ideal_count) {
@@ -4648,7 +4679,7 @@ function _populateBtConfigUI(cfg) {
   var container = document.getElementById('sbt-tiers-container');
   if (container && tiers.length > 0) {
     container.innerHTML = '';
-    var colors = ['#d29922','#3fb950','#58a6ff','#a371f7','#f59e0b'];
+    var colors = PALETTE_5;
     tiers.forEach(function(t, i) {
       var c = colors[i % colors.length];
       var div = document.createElement('div');
@@ -4772,7 +4803,7 @@ function _collectBtConfig() {
 function addBtTier() {
   var container = document.getElementById('sbt-tiers-container');
   var idx = container.querySelectorAll('.bt-cfg-grid').length;
-  var colors = ['#d29922','#3fb950','#58a6ff','#a371f7','#f59e0b'];
+  var colors = PALETTE_5;
   var c = colors[idx % colors.length];
   var div = document.createElement('div');
   div.className = 'bt-cfg-grid';
@@ -4958,7 +4989,7 @@ function renderSimpleBtChart(equity, indices, totalReturn) {
   if (_simpleBtChart) _simpleBtChart.dispose();
   _simpleBtChart = echarts.init(dom);
 
-  const colors = ['#f59e0b', '#ef4444', '#8b5cf6', '#22c55e', '#3b82f6'];
+  const colors = [COLOR.series(1), COLOR.series(2), COLOR.series(3), COLOR.series(4), COLOR.series(5)];
   const series = [];
 
   // 策略净值线
@@ -5009,13 +5040,13 @@ function renderSimpleBtChart(equity, indices, totalReturn) {
         return html;
       }
     },
-    legend: { top: 5, textStyle: { color: '#999', fontSize: 11 } },
+    legend: { top: 5, textStyle: { color: COLOR.text2, fontSize: 11 } },
     grid: { top: 40, right: 60, bottom: 50, left: 60 },
-    xAxis: { type: 'category', data: eqDates, axisLabel: { color: '#666', fontSize: 10 },
+    xAxis: { type: 'category', data: eqDates, axisLabel: { color: COLOR.text3, fontSize: 10 },
       splitLine: { show: false } },
     yAxis: {
       type: 'value', axisLabel: {
-        color: '#666', fontSize: 10,
+        color: COLOR.text3, fontSize: 10,
         formatter: v => ((v - 1) * 100).toFixed(0) + '%'
       },
       splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } }
@@ -5109,7 +5140,7 @@ renderSimpleBtChart = function(equity, indices, totalReturn) {
   if (_simpleBtChart) _simpleBtChart.dispose();
   _simpleBtChart = echarts.init(dom);
 
-  var idxColors = ['#ef4444','#f97316','#eab308','#22c55e','#3b82f6','#8b5cf6','#ec4899','#06b6d4'];
+  var idxColors = [COLOR.series(1), COLOR.series(2), COLOR.series(3), COLOR.series(4), COLOR.series(5), COLOR.series(6), COLOR.series(7), COLOR.series(8)];
   var series = [];
   var eqDates = equity.map(function(e) { return e.date; });
   var eqValues = equity.map(function(e) { return e.norm; });
@@ -5117,7 +5148,7 @@ renderSimpleBtChart = function(equity, indices, totalReturn) {
   series.push({
     name: '策略 (' + (totalReturn >= 0 ? '+' : '') + totalReturn.toFixed(1) + '%)',
     type: 'line', data: eqValues, smooth: true,
-    lineStyle: { color: '#f59e0b', width: 3 }, symbol: 'none',
+    lineStyle: { color: COLOR.series(5), width: 3 }, symbol: 'none',
   });
 
   if (indices) {
@@ -5150,8 +5181,8 @@ renderSimpleBtChart = function(equity, indices, totalReturn) {
     tooltip: {
       trigger: 'axis',
       backgroundColor: 'rgba(20,22,28,0.95)',
-      borderColor: '#333',
-      textStyle: { color: '#ddd', fontSize: 12 },
+      borderColor: COLOR.border,
+      textStyle: { color: COLOR.text, fontSize: 12 },
       formatter: function(params) {
         var html = '<b style="font-size:13px">' + params[0].axisValue + '</b><br/>';
         params.forEach(function(p) {
@@ -5165,12 +5196,12 @@ renderSimpleBtChart = function(equity, indices, totalReturn) {
         var dateStr = params[0].axisValue;
         if (typeof _simpleBtDailyTrades !== 'undefined' && _simpleBtDailyTrades[dateStr]) {
           var day = _simpleBtDailyTrades[dateStr];
-          html += '<hr style="margin:3px 0;border-color:#333"/>';
+          html += '<hr style="margin:3px 0;border-color:var(--border)"/>';
           html += '<div style="max-height:260px;overflow-y:auto;font-size:10px;line-height:1.55">';
           if (day.bought && day.bought.length > 0) {
             html += '<div style="color:var(--up);font-weight:600;margin-bottom:2px">买入 ' + day.bought.length + ' 笔</div>';
             day.bought.forEach(function(b) {
-              html += '<div style="padding-left:2px;color:#aaa">' + b.code + (b.name ? ' <span style="color:#ccc">' + b.name + '</span>' : '') + ' <span style="color:#ddd">@' + b.price + '</span></div>';
+              html += '<div style="padding-left:2px;color:var(--text2)">' + b.code + (b.name ? ' <span style="color:var(--text2)">' + b.name + '</span>' : '') + ' <span style="color:var(--text)">@' + b.price + '</span></div>';
             });
           }
           if (day.sold && day.sold.length > 0) {
@@ -5178,11 +5209,11 @@ renderSimpleBtChart = function(equity, indices, totalReturn) {
             day.sold.forEach(function(s) {
               var sc = s.ret >= 0 ? 'var(--up)' : 'var(--down)';
               html += '<div style="padding-left:2px">';
-              html += '<span style="color:#aaa">' + s.code + '</span>';
-              if (s.name) html += ' <span style="color:#ccc">' + s.name + '</span>';
-              html += ' <span style="color:#ddd">@' + s.price + '</span>';
+              html += '<span style="color:var(--text2)">' + s.code + '</span>';
+              if (s.name) html += ' <span style="color:var(--text2)">' + s.name + '</span>';
+              html += ' <span style="color:var(--text)">@' + s.price + '</span>';
               html += ' <span style="color:' + sc + ';font-weight:600">' + (s.ret >= 0 ? '+' : '') + s.ret + '%</span>';
-              html += ' <span style="color:#888;font-size:9px">' + s.reason + '</span>';
+              html += ' <span style="color:var(--text2);font-size:9px">' + s.reason + '</span>';
               html += '</div>';
             });
           }
@@ -5191,10 +5222,10 @@ renderSimpleBtChart = function(equity, indices, totalReturn) {
         return html;
       }
     },
-    legend: { top: 5, textStyle: { color: '#999', fontSize: 10 }, type: 'scroll' },
+    legend: { top: 5, textStyle: { color: COLOR.text2, fontSize: 10 }, type: 'scroll' },
     grid: { top: 55, right: 70, bottom: 55, left: 65 },
-    xAxis: { type: 'category', data: eqDates, axisLabel: { color: '#666', fontSize: 9, rotate: 30, interval: Math.floor(eqDates.length / 8) }, splitLine: { show: false } },
-    yAxis: { type: 'value', axisLabel: { color: '#666', fontSize: 10, formatter: function(v) { return ((v-1)*100).toFixed(0)+'%'; } }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } } },
+    xAxis: { type: 'category', data: eqDates, axisLabel: { color: COLOR.text3, fontSize: 9, rotate: 30, interval: Math.floor(eqDates.length / 8) }, splitLine: { show: false } },
+    yAxis: { type: 'value', axisLabel: { color: COLOR.text3, fontSize: 10, formatter: function(v) { return ((v-1)*100).toFixed(0)+'%'; } }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } } },
     series: series,
   });
   window.addEventListener('resize', function() { if (_simpleBtChart) _simpleBtChart.resize(); });
@@ -5243,9 +5274,9 @@ function renderBtMonthlyReturn(trades) {
   window._btChartMR.setOption({
     tooltip: { trigger: 'axis', formatter: function(p) { return '<b>' + p[0].name + '</b><br/>收益: ' + (p[0].value >= 0 ? '+' : '') + p[0].value.toFixed(2) + '%<br/>' + monthly[months[p[0].dataIndex]].count + '笔交易'; } },
     grid: { left: 56, right: 16, top: 16, bottom: 40 },
-    xAxis: { type: 'category', data: months, axisLabel: { fontSize: 10, color: '#888' }, axisLine: { lineStyle: { color: '#333' } }, axisTick: { show: false } },
-    yAxis: { type: 'value', axisLabel: { fontSize: 10, color: '#888', formatter: '{value}%' }, splitLine: { show: false }, axisLine: { show: false }, axisTick: { show: false } },
-    series: [{ type: 'bar', data: values.map(function(v) { return { value: v, itemStyle: { color: v >= 0 ? '#f85149' : '#3fb950' } }; }), barWidth: '50%' }]
+    xAxis: { type: 'category', data: months, axisLabel: { fontSize: 10, color: COLOR.text2 }, axisLine: { lineStyle: { color: COLOR.border } }, axisTick: { show: false } },
+    yAxis: { type: 'value', axisLabel: { fontSize: 10, color: COLOR.text2, formatter: '{value}%' }, splitLine: { show: false }, axisLine: { show: false }, axisTick: { show: false } },
+    series: [{ type: 'bar', data: values.map(function(v) { return { value: v, itemStyle: { color: trendColor(v) } }; }), barWidth: '50%' }]
   });
   window.addEventListener('resize', function() { if (window._btChartMR) window._btChartMR.resize(); });
 }
@@ -5273,9 +5304,9 @@ function renderBtPnlDist(trades) {
   window._btChartPD.setOption({
     tooltip: { trigger: 'axis' },
     grid: { left: 50, right: 16, top: 16, bottom: 50 },
-    xAxis: { type: 'category', data: bins, axisLabel: { fontSize: 9, color: '#888', rotate: 30 }, axisLine: { lineStyle: { color: '#333' } }, axisTick: { show: false } },
-    yAxis: { type: 'value', splitNumber: 4, minInterval: 1, axisLabel: { fontSize: 10, color: '#888' }, splitLine: { show: false }, axisLine: { show: false }, axisTick: { show: false } },
-    series: [{ type: 'bar', data: counts.map(function(c, i) { return { value: c, itemStyle: { color: i < 3 ? '#3fb950' : '#f85149' } }; }), barWidth: '60%' }]
+    xAxis: { type: 'category', data: bins, axisLabel: { fontSize: 9, color: COLOR.text2, rotate: 30 }, axisLine: { lineStyle: { color: COLOR.border } }, axisTick: { show: false } },
+    yAxis: { type: 'value', splitNumber: 4, minInterval: 1, axisLabel: { fontSize: 10, color: COLOR.text2 }, splitLine: { show: false }, axisLine: { show: false }, axisTick: { show: false } },
+    series: [{ type: 'bar', data: counts.map(function(c, i) { return { value: c, itemStyle: { color: i < 3 ? COLOR.down : COLOR.up } }; }), barWidth: '60%' }]
   });
   window.addEventListener('resize', function() { if (window._btChartPD) window._btChartPD.resize(); });
 }
@@ -5300,16 +5331,16 @@ function renderBtExitReason(trades) {
   });
   var total = trades.length;
   var data = Object.entries(reasonMap).map(function(e) { return { name: e[0], value: e[1] }; });
-  var colors = { '阶梯止盈': '#ef4444', '阶梯止盈(2档)': '#dc2626', '移动止盈': '#f97316', '时间止盈': '#22c55e', '硬止损': '#eab308', '强制清仓': '#8b5cf6', '期末清仓': '#3b82f6' };
+  var colors = { '阶梯止盈': COLOR.catTp1, '阶梯止盈(2档)': COLOR.catTp2, '移动止盈': COLOR.catTr, '时间止盈': COLOR.catTc, '硬止损': COLOR.catHs, '强制清仓': COLOR.catTf, '期末清仓': COLOR.catEnd };
 
   window._btChartER.setOption({
     tooltip: { trigger: 'item', formatter: '{b}: {c}笔 ({d}%)' },
-    legend: { bottom: 0, textStyle: { fontSize: 10, color: '#aaa' }, data: data.map(function(d) { return d.name; }) },
+    legend: { bottom: 0, textStyle: { fontSize: 10, color: COLOR.text2 }, data: data.map(function(d) { return d.name; }) },
     series: [{
       type: 'pie', radius: ['45%', '72%'], center: ['50%', '42%'], avoidLabelOverlap: true,
-      label: { show: true, position: 'inside', formatter: '{d}%', fontSize: 9, color: '#fff', fontWeight: 'bold', textShadowColor: 'rgba(0,0,0,0.6)', textShadowBlur: 2 },
-      itemStyle: { borderColor: '#1a1a2e', borderWidth: 2 },
-      data: data.map(function(d) { return { name: d.name, value: d.value, itemStyle: { color: colors[d.name] || '#888' } }; })
+      label: { show: true, position: 'inside', formatter: '{d}%', fontSize: 9, color: COLOR.text, fontWeight: 'bold', textShadowColor: 'rgba(0,0,0,0.6)', textShadowBlur: 2 },
+      itemStyle: { borderColor: COLOR.bg3, borderWidth: 2 },
+      data: data.map(function(d) { return { name: d.name, value: d.value, itemStyle: { color: colors[d.name] || COLOR.text2 } }; })
     }]
   });
   window.addEventListener('resize', function() { if (window._btChartER) window._btChartER.resize(); });
@@ -5337,9 +5368,9 @@ function renderBtHoldDays(trades) {
   window._btChartHD.setOption({
     tooltip: { trigger: 'axis' },
     grid: { left: 50, right: 16, top: 16, bottom: 50 },
-    xAxis: { type: 'category', data: bins, axisLabel: { fontSize: 10, color: '#888', rotate: 30 }, axisLine: { lineStyle: { color: '#333' } }, axisTick: { show: false } },
-    yAxis: { type: 'value', splitNumber: 4, minInterval: 1, axisLabel: { fontSize: 10, color: '#888' }, splitLine: { show: false }, axisLine: { show: false }, axisTick: { show: false } },
-    series: [{ type: 'bar', data: counts, itemStyle: { color: '#f0b429' }, barWidth: '55%' }]
+    xAxis: { type: 'category', data: bins, axisLabel: { fontSize: 10, color: COLOR.text2, rotate: 30 }, axisLine: { lineStyle: { color: COLOR.border } }, axisTick: { show: false } },
+    yAxis: { type: 'value', splitNumber: 4, minInterval: 1, axisLabel: { fontSize: 10, color: COLOR.text2 }, splitLine: { show: false }, axisLine: { show: false }, axisTick: { show: false } },
+    series: [{ type: 'bar', data: counts, itemStyle: { color: COLOR.accent }, barWidth: '55%' }]
   });
   window.addEventListener('resize', function() { if (window._btChartHD) window._btChartHD.resize(); });
 }

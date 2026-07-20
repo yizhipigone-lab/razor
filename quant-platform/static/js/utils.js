@@ -3,6 +3,16 @@
  * 工具函数模块
  */
 
+// 内联 cssVar(utils.js 是 ES module, 用不了 main.js 全局 cssVar; 读 CSS token, 模块级缓存防 reflux)
+const _cssVarCache = {};
+function _cssVar(name, fallback) {
+  if (name in _cssVarCache) return _cssVarCache[name];
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const result = v || fallback || '';
+  _cssVarCache[name] = result;
+  return result;
+}
+
 /**
  * 格式化价格
  * @param {number|string} price - 价格
@@ -88,10 +98,10 @@ export function createNotification(type, message, duration = 3000) {
 
   // 类型对应的背景色
   const bgColors = {
-    success: '#3fb950',
-    info: '#58a6ff',
-    warning: '#d29922',
-    error: '#f85149',
+    success: _cssVar('--green',  '#3fb950'),
+    info:    _cssVar('--cat-tr', '#58a6ff'),  // 语义弱(cat-tr 是移动止盈色), 仅复用其蓝色值; 后续可加 --info token
+    warning: _cssVar('--yellow', '#d29922'),
+    error:   _cssVar('--red',    '#f85149'),
   };
 
   notification.style.backgroundColor = bgColors[type] || bgColors.info;
